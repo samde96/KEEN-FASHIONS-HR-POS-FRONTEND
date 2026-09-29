@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+dev-dist/
+.vite/
+.vite-inspect/
+*.tsbuildinfo
+
+# Test and coverage output
+coverage/
+playwright-report/
+test-results/
+blob-report/
+reports-check.png
+
+# Local environment and logs
+.env
+.env.*
+!.env.example
+*.log
+*.err.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
