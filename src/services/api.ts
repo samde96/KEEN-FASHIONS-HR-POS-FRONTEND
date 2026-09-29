@@ -63,7 +63,7 @@ import type {
   UserRequest,
 } from '../data/types';
 
-const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '';
+const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 const apiBaseUrl = import.meta.env.DEV ? '' : configuredApiBaseUrl;
 const localDevelopmentApiBaseUrl = 'http://localhost:8080';
 const csrfTokenPath = '/api/v1/auth/csrf';
@@ -940,6 +940,10 @@ async function getUnexpectedResponseMessage(response: Response, contentType: str
   const received = contentType || 'unknown content type';
 
   if (looksLikeHtml(trimmed)) {
+    if (!import.meta.env.DEV && response.url.startsWith(window.location.origin)) {
+      return 'Expected backend JSON but received the frontend HTML app. Set VITE_API_BASE_URL in Vercel to the Render backend URL, then redeploy the frontend.';
+    }
+
     return `Expected JSON from ${response.url} but received HTML with status ${response.status}. Check that the backend is running on port 8080, then refresh the app.`;
   }
 
