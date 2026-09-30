@@ -13661,6 +13661,7 @@ function ProductsPage({ organization }: { organization: Organization }) {
         return;
       }
 
+      const categoryImport = await ensureWorksheetCategories(rows, categories);
       const productBySku = new Map(products.map((product) => [product.sku.toUpperCase(), product]));
       let created = 0;
       let updated = 0;
@@ -13668,7 +13669,7 @@ function ProductsPage({ organization }: { organization: Organization }) {
       for (const [index, row] of rows.entries()) {
         const payload = productRequestFromWorksheetRow(
           row,
-          categories,
+          categoryImport.categories,
           organization.defaultProductVatCategory,
           index + 2,
         );
@@ -13684,9 +13685,26 @@ function ProductsPage({ organization }: { organization: Organization }) {
         }
       }
 
+      await queryClient.invalidateQueries({ queryKey: ['product-categories'] });
       await queryClient.invalidateQueries({ queryKey: ['products'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory'] });
-      setMessage(`Imported ${created} new and ${updated} updated products.`);
+      setProductForm((current) =>
+        current.categoryId
+          ? current
+          : {
+              ...current,
+              categoryId:
+                categoryImport.categories.find((category) => category.status === 'ACTIVE')?.id ??
+                '',
+            },
+      );
+      const categorySummary =
+        categoryImport.created > 0
+          ? ` Created ${categoryImport.created} ${
+              categoryImport.created === 1 ? 'category' : 'categories'
+            }.`
+          : '';
+      setMessage(`Imported ${created} new and ${updated} updated products.${categorySummary}`);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Unable to import products');
     } finally {
@@ -22854,6 +22872,11 @@ async function readWorkbookRows(file: File) {
     .filter((row) => Object.values(row).some((value) => String(value ?? '').trim()));
 }
 
+type WorksheetCategoryReference = {
+  code: string;
+  name: string;
+};
+
 function normalizeWorksheetRow(row: WorksheetRow) {
   return Object.fromEntries(
     Object.entries(row).map(([key, value]) => [normalizeWorksheetKey(key), value]),
@@ -22872,6 +22895,21 @@ function worksheetText(row: WorksheetRow, ...headers: string[]) {
     }
   }
   return '';
+}
+
+function normalizeWorksheetLookupValue(value: string) {
+  return value
+    .trim()
+    .replace(/[\u2019\u2018]/g, "'")
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function worksheetCategoryReference(row: WorksheetRow): WorksheetCategoryReference {
+  return {
+    code: worksheetText(row, 'Category Code').toUpperCase(),
+    name: worksheetText(row, 'Category Name', 'Category'),
+  };
 }
 
 function requiredWorksheetText(row: WorksheetRow, rowNumber: number, label: string) {
@@ -22953,6 +22991,54 @@ function productRequestFromWorksheetRow(
   };
 }
 
+async function ensureWorksheetCategories(
+  rows: WorksheetRow[],
+  existingCategories: ProductCategory[],
+) {
+  const categoriesByCode = new Map(
+    existingCategories.map((category) => [category.code.toUpperCase(), category]),
+  );
+  const categoriesByName = new Map(
+    existingCategories.map((category) => [
+      normalizeWorksheetLookupValue(category.name),
+      category,
+    ]),
+  );
+  const categories = [...existingCategories];
+  let created = 0;
+
+  for (const [index, row] of rows.entries()) {
+    const rowNumber = index + 2;
+    const categoryReference = worksheetCategoryReference(row);
+    const normalizedName = normalizeWorksheetLookupValue(categoryReference.name);
+    const matchingCategory =
+      (categoryReference.code && categoriesByCode.get(categoryReference.code)) ||
+      (normalizedName && categoriesByName.get(normalizedName));
+
+    if (matchingCategory) {
+      continue;
+    }
+
+    if (!categoryReference.code || !categoryReference.name.trim()) {
+      throw new Error(
+        `Row ${rowNumber}: Category Code and Category Name are required to create a missing category.`,
+      );
+    }
+
+    const category = await createProductCategory({
+      name: categoryReference.name.trim(),
+      code: categoryReference.code,
+      status: 'ACTIVE',
+    });
+    categories.push(category);
+    categoriesByCode.set(category.code.toUpperCase(), category);
+    categoriesByName.set(normalizeWorksheetLookupValue(category.name), category);
+    created += 1;
+  }
+
+  return { categories, created };
+}
+
 function stockIntakeRequestFromWorksheetRow(
   row: WorksheetRow,
   branches: Branch[],
@@ -22993,12 +23079,13 @@ function findWorksheetCategory(
   categories: ProductCategory[],
   rowNumber: number,
 ) {
-  const categoryCode = worksheetText(row, 'Category Code').toUpperCase();
-  const categoryName = worksheetText(row, 'Category Name', 'Category').toLowerCase();
+  const { code: categoryCode, name: categoryName } = worksheetCategoryReference(row);
+  const normalizedCategoryName = normalizeWorksheetLookupValue(categoryName);
   const category = categories.find(
     (item) =>
       (categoryCode && item.code.toUpperCase() === categoryCode) ||
-      (categoryName && item.name.toLowerCase() === categoryName),
+      (normalizedCategoryName &&
+        normalizeWorksheetLookupValue(item.name) === normalizedCategoryName),
   );
 
   if (!category) {
