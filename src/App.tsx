@@ -17293,6 +17293,7 @@ function ReportsHub({
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<ReportPeriod>('month');
   const [activeDetailTab, setActiveDetailTab] = useState<ReportDetailTab>('sales');
+  const [areReportFiltersOpen, setAreReportFiltersOpen] = useState(false);
   const [draftDateRange, setDraftDateRange] = useState<ReportDateRange>(() =>
     reportPeriodRange('month'),
   );
@@ -17500,7 +17501,7 @@ function ReportsHub({
         subtitle={reportSubtitle}
         action={
           <div className="header-actions reports-header-actions">
-            <label className="select-shell report-branch-select">
+            <label className="select-shell report-branch-select report-branch-select-header">
               <i className="bi bi-geo-alt" aria-hidden="true" />
               <select
                 aria-label="Report branch"
@@ -17542,47 +17543,73 @@ function ReportsHub({
             <strong>{scopeLabel}</strong>
           </div>
           <p>{reportRangeLabel}</p>
-        </div>
-        <div className="report-period-row" aria-label="Report period presets">
-          {reportPeriodOptions.map((option) => (
-            <button
-              className={`report-period-button ${selectedPeriod === option.period ? 'active' : ''}`}
-              key={option.period}
-              type="button"
-              onClick={() => applyPreset(option.period)}
-            >
-              <i className={`bi ${option.icon}`} aria-hidden="true" />
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <div className="report-date-grid">
-          <label className="report-date-field">
-            <span>From date</span>
-            <input
-              aria-label="Report from date"
-              type="date"
-              value={draftDateRange.from}
-              onChange={(event) => updateDraftDateRange('from', event.target.value)}
-            />
-          </label>
-          <label className="report-date-field">
-            <span>Date to</span>
-            <input
-              aria-label="Report to date"
-              type="date"
-              value={draftDateRange.to}
-              onChange={(event) => updateDraftDateRange('to', event.target.value)}
-            />
-          </label>
           <button
-            className="primary-action report-apply-button"
+            className="report-filter-menu-button"
             type="button"
-            onClick={applyDraftDateRange}
+            aria-label="Toggle report date filters"
+            aria-expanded={areReportFiltersOpen}
+            onClick={() => setAreReportFiltersOpen((isOpen) => !isOpen)}
           >
-            <i className="bi bi-funnel" aria-hidden="true" />
-            Apply
+            <i className="bi bi-three-dots-vertical" aria-hidden="true" />
           </button>
+        </div>
+        <div className={`report-filter-controls ${areReportFiltersOpen ? 'open' : ''}`}>
+          <label className="select-shell report-branch-select report-branch-select-mobile">
+            <i className="bi bi-geo-alt" aria-hidden="true" />
+            <select
+              aria-label="Report branch"
+              value={selectedBranchId}
+              onChange={(event) => setSelectedBranchId(event.target.value)}
+            >
+              <option value="">All Branches</option>
+              {activeBranches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="report-period-row" aria-label="Report period presets">
+            {reportPeriodOptions.map((option) => (
+              <button
+                className={`report-period-button ${selectedPeriod === option.period ? 'active' : ''}`}
+                key={option.period}
+                type="button"
+                onClick={() => applyPreset(option.period)}
+              >
+                <i className={`bi ${option.icon}`} aria-hidden="true" />
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <div className="report-date-grid">
+            <label className="report-date-field">
+              <span>From date</span>
+              <input
+                aria-label="Report from date"
+                type="date"
+                value={draftDateRange.from}
+                onChange={(event) => updateDraftDateRange('from', event.target.value)}
+              />
+            </label>
+            <label className="report-date-field">
+              <span>Date to</span>
+              <input
+                aria-label="Report to date"
+                type="date"
+                value={draftDateRange.to}
+                onChange={(event) => updateDraftDateRange('to', event.target.value)}
+              />
+            </label>
+            <button
+              className="primary-action report-apply-button"
+              type="button"
+              onClick={applyDraftDateRange}
+            >
+              <i className="bi bi-funnel" aria-hidden="true" />
+              Apply
+            </button>
+          </div>
         </div>
       </div>
 
@@ -21561,6 +21588,20 @@ const hrDashboardStyles = `
     align-items: stretch;
   }
 
+  .hr-dashboard-hero h1 {
+    font-size: 1.62rem;
+    letter-spacing: 0;
+  }
+
+  .hr-dashboard-hero h2 {
+    font-size: 0.92rem;
+  }
+
+  .hr-dashboard-hero p {
+    font-size: 0.82rem;
+    line-height: 1.35;
+  }
+
   .hr-dashboard-actions {
     width: 100%;
   }
@@ -21572,20 +21613,64 @@ const hrDashboardStyles = `
   }
 
   .hr-kpi-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
   }
 
   .hr-metric-card {
     min-width: 0;
+    min-height: 104px;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    align-items: start;
+    gap: 0.34rem;
+    padding: 0.62rem;
+  }
+
+  .hr-metric-icon {
+    font-size: 1.08rem;
+  }
+
+  .hr-metric-copy {
+    min-width: 0;
+    gap: 0.12rem;
+  }
+
+  .hr-metric-copy span {
+    font-size: 0.66rem;
+    line-height: 1.18;
+    overflow-wrap: anywhere;
+  }
+
+  .hr-metric-copy strong {
+    font-size: 1.16rem;
+    line-height: 1.05;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .hr-metric-copy small {
+    font-size: 0.64rem;
+    line-height: 1.22;
+    overflow-wrap: anywhere;
+  }
+
+  .hr-metric-arrow {
+    display: none;
   }
 
   .hr-dashboard-panel {
-    padding: 1rem;
+    padding: 0.82rem;
   }
 
   .hr-panel-heading {
     align-items: flex-start;
     flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .hr-panel-heading h3 {
+    font-size: 0.88rem;
   }
 
   .hr-dashboard-chart-wrap {

@@ -26,11 +26,94 @@ test('owner can open login screen and enter the dashboard', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'User Login' })).toBeVisible();
 });
 
+test('mobile back office menu opens above the page chrome', async ({ page }) => {
+  await mockApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dashboard');
+
+  await expect(page.getByRole('heading', { name: "Today's Dashboard" })).toBeVisible();
+  await page.getByRole('button', { name: /menu/i }).click();
+  await expect(page.locator('.sidebar')).toHaveClass(/menu-open/);
+
+  const menuState = await page.evaluate(() => {
+    const sidebar = document.querySelector('.sidebar');
+    const topbar = document.querySelector('.topbar');
+
+    if (!(sidebar instanceof HTMLElement) || !(topbar instanceof HTMLElement)) {
+      throw new Error('Expected back office navigation elements to exist.');
+    }
+
+    const sidebarRect = sidebar.getBoundingClientRect();
+    const topbarRect = topbar.getBoundingClientRect();
+    const topbarPoint = document.elementFromPoint(
+      Math.min(window.innerWidth - 1, Math.max(0, topbarRect.left + 8)),
+      Math.min(window.innerHeight - 1, Math.max(0, topbarRect.top + 8)),
+    );
+    const bottomPoint = document.elementFromPoint(
+      Math.floor(window.innerWidth / 2),
+      window.innerHeight - 8,
+    );
+
+    return {
+      coversViewport:
+        sidebarRect.top <= 0 &&
+        sidebarRect.left <= 0 &&
+        sidebarRect.right >= window.innerWidth &&
+        sidebarRect.bottom >= window.innerHeight,
+      ownsBottomPoint: bottomPoint != null && sidebar.contains(bottomPoint),
+      ownsTopbarPoint: topbarPoint != null && sidebar.contains(topbarPoint),
+      position: window.getComputedStyle(sidebar).position,
+    };
+  });
+
+  expect(menuState.position).toBe('fixed');
+  expect(menuState.coversViewport).toBe(true);
+  expect(menuState.ownsTopbarPoint).toBe(true);
+  expect(menuState.ownsBottomPoint).toBe(true);
+});
+
+test('dashboard metric cards use compact two by two mobile layout', async ({ page }) => {
+  await mockApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dashboard');
+
+  await expect(page.getByRole('heading', { name: "Today's Dashboard" })).toBeVisible();
+  await expect(page.locator('.dashboard-grid .metric-card')).toHaveCount(4);
+
+  const metricsLayout = await page.locator('.dashboard-grid .metric-card').evaluateAll((cards) => {
+    const rects = cards.map((card) => card.getBoundingClientRect());
+    const rowTops = [...new Set(rects.map((rect) => Math.round(rect.top)))].sort((a, b) => a - b);
+    const rows = rowTops.map((rowTop) => rects.filter((rect) => Math.abs(rect.top - rowTop) <= 2));
+    const firstValue = cards[0]?.querySelector('strong');
+    const firstLabel = cards[0]?.querySelector('div > span');
+
+    return {
+      maxHeight: Math.max(...rects.map((rect) => rect.height)),
+      rowCount: rows.length,
+      rowSizes: rows.map((row) => row.length),
+      labelFontSize:
+        firstLabel instanceof HTMLElement
+          ? parseFloat(window.getComputedStyle(firstLabel).fontSize)
+          : 0,
+      valueFontSize:
+        firstValue instanceof HTMLElement
+          ? parseFloat(window.getComputedStyle(firstValue).fontSize)
+          : 0,
+    };
+  });
+
+  expect(metricsLayout.rowCount).toBe(2);
+  expect(metricsLayout.rowSizes).toEqual([2, 2]);
+  expect(metricsLayout.maxHeight).toBeLessThanOrEqual(96);
+  expect(metricsLayout.labelFontSize).toBeLessThanOrEqual(11);
+  expect(metricsLayout.valueFontSize).toBeLessThanOrEqual(17);
+});
+
 test('cashier can search, add an item, and open payment shell', async ({ page }) => {
   await mockApi(page);
   await page.goto('/pos');
 
-  await expect(page.getByAltText('StylePOS')).toBeVisible();
+  await expect(page.getByAltText('KEEN HR and POS')).toBeVisible();
   await page.getByRole('textbox', { name: /search product/i }).fill('oxford');
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await page.getByRole('button', { name: /Pay KSh 3,248/i }).click();
