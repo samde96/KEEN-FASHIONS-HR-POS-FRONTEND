@@ -18412,7 +18412,7 @@ function HelpPage() {
             </div>
             <div>
               <dt>Copyright</dt>
-              <dd>Copyright {copyrightYear} CRENVIXMORAVA SYSTEMS. All rights reserved.</dd>
+              <dd>Copyright @{copyrightYear} CRENVIXMORAVA SYSTEMS. All rights reserved.</dd>
             </div>
           </dl>
         </section>
@@ -18448,7 +18448,7 @@ function HelpPage() {
         <div>
           <strong>KEEN HR, Fashion Inventory & POS</strong>
           <span>
-            Version {appVersion} | Copyright {copyrightYear} CRENVIXMORAVA SYSTEMS. All rights
+            Version {appVersion} | Copyright @{copyrightYear} CRENVIXMORAVA SYSTEMS. All rights
             reserved.
           </span>
         </div>
