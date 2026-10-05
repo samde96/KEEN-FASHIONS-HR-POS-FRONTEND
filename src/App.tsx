@@ -40,6 +40,10 @@ import * as XLSX from 'xlsx';
 import { appVersion } from './appVersion';
 import {
   addStock,
+  createAccountingAccount,
+  createAccountingJournal,
+  createAccountingPeriod,
+  createAccountingTaxRule,
   createStockAdjustment,
   createBranch,
   createExpense,
@@ -61,6 +65,7 @@ import {
   createSupplier,
   createTransfer,
   createUser,
+  deactivateAccountingAccount,
   deactivateBranch,
   deactivateProduct,
   deactivateProductCategory,
@@ -68,8 +73,23 @@ import {
   deleteRole,
   disableUser,
   downloadHrDocument,
+  getAccountingAccounts,
+  getAccountingBalanceSheet,
+  getAccountingCashFlow,
+  getAccountingJournals,
+  getAccountingLedger,
+  getAccountingPeriods,
+  getAccountingProfitAndLoss,
+  getAccountingSummary,
+  getAccountingTaxRules,
+  getAccountingTrialBalance,
+  getAuditEvents,
   getBranches,
+  getCommercialSummary,
   getCurrentUser,
+  getCrmSummary,
+  getCustomersSummary,
+  getEtimsSummary,
   getExpenses,
   getHrAttendance,
   getHrDepartments,
@@ -85,6 +105,9 @@ import {
   getPermissions,
   getProductCategories,
   getProducts,
+  getProcurementSummary,
+  getNotifications,
+  getNotificationsSummary,
   getRoles,
   getSales,
   getStockAdjustments,
@@ -96,8 +119,13 @@ import {
   login,
   logout as logoutSession,
   markExpensePaid,
+  postAccountingJournal,
   recalculateHrPayrollRun,
   syncHrEmployeesFromUsers,
+  updateAccountingAccount,
+  updateAccountingJournal,
+  updateAccountingPeriod,
+  updateAccountingTaxRule,
   updateBranch,
   updateHrAttendance,
   updateHrDepartment,
@@ -116,6 +144,7 @@ import {
   updateSupplier,
   updateUser,
   uploadHrDocument,
+  voidAccountingJournal,
   voidExpense,
 } from './services/api';
 import { askAiAssistant } from './services/aiAssistant';
@@ -123,10 +152,24 @@ import bannerUrl from './assets/fashion-pos-banner.png';
 import keenLogoUrl from './assets/keen-logo.png';
 import keenLogoWhiteUrl from './assets/keen-logo-white.png';
 import type {
+  AccountingAccount,
+  AccountingAccountRequest,
+  AccountingAccountType,
+  AccountingJournal,
+  AccountingJournalLineRequest,
+  AccountingJournalRequest,
+  AccountingJournalStatus,
+  AccountingPeriod,
+  AccountingPeriodRequest,
+  AccountingPeriodStatus,
+  AccountingStatementRow,
+  AccountingTaxRule,
+  AccountingTaxRuleRequest,
   AttendancePage,
   AttendanceRecord,
   AttendanceRequest,
   AttendanceStatus,
+  AuditEvent,
   ApiSource,
   Branch,
   BranchRequest,
@@ -157,6 +200,8 @@ import type {
   LeaveRequestStatus,
   LeaveType,
   LeaveTypeRequest,
+  ModuleSummary,
+  ModuleWorkItem,
   Organization,
   Permission,
   PermissionRequest,
@@ -172,6 +217,7 @@ import type {
   PayrollRunRequest,
   PayrollRunStatus,
   PayrollSalesBonusRuleRequest,
+  NotificationItem,
   SalaryPaymentMethod,
   Product,
   ProductCategory,
@@ -209,7 +255,12 @@ const queryClientOptions = {
 
 type AppPermission =
   | 'admin:manage'
+  | 'accounting:manage'
+  | 'accounting:view'
   | 'audit:view'
+  | 'commercial:manage'
+  | 'crm:manage'
+  | 'etims:manage'
   | 'hr:attendance:correct'
   | 'hr:attendance:manage'
   | 'hr:attendance:view'
@@ -231,8 +282,10 @@ type AppPermission =
   | 'hr:settings:manage'
   | 'inventory:adjust'
   | 'inventory:receive'
+  | 'notifications:view'
   | 'pos:sell'
   | 'pos:supervise'
+  | 'procurement:manage'
   | 'profit:view'
   | 'reports:view'
   | 'sales:view'
@@ -266,6 +319,24 @@ const navItems: NavItem[] = [
     anyPermissions: ['admin:manage'],
   },
   { to: '/suppliers', label: 'Suppliers', icon: 'bi-truck', anyPermissions: ['admin:manage'] },
+  {
+    to: '/customers',
+    label: 'Customers',
+    icon: 'bi-person-lines-fill',
+    anyPermissions: ['admin:manage', 'commercial:manage', 'crm:manage', 'sales:view'],
+  },
+  {
+    to: '/procurement',
+    label: 'Procurement',
+    icon: 'bi-clipboard-check',
+    anyPermissions: ['admin:manage', 'procurement:manage', 'reports:view'],
+  },
+  {
+    to: '/crm',
+    label: 'CRM',
+    icon: 'bi-kanban',
+    anyPermissions: ['admin:manage', 'crm:manage', 'sales:view', 'reports:view'],
+  },
   {
     to: '/inventory',
     label: 'Inventory',
@@ -316,6 +387,12 @@ const navItems: NavItem[] = [
     anyPermissions: ['admin:manage', 'sales:view'],
   },
   {
+    to: '/commercial',
+    label: 'Quotations & Invoices',
+    icon: 'bi-receipt-cutoff',
+    anyPermissions: ['admin:manage', 'commercial:manage', 'sales:view', 'reports:view'],
+  },
+  {
     to: '/expenses',
     label: 'Expenses',
     icon: 'bi-wallet2',
@@ -332,6 +409,30 @@ const navItems: NavItem[] = [
     label: 'Reports',
     icon: 'bi-file-earmark-text',
     adminOnly: true,
+  },
+  {
+    to: '/accounting',
+    label: 'Accounting',
+    icon: 'bi-bank',
+    anyPermissions: ['admin:manage', 'accounting:view', 'accounting:manage', 'reports:view'],
+  },
+  {
+    to: '/etims',
+    label: 'eTIMS',
+    icon: 'bi-shield-check',
+    anyPermissions: ['admin:manage', 'etims:manage', 'reports:view'],
+  },
+  {
+    to: '/notifications',
+    label: 'Notifications',
+    icon: 'bi-bell',
+    anyPermissions: ['admin:manage', 'notifications:view'],
+  },
+  {
+    to: '/audit',
+    label: 'Audit Logs',
+    icon: 'bi-journal-text',
+    anyPermissions: ['admin:manage', 'audit:view'],
   },
   { to: '/hr', label: 'HR', icon: 'bi-people-fill', adminOnly: true },
   { to: '/settings', label: 'Settings', icon: 'bi-gear', anyPermissions: ['admin:manage'] },
@@ -895,7 +996,32 @@ function AppShell() {
             <Route path="/users" element={<UsersPage branches={branches} />} />
             <Route path="/product-catalog" element={<ProductsPage organization={organization} />} />
             <Route path="/products" element={<Navigate to="/product-catalog" replace />} />
-            <Route path="/suppliers" element={<SuppliersPage />} />
+            <Route path="/suppliers" element={<SuppliersPage organization={organization} />} />
+            <Route
+              path="/customers"
+              element={
+                <ErpModulePage
+                  icon="bi-person-lines-fill"
+                  organization={organization}
+                  queryFn={getCustomersSummary}
+                  queryKey="customers-summary"
+                />
+              }
+            />
+            <Route
+              path="/procurement"
+              element={<ProcurementPage branches={branches} organization={organization} />}
+            />
+            <Route
+              path="/crm"
+              element={
+                <CrmPage
+                  branches={branches}
+                  currentUser={currentUser}
+                  organization={organization}
+                />
+              }
+            />
             <Route
               path="/inventory"
               element={<Inventory currentUser={currentUser} organization={organization} />}
@@ -912,6 +1038,10 @@ function AppShell() {
             <Route
               path="/expenses"
               element={<ExpensesPage branches={branches} organization={organization} />}
+            />
+            <Route
+              path="/commercial"
+              element={<CommercialPage organization={organization} />}
             />
             <Route
               path="/shifts"
@@ -934,6 +1064,32 @@ function AppShell() {
                 />
               }
             />
+            <Route
+              path="/accounting"
+              element={
+                <AccountingPage
+                  branches={branches}
+                  currentUser={currentUser}
+                  organization={organization}
+                />
+              }
+            />
+            <Route
+              path="/etims"
+              element={
+                <ErpModulePage
+                  icon="bi-shield-check"
+                  organization={organization}
+                  queryFn={getEtimsSummary}
+                  queryKey="etims-summary"
+                />
+              }
+            />
+            <Route
+              path="/notifications"
+              element={<NotificationsPage organization={organization} />}
+            />
+            <Route path="/audit" element={<AuditLogPage />} />
             <Route
               path="/hr"
               element={<HrDashboardPage branches={branches} currentUser={currentUser} />}
@@ -1315,24 +1471,16 @@ function LoginPage() {
 function Sidebar({ currentUser }: { currentUser: CurrentUser }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
-  const inHrModule = location.pathname === '/hr' || location.pathname.startsWith('/hr/');
-  const mainNavItems = navItems.filter((item) => !['/hr', '/settings', '/help'].includes(item.to));
-  const activeNavItems = (inHrModule ? hrNavItems : mainNavItems).filter((item) =>
+  const activeNavItems = unifiedSidebarItems().filter((item) =>
     canAccessNavItem(currentUser, item),
   );
-  const bottomNavItems = inHrModule
-    ? []
-    : ['/settings', '/help', '/hr']
-        .map((path) => navItems.find((item) => item.to === path) ?? null)
-        .filter((item): item is NavItem => item != null && canAccessNavItem(currentUser, item));
-  const sidebarLabel = inHrModule ? 'HR navigation' : 'Primary navigation';
 
   useEffect(() => {
     setIsMenuOpen(false);
   }, [location.pathname]);
 
   return (
-    <aside className={`sidebar ${isMenuOpen ? 'menu-open' : ''}`} aria-label={sidebarLabel}>
+    <aside className={`sidebar ${isMenuOpen ? 'menu-open' : ''}`} aria-label="Primary navigation">
       <div className="sidebar-header">
         <Brand variant="sidebar" />
         <button
@@ -1361,40 +1509,23 @@ function Sidebar({ currentUser }: { currentUser: CurrentUser }) {
         ))}
       </nav>
 
-      {inHrModule ? (
-        <div className="sidebar-module-switch">
-          <NavLink
-            className="secondary-action compact-action sidebar-module-switch-button"
-            to="/dashboard"
-          >
-            <i className="bi bi-arrow-left-circle" aria-hidden="true" />
-            Main System
-          </NavLink>
-        </div>
-      ) : null}
-
-      {bottomNavItems.length > 0 ? (
-        <nav className="sidebar-bottom-nav" aria-label="Pinned navigation">
-          {bottomNavItems.map((item) => (
-            <NavLink
-              className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
-              key={item.to}
-              onClick={() => setIsMenuOpen(false)}
-              to={item.to}
-            >
-              <i className={`bi ${item.icon}`} aria-hidden="true" />
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      ) : null}
-
       <div className="sidebar-footer">
         <i className="bi bi-layers" aria-hidden="true" />
         <span>Copyright @CRENVIX MORAVA SYSTEMS</span>
       </div>
     </aside>
   );
+}
+
+function unifiedSidebarItems() {
+  const hrChildItems = hrNavItems
+    .filter((item) => item.to !== '/hr')
+    .map((item) => ({
+      ...item,
+      label: item.label.startsWith('HR') ? item.label : `HR ${item.label}`,
+    }));
+
+  return navItems.flatMap((item) => (item.to === '/hr' ? [item, ...hrChildItems] : [item]));
 }
 
 function Brand({ variant = 'default' }: { variant?: 'default' | 'sidebar' }) {
@@ -2991,6 +3122,7620 @@ function SalesPage({
   );
 }
 
+function ErpModulePage({
+  icon,
+  organization,
+  queryFn,
+  queryKey,
+}: {
+  icon: string;
+  organization: Organization;
+  queryFn: () => Promise<ModuleSummary>;
+  queryKey: string;
+}) {
+  const summaryQuery = useQuery({ queryKey: [queryKey], queryFn });
+  const title = summaryQuery.data?.title ?? moduleFallbackTitle(queryKey);
+  const description = summaryQuery.data?.description ?? 'Loading module snapshot...';
+
+  return (
+    <section className="table-workspace erp-module-page">
+      <PageHeader title={title} subtitle={description} />
+      <ErpModuleSummaryContent
+        icon={icon}
+        isError={summaryQuery.isError}
+        isLoading={summaryQuery.isPending}
+        organization={organization}
+        summary={summaryQuery.data}
+      />
+    </section>
+  );
+}
+
+type AccountingTab = 'journals' | 'ledger' | 'reports' | 'accounts' | 'periods' | 'tax';
+
+type AccountingJournalLineFormState = Omit<
+  AccountingJournalLineRequest,
+  'debitAmount' | 'creditAmount'
+> & {
+  debitAmount: string;
+  creditAmount: string;
+};
+
+type AccountingJournalFormState = Omit<AccountingJournalRequest, 'lines'> & {
+  lines: AccountingJournalLineFormState[];
+};
+
+type AccountingLedgerFilters = {
+  accountId: string;
+  branchId: string;
+  from: string;
+  to: string;
+};
+
+type AccountingReportFilters = {
+  branchId: string;
+  from: string;
+  to: string;
+  asOf: string;
+};
+
+function AccountingPage({
+  branches,
+  currentUser,
+  organization,
+}: {
+  branches: Branch[];
+  currentUser: CurrentUser;
+  organization: Organization;
+}) {
+  const queryClient = useQueryClient();
+  const canManageAccounting = hasAnyPermission(currentUser, ['admin:manage', 'accounting:manage']);
+  const branchOptions = branches
+    .filter(
+      (branch) =>
+        branch.status === 'ACTIVE' &&
+        (currentUser.branchIds.length === 0 || currentUser.branchIds.includes(branch.id)),
+    )
+    .sort((first, second) => first.name.localeCompare(second.name));
+  const defaultBranchId = branchOptions[0]?.id ?? '';
+  const [activeTab, setActiveTab] = useState<AccountingTab>('journals');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [editingPeriodId, setEditingPeriodId] = useState<string | null>(null);
+  const [editingTaxRuleId, setEditingTaxRuleId] = useState<string | null>(null);
+  const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
+  const [accountForm, setAccountForm] = useState<AccountingAccountRequest>(() =>
+    defaultAccountingAccountForm(),
+  );
+  const [periodForm, setPeriodForm] = useState<AccountingPeriodRequest>(() =>
+    defaultAccountingPeriodForm(),
+  );
+  const [taxRuleForm, setTaxRuleForm] = useState<AccountingTaxRuleRequest>(() =>
+    defaultAccountingTaxRuleForm(),
+  );
+  const [journalForm, setJournalForm] = useState<AccountingJournalFormState>(() =>
+    defaultAccountingJournalForm(defaultBranchId),
+  );
+  const [ledgerFilters, setLedgerFilters] = useState<AccountingLedgerFilters>(() =>
+    defaultAccountingLedgerFilters(defaultBranchId),
+  );
+  const [reportFilters, setReportFilters] = useState<AccountingReportFilters>(() =>
+    defaultAccountingReportFilters(defaultBranchId),
+  );
+
+  const summaryQuery = useQuery({
+    queryKey: ['accounting-summary'],
+    queryFn: getAccountingSummary,
+  });
+  const accountsQuery = useQuery({
+    queryKey: ['accounting', 'accounts'],
+    queryFn: getAccountingAccounts,
+  });
+  const periodsQuery = useQuery({
+    queryKey: ['accounting', 'periods'],
+    queryFn: getAccountingPeriods,
+  });
+  const taxRulesQuery = useQuery({
+    queryKey: ['accounting', 'tax-rules'],
+    queryFn: getAccountingTaxRules,
+  });
+  const journalsQuery = useQuery({
+    queryKey: ['accounting', 'journals'],
+    queryFn: getAccountingJournals,
+  });
+  const ledgerQuery = useQuery({
+    queryKey: ['accounting', 'ledger', ledgerFilters],
+    queryFn: () => getAccountingLedger(normalizeAccountingLedgerFilters(ledgerFilters)),
+  });
+  const trialBalanceQuery = useQuery({
+    queryKey: ['accounting', 'reports', 'trial-balance', reportFilters],
+    queryFn: () => getAccountingTrialBalance(normalizeAccountingReportFilters(reportFilters)),
+  });
+  const profitAndLossQuery = useQuery({
+    queryKey: ['accounting', 'reports', 'profit-and-loss', reportFilters],
+    queryFn: () => getAccountingProfitAndLoss(normalizeAccountingReportFilters(reportFilters)),
+  });
+  const balanceSheetQuery = useQuery({
+    queryKey: ['accounting', 'reports', 'balance-sheet', reportFilters.branchId, reportFilters.asOf],
+    queryFn: () =>
+      getAccountingBalanceSheet({
+        branchId: reportFilters.branchId || undefined,
+        asOf: reportFilters.asOf || undefined,
+      }),
+  });
+  const cashFlowQuery = useQuery({
+    queryKey: ['accounting', 'reports', 'cash-flow', reportFilters],
+    queryFn: () => getAccountingCashFlow(normalizeAccountingReportFilters(reportFilters)),
+  });
+
+  const accounts = accountsQuery.data ?? [];
+  const periods = periodsQuery.data ?? [];
+  const taxRules = taxRulesQuery.data ?? [];
+  const journals = journalsQuery.data ?? [];
+  const openPeriod = periods.find((period) => period.status === 'OPEN') ?? periods[0];
+  const recentWorkItems = summaryQuery.data?.workItems ?? [];
+  const journalTotals = accountingJournalFormTotals(journalForm);
+  const isAccountingLoading =
+    accountsQuery.isPending ||
+    periodsQuery.isPending ||
+    taxRulesQuery.isPending ||
+    journalsQuery.isPending;
+
+  useEffect(() => {
+    if (!journalForm.financialPeriodId && openPeriod?.id) {
+      setJournalForm((current) => ({ ...current, financialPeriodId: openPeriod.id }));
+    }
+  }, [journalForm.financialPeriodId, openPeriod?.id]);
+
+  const saveAccountMutation = useMutation({
+    mutationFn: (payload: AccountingAccountRequest) =>
+      editingAccountId
+        ? updateAccountingAccount(editingAccountId, payload)
+        : createAccountingAccount(payload),
+    onSuccess: async (account) => {
+      await invalidateAccountingQueries(queryClient);
+      setAccountForm(defaultAccountingAccountForm());
+      setEditingAccountId(null);
+      setError('');
+      setMessage(`Account ${account.accountCode} saved.`);
+    },
+  });
+
+  const deactivateAccountMutation = useMutation({
+    mutationFn: deactivateAccountingAccount,
+    onSuccess: async (account) => {
+      await invalidateAccountingQueries(queryClient);
+      setError('');
+      setMessage(`Account ${account.accountCode} deactivated.`);
+    },
+  });
+
+  const savePeriodMutation = useMutation({
+    mutationFn: (payload: AccountingPeriodRequest) =>
+      editingPeriodId ? updateAccountingPeriod(editingPeriodId, payload) : createAccountingPeriod(payload),
+    onSuccess: async (period) => {
+      await invalidateAccountingQueries(queryClient);
+      setPeriodForm(defaultAccountingPeriodForm());
+      setEditingPeriodId(null);
+      setError('');
+      setMessage(`Period ${period.name} saved.`);
+    },
+  });
+
+  const saveTaxRuleMutation = useMutation({
+    mutationFn: (payload: AccountingTaxRuleRequest) =>
+      editingTaxRuleId
+        ? updateAccountingTaxRule(editingTaxRuleId, payload)
+        : createAccountingTaxRule(payload),
+    onSuccess: async (rule) => {
+      await invalidateAccountingQueries(queryClient);
+      setTaxRuleForm(defaultAccountingTaxRuleForm());
+      setEditingTaxRuleId(null);
+      setError('');
+      setMessage(`Tax rule ${rule.taxCode} saved.`);
+    },
+  });
+
+  const saveJournalMutation = useMutation({
+    mutationFn: (payload: AccountingJournalRequest) =>
+      editingJournalId
+        ? updateAccountingJournal(editingJournalId, payload)
+        : createAccountingJournal(payload),
+    onSuccess: async (journal) => {
+      await invalidateAccountingQueries(queryClient);
+      setJournalForm(defaultAccountingJournalForm(defaultBranchId, openPeriod?.id));
+      setEditingJournalId(null);
+      setError('');
+      setMessage(`Journal ${journal.journalNumber} saved.`);
+    },
+  });
+
+  const postJournalMutation = useMutation({
+    mutationFn: postAccountingJournal,
+    onSuccess: async (journal) => {
+      await invalidateAccountingQueries(queryClient);
+      setError('');
+      setMessage(`Journal ${journal.journalNumber} posted.`);
+    },
+  });
+
+  const voidJournalMutation = useMutation({
+    mutationFn: voidAccountingJournal,
+    onSuccess: async (journal) => {
+      await invalidateAccountingQueries(queryClient);
+      setError('');
+      setMessage(`Journal ${journal.journalNumber} voided.`);
+    },
+  });
+
+  async function handleAccountSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await saveAccountMutation.mutateAsync({
+        ...accountForm,
+        accountCode: accountForm.accountCode.trim(),
+        accountName: accountForm.accountName.trim(),
+      });
+    } catch (caughtError) {
+      setMessage('');
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save account');
+    }
+  }
+
+  async function handlePeriodSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await savePeriodMutation.mutateAsync({
+        ...periodForm,
+        name: periodForm.name.trim(),
+      });
+    } catch (caughtError) {
+      setMessage('');
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save period');
+    }
+  }
+
+  async function handleTaxRuleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await saveTaxRuleMutation.mutateAsync({
+        ...taxRuleForm,
+        taxCode: taxRuleForm.taxCode.trim(),
+        name: taxRuleForm.name.trim(),
+        taxCategory: taxRuleForm.taxCategory.trim(),
+        rate: Math.max(0, toNumber(taxRuleForm.rate)),
+      });
+    } catch (caughtError) {
+      setMessage('');
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save tax rule');
+    }
+  }
+
+  async function handleJournalSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationError = validateAccountingJournalForm(journalForm);
+    if (validationError) {
+      setMessage('');
+      setError(validationError);
+      return;
+    }
+
+    try {
+      await saveJournalMutation.mutateAsync(accountingJournalFormToRequest(journalForm));
+    } catch (caughtError) {
+      setMessage('');
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save journal');
+    }
+  }
+
+  function editAccount(account: AccountingAccount) {
+    setAccountForm({
+      parentAccountId: account.parentAccountId ?? '',
+      accountCode: account.accountCode,
+      accountName: account.accountName,
+      accountType: account.accountType,
+      active: account.active,
+    });
+    setEditingAccountId(account.id);
+    setActiveTab('accounts');
+    setError('');
+    setMessage(`Editing account ${account.accountCode}.`);
+  }
+
+  function editPeriod(period: AccountingPeriod) {
+    setPeriodForm({
+      name: period.name,
+      periodStart: period.periodStart,
+      periodEnd: period.periodEnd,
+      status: period.status,
+    });
+    setEditingPeriodId(period.id);
+    setActiveTab('periods');
+    setError('');
+    setMessage(`Editing period ${period.name}.`);
+  }
+
+  function editTaxRule(rule: AccountingTaxRule) {
+    setTaxRuleForm({
+      taxCode: rule.taxCode,
+      name: rule.name,
+      taxCategory: rule.taxCategory,
+      rate: rule.rate,
+      inclusive: rule.inclusive,
+      effectiveFrom: rule.effectiveFrom,
+      effectiveTo: rule.effectiveTo ?? '',
+      active: rule.active,
+    });
+    setEditingTaxRuleId(rule.id);
+    setActiveTab('tax');
+    setError('');
+    setMessage(`Editing tax rule ${rule.taxCode}.`);
+  }
+
+  function editJournal(journal: AccountingJournal) {
+    setJournalForm(accountingJournalToForm(journal));
+    setEditingJournalId(journal.id);
+    setActiveTab('journals');
+    setError('');
+    setMessage(`Editing journal ${journal.journalNumber}.`);
+  }
+
+  async function handlePostJournal(journalId: string) {
+    try {
+      await postJournalMutation.mutateAsync(journalId);
+    } catch (caughtError) {
+      setMessage('');
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to post journal');
+    }
+  }
+
+  async function handleVoidJournal(journalId: string) {
+    try {
+      await voidJournalMutation.mutateAsync(journalId);
+    } catch (caughtError) {
+      setMessage('');
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to void journal');
+    }
+  }
+
+  async function handleDeactivateAccount(accountId: string) {
+    try {
+      await deactivateAccountMutation.mutateAsync(accountId);
+    } catch (caughtError) {
+      setMessage('');
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to deactivate account');
+    }
+  }
+
+  function updateJournalLine<K extends keyof AccountingJournalLineFormState>(
+    lineIndex: number,
+    field: K,
+    value: AccountingJournalLineFormState[K],
+  ) {
+    setJournalForm((current) => ({
+      ...current,
+      lines: current.lines.map((line, index) =>
+        index === lineIndex ? { ...line, [field]: value } : line,
+      ),
+    }));
+    setError('');
+  }
+
+  function addJournalLine() {
+    setJournalForm((current) => ({
+      ...current,
+      lines: [...current.lines, defaultAccountingJournalLineForm()],
+    }));
+  }
+
+  function removeJournalLine(lineIndex: number) {
+    setJournalForm((current) => ({
+      ...current,
+      lines:
+        current.lines.length <= 2
+          ? current.lines.map((line, index) =>
+              index === lineIndex ? defaultAccountingJournalLineForm() : line,
+            )
+          : current.lines.filter((_, index) => index !== lineIndex),
+    }));
+  }
+
+  const tabs: { key: AccountingTab; label: string; icon: string }[] = [
+    { key: 'journals', label: 'Journals', icon: 'bi-journal-plus' },
+    { key: 'ledger', label: 'Ledger', icon: 'bi-list-columns' },
+    { key: 'reports', label: 'Reports', icon: 'bi-graph-up' },
+    { key: 'accounts', label: 'Accounts', icon: 'bi-diagram-3' },
+    { key: 'periods', label: 'Periods', icon: 'bi-calendar-range' },
+    { key: 'tax', label: 'Tax Rules', icon: 'bi-percent' },
+  ];
+
+  return (
+    <section className="table-workspace accounting-workspace">
+      <PageHeader
+        title={summaryQuery.data?.title ?? 'Accounting'}
+        subtitle={
+          summaryQuery.data?.description ??
+          'Chart of accounts, journals, ledger activity, tax rules, periods, and financial reports.'
+        }
+        action={
+          canManageAccounting ? (
+            <button
+              className="primary-action compact-action"
+              type="button"
+              onClick={() => {
+                setActiveTab('journals');
+                setEditingJournalId(null);
+                setJournalForm(defaultAccountingJournalForm(defaultBranchId, openPeriod?.id));
+                setMessage('New journal draft started.');
+                setError('');
+              }}
+            >
+              <i className="bi bi-journal-plus" aria-hidden="true" />
+              New Journal
+            </button>
+          ) : undefined
+        }
+      />
+
+      <FormMessages error={error} message={message} />
+
+      <div className="branch-summary-row commercial-summary-row">
+        {(summaryQuery.data?.metrics ?? []).map((metric, index) => (
+          <SummaryMetric
+            icon={moduleMetricIcon(index, 'bi-bank')}
+            key={metric.label}
+            label={metric.label}
+            tone={moduleMetricTone(index)}
+            value={formatModuleMetricValue(metric, organization.currencyCode)}
+          />
+        ))}
+        {summaryQuery.isPending ? <LoadingPanel label="Loading accounting snapshot..." /> : null}
+      </div>
+
+      <div className="accounting-tabs" role="tablist" aria-label="Accounting sections">
+        {tabs.map((tab) => (
+          <button
+            className={activeTab === tab.key ? 'active' : ''}
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.key}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            <i className={`bi ${tab.icon}`} aria-hidden="true" />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'journals' ? (
+        <div className="accounting-two-column">
+          <section className="panel-card accounting-form-panel">
+            <PanelHeader icon="bi-journal-plus" title="Journal Builder" tone="blue" />
+            {!canManageAccounting ? (
+              <EmptyState
+                icon="bi-lock"
+                title="Read-only accounting"
+                detail="Your account can view accounting records but cannot post changes."
+              />
+            ) : (
+              <form className="record-form accounting-journal-form" onSubmit={handleJournalSubmit}>
+                <label className="field-stack">
+                  <span>Branch</span>
+                  <select
+                    value={journalForm.branchId}
+                    onChange={(event) =>
+                      setJournalForm((current) => ({ ...current, branchId: event.target.value }))
+                    }
+                  >
+                    <option value="">Organization</option>
+                    {branchOptions.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-stack">
+                  <span>Period</span>
+                  <select
+                    value={journalForm.financialPeriodId}
+                    onChange={(event) =>
+                      setJournalForm((current) => ({
+                        ...current,
+                        financialPeriodId: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Auto-match by date</option>
+                    {periods.map((period) => (
+                      <option key={period.id} value={period.id}>
+                        {period.name} ({labelizeEnum(period.status)})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-stack">
+                  <span>Journal No.</span>
+                  <input
+                    maxLength={40}
+                    placeholder="Auto"
+                    value={journalForm.journalNumber}
+                    onChange={(event) =>
+                      setJournalForm((current) => ({
+                        ...current,
+                        journalNumber: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Date</span>
+                  <input
+                    required
+                    type="date"
+                    value={journalForm.entryDate}
+                    onChange={(event) =>
+                      setJournalForm((current) => ({ ...current, entryDate: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Status</span>
+                  <select
+                    value={journalForm.status}
+                    onChange={(event) =>
+                      setJournalForm((current) => ({
+                        ...current,
+                        status: event.target.value as AccountingJournalRequest['status'],
+                      }))
+                    }
+                  >
+                    <option value="DRAFT">Draft</option>
+                    <option value="POSTED">Post immediately</option>
+                  </select>
+                </label>
+                <label className="field-stack">
+                  <span>Reference</span>
+                  <input
+                    maxLength={120}
+                    value={journalForm.reference}
+                    onChange={(event) =>
+                      setJournalForm((current) => ({ ...current, reference: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Description</span>
+                  <input
+                    required
+                    maxLength={255}
+                    value={journalForm.description}
+                    onChange={(event) =>
+                      setJournalForm((current) => ({
+                        ...current,
+                        description: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Source Module</span>
+                  <input
+                    maxLength={80}
+                    placeholder="Manual, POS, Payroll"
+                    value={journalForm.sourceModule}
+                    onChange={(event) =>
+                      setJournalForm((current) => ({
+                        ...current,
+                        sourceModule: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+
+                <div className="wide-field accounting-lines-editor">
+                  <div className="commercial-section-heading">
+                    <h3>Debit and Credit Lines</h3>
+                    <button className="text-button" type="button" onClick={addJournalLine}>
+                      <i className="bi bi-plus-lg" aria-hidden="true" />
+                      Add Line
+                    </button>
+                  </div>
+                  <div className="accounting-line-grid">
+                    {journalForm.lines.map((line, index) => (
+                      <div className="accounting-line-row" key={`${index}-${line.accountId}`}>
+                        <label className="field-stack accounting-line-account">
+                          <span>Account</span>
+                          <select
+                            required
+                            value={line.accountId}
+                            onChange={(event) =>
+                              updateJournalLine(index, 'accountId', event.target.value)
+                            }
+                          >
+                            <option value="">Select account</option>
+                            {accounts
+                              .filter((account) => account.active)
+                              .map((account) => (
+                                <option key={account.id} value={account.id}>
+                                  {account.accountCode} - {account.accountName}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                        <label className="field-stack">
+                          <span>Debit</span>
+                          <input
+                            min="0"
+                            step="0.01"
+                            type="number"
+                            value={line.debitAmount}
+                            onChange={(event) =>
+                              updateJournalLine(index, 'debitAmount', event.target.value)
+                            }
+                          />
+                        </label>
+                        <label className="field-stack">
+                          <span>Credit</span>
+                          <input
+                            min="0"
+                            step="0.01"
+                            type="number"
+                            value={line.creditAmount}
+                            onChange={(event) =>
+                              updateJournalLine(index, 'creditAmount', event.target.value)
+                            }
+                          />
+                        </label>
+                        <label className="field-stack accounting-line-description">
+                          <span>Line Memo</span>
+                          <input
+                            maxLength={255}
+                            value={line.description}
+                            onChange={(event) =>
+                              updateJournalLine(index, 'description', event.target.value)
+                            }
+                          />
+                        </label>
+                        <button
+                          className="icon-button compact-icon"
+                          type="button"
+                          aria-label="Remove journal line"
+                          onClick={() => removeJournalLine(index)}
+                        >
+                          <i className="bi bi-trash" aria-hidden="true" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="commercial-total-strip accounting-total-strip wide-field">
+                  <div>
+                    <span>Debit</span>
+                    <strong>{formatMoney(journalTotals.debit, organization.currencyCode)}</strong>
+                  </div>
+                  <div>
+                    <span>Credit</span>
+                    <strong>{formatMoney(journalTotals.credit, organization.currencyCode)}</strong>
+                  </div>
+                  <div>
+                    <span>Difference</span>
+                    <strong>
+                      {formatMoney(
+                        Math.abs(journalTotals.debit - journalTotals.credit),
+                        organization.currencyCode,
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Lines</span>
+                    <strong>{journalForm.lines.length}</strong>
+                  </div>
+                </div>
+
+                <div className="form-actions wide-field">
+                  <button
+                    className="primary-action compact-action"
+                    type="submit"
+                    disabled={saveJournalMutation.isPending || accounts.length === 0}
+                  >
+                    <i className="bi bi-save" aria-hidden="true" />
+                    {saveJournalMutation.isPending ? 'Saving...' : 'Save Journal'}
+                  </button>
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={() => {
+                      setJournalForm(defaultAccountingJournalForm(defaultBranchId, openPeriod?.id));
+                      setEditingJournalId(null);
+                      setError('');
+                      setMessage('Journal form cleared.');
+                    }}
+                  >
+                    <i className="bi bi-x-circle" aria-hidden="true" />
+                    Clear
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
+
+          <section className="panel-card">
+            <PanelHeader icon="bi-journal-text" title="Journal Register" tone="purple" />
+            {journalsQuery.isPending ? (
+              <LoadingPanel label="Loading journals..." />
+            ) : journalsQuery.isError ? (
+              <EmptyState
+                icon="bi-exclamation-circle"
+                title="Journals could not be loaded"
+                detail="Refresh after the API is available."
+              />
+            ) : journals.length === 0 ? (
+              <EmptyState
+                icon="bi-journal-plus"
+                title="No journals"
+                detail="Saved and posted entries will appear here."
+              />
+            ) : (
+              <div className="responsive-table compact-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Journal</th>
+                      <th>Date</th>
+                      <th>Status</th>
+                      <th>Debit</th>
+                      <th>Branch</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {journals.map((journal) => (
+                      <tr key={journal.id}>
+                        <td data-label="Journal">
+                          <span className="table-label">
+                            <i className="bi bi-journal-text" aria-hidden="true" />
+                            <span>
+                              <strong>{journal.journalNumber}</strong>
+                              <small>{journal.description}</small>
+                            </span>
+                          </span>
+                        </td>
+                        <td data-label="Date">{formatDateOnly(journal.entryDate)}</td>
+                        <td data-label="Status">
+                          <StatusPill
+                            status={accountingStatusTone(journal.status)}
+                            label={labelizeEnum(journal.status)}
+                          />
+                        </td>
+                        <td data-label="Debit">
+                          {formatMoney(journal.totalDebit, organization.currencyCode)}
+                        </td>
+                        <td data-label="Branch">{journal.branchName ?? 'Organization'}</td>
+                        <td data-label="Actions">
+                          <span className="table-actions commercial-table-actions">
+                            {canManageAccounting && journal.status === 'DRAFT' ? (
+                              <>
+                                <button
+                                  className="text-button"
+                                  type="button"
+                                  onClick={() => editJournal(journal)}
+                                >
+                                  <i className="bi bi-pencil" aria-hidden="true" />
+                                  Edit
+                                </button>
+                                <button
+                                  className="text-button"
+                                  type="button"
+                                  onClick={() => handlePostJournal(journal.id)}
+                                >
+                                  <i className="bi bi-check2-circle" aria-hidden="true" />
+                                  Post
+                                </button>
+                              </>
+                            ) : null}
+                            {canManageAccounting && journal.status !== 'VOID' ? (
+                              <button
+                                className="text-button danger-text"
+                                type="button"
+                                onClick={() => handleVoidJournal(journal.id)}
+                              >
+                                <i className="bi bi-slash-circle" aria-hidden="true" />
+                                Void
+                              </button>
+                            ) : null}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === 'ledger' ? (
+        <section className="panel-card">
+          <PanelHeader icon="bi-list-columns" title="General Ledger" tone="blue" />
+          <div className="accounting-filter-grid">
+            <label className="field-stack">
+              <span>Account</span>
+              <select
+                value={ledgerFilters.accountId}
+                onChange={(event) =>
+                  setLedgerFilters((current) => ({ ...current, accountId: event.target.value }))
+                }
+              >
+                <option value="">All accounts</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.accountCode} - {account.accountName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-stack">
+              <span>Branch</span>
+              <select
+                value={ledgerFilters.branchId}
+                onChange={(event) =>
+                  setLedgerFilters((current) => ({ ...current, branchId: event.target.value }))
+                }
+              >
+                <option value="">All branches</option>
+                {branchOptions.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-stack">
+              <span>From</span>
+              <input
+                type="date"
+                value={ledgerFilters.from}
+                onChange={(event) =>
+                  setLedgerFilters((current) => ({ ...current, from: event.target.value }))
+                }
+              />
+            </label>
+            <label className="field-stack">
+              <span>To</span>
+              <input
+                type="date"
+                value={ledgerFilters.to}
+                onChange={(event) =>
+                  setLedgerFilters((current) => ({ ...current, to: event.target.value }))
+                }
+              />
+            </label>
+          </div>
+          {ledgerQuery.isPending ? (
+            <LoadingPanel label="Loading ledger..." />
+          ) : ledgerQuery.isError ? (
+            <EmptyState
+              icon="bi-exclamation-circle"
+              title="Ledger could not be loaded"
+              detail="Check the selected filters and refresh."
+            />
+          ) : (ledgerQuery.data ?? []).length === 0 ? (
+            <EmptyState
+              icon="bi-list-columns"
+              title="No ledger entries"
+              detail="Posted journal lines for the selected filters will appear here."
+            />
+          ) : (
+            <div className="responsive-table compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Journal</th>
+                    <th>Account</th>
+                    <th>Debit</th>
+                    <th>Credit</th>
+                    <th>Running</th>
+                    <th>Branch</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(ledgerQuery.data ?? []).map((entry) => (
+                    <tr key={entry.lineId}>
+                      <td data-label="Date">{formatDateOnly(entry.entryDate)}</td>
+                      <td data-label="Journal">
+                        <strong>{entry.journalNumber}</strong>
+                        <small>{entry.journalDescription}</small>
+                      </td>
+                      <td data-label="Account">
+                        {entry.accountCode} - {entry.accountName}
+                      </td>
+                      <td data-label="Debit">
+                        {entry.debitAmount
+                          ? formatMoney(entry.debitAmount, organization.currencyCode)
+                          : '-'}
+                      </td>
+                      <td data-label="Credit">
+                        {entry.creditAmount
+                          ? formatMoney(entry.creditAmount, organization.currencyCode)
+                          : '-'}
+                      </td>
+                      <td data-label="Running">
+                        {formatMoney(entry.runningBalance, organization.currencyCode)}
+                      </td>
+                      <td data-label="Branch">{entry.branchName ?? 'Organization'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {activeTab === 'reports' ? (
+        <div className="accounting-reports-grid">
+          <section className="panel-card accounting-reports-filter-panel">
+            <PanelHeader icon="bi-funnel" title="Report Filters" tone="green" />
+            <div className="accounting-filter-grid">
+              <label className="field-stack">
+                <span>Branch</span>
+                <select
+                  value={reportFilters.branchId}
+                  onChange={(event) =>
+                    setReportFilters((current) => ({ ...current, branchId: event.target.value }))
+                  }
+                >
+                  <option value="">All branches</option>
+                  {branchOptions.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack">
+                <span>From</span>
+                <input
+                  type="date"
+                  value={reportFilters.from}
+                  onChange={(event) =>
+                    setReportFilters((current) => ({ ...current, from: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>To</span>
+                <input
+                  type="date"
+                  value={reportFilters.to}
+                  onChange={(event) =>
+                    setReportFilters((current) => ({ ...current, to: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Balance Sheet As Of</span>
+                <input
+                  type="date"
+                  value={reportFilters.asOf}
+                  onChange={(event) =>
+                    setReportFilters((current) => ({ ...current, asOf: event.target.value }))
+                  }
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="panel-card">
+            <PanelHeader icon="bi-scale" title="Trial Balance" tone="blue" />
+            {trialBalanceQuery.isPending ? (
+              <LoadingPanel label="Loading trial balance..." />
+            ) : trialBalanceQuery.isError ? (
+              <EmptyState
+                icon="bi-exclamation-circle"
+                title="Trial balance could not be loaded"
+                detail="Refresh after ledger entries are available."
+              />
+            ) : (
+              <>
+                <div className="accounting-report-kpis">
+                  <SummaryMetric
+                    icon="bi-arrow-down-circle"
+                    label="Debits"
+                    value={formatMoney(
+                      trialBalanceQuery.data?.totalDebit ?? 0,
+                      organization.currencyCode,
+                    )}
+                    tone="green"
+                  />
+                  <SummaryMetric
+                    icon="bi-arrow-up-circle"
+                    label="Credits"
+                    value={formatMoney(
+                      trialBalanceQuery.data?.totalCredit ?? 0,
+                      organization.currencyCode,
+                    )}
+                    tone="blue"
+                  />
+                  <SummaryMetric
+                    icon="bi-sliders"
+                    label="Difference"
+                    value={formatMoney(
+                      Math.abs(trialBalanceQuery.data?.difference ?? 0),
+                      organization.currencyCode,
+                    )}
+                    tone={(trialBalanceQuery.data?.difference ?? 0) === 0 ? 'purple' : 'orange'}
+                  />
+                </div>
+                <AccountingTrialBalanceTable
+                  currencyCode={organization.currencyCode}
+                  rows={trialBalanceQuery.data?.rows ?? []}
+                />
+              </>
+            )}
+          </section>
+
+          <section className="panel-card">
+            <PanelHeader icon="bi-graph-up-arrow" title="Profit & Loss" tone="purple" />
+            {profitAndLossQuery.isPending ? (
+              <LoadingPanel label="Loading profit and loss..." />
+            ) : profitAndLossQuery.isError ? (
+              <EmptyState
+                icon="bi-exclamation-circle"
+                title="Profit and loss could not be loaded"
+                detail="Refresh after posted revenue and expense journals are available."
+              />
+            ) : (
+              <>
+                <div className="accounting-report-kpis">
+                  <SummaryMetric
+                    icon="bi-cash-stack"
+                    label="Revenue"
+                    value={formatMoney(profitAndLossQuery.data?.revenue ?? 0, organization.currencyCode)}
+                    tone="green"
+                  />
+                  <SummaryMetric
+                    icon="bi-wallet2"
+                    label="Expenses"
+                    value={formatMoney(
+                      (profitAndLossQuery.data?.costOfGoodsSold ?? 0) +
+                        (profitAndLossQuery.data?.expenses ?? 0),
+                      organization.currencyCode,
+                    )}
+                    tone="orange"
+                  />
+                  <SummaryMetric
+                    icon="bi-bank"
+                    label="Net Income"
+                    value={formatMoney(
+                      profitAndLossQuery.data?.netIncome ?? 0,
+                      organization.currencyCode,
+                    )}
+                    tone="blue"
+                  />
+                </div>
+                <AccountingStatementRowsTable
+                  currencyCode={organization.currencyCode}
+                  rows={[
+                    ...(profitAndLossQuery.data?.revenueRows ?? []),
+                    ...(profitAndLossQuery.data?.costOfGoodsSoldRows ?? []),
+                    ...(profitAndLossQuery.data?.expenseRows ?? []),
+                  ]}
+                />
+              </>
+            )}
+          </section>
+
+          <section className="panel-card">
+            <PanelHeader icon="bi-bank" title="Balance Sheet" tone="green" />
+            {balanceSheetQuery.isPending ? (
+              <LoadingPanel label="Loading balance sheet..." />
+            ) : balanceSheetQuery.isError ? (
+              <EmptyState
+                icon="bi-exclamation-circle"
+                title="Balance sheet could not be loaded"
+                detail="Refresh after posted asset, liability, and equity journals are available."
+              />
+            ) : (
+              <>
+                <div className="accounting-report-kpis">
+                  <SummaryMetric
+                    icon="bi-box-seam"
+                    label="Assets"
+                    value={formatMoney(balanceSheetQuery.data?.assets ?? 0, organization.currencyCode)}
+                    tone="green"
+                  />
+                  <SummaryMetric
+                    icon="bi-receipt"
+                    label="Liabilities + Equity"
+                    value={formatMoney(
+                      balanceSheetQuery.data?.totalLiabilitiesAndEquity ?? 0,
+                      organization.currencyCode,
+                    )}
+                    tone="blue"
+                  />
+                  <SummaryMetric
+                    icon="bi-sliders"
+                    label="Difference"
+                    value={formatMoney(
+                      Math.abs(balanceSheetQuery.data?.difference ?? 0),
+                      organization.currencyCode,
+                    )}
+                    tone={(balanceSheetQuery.data?.difference ?? 0) === 0 ? 'purple' : 'orange'}
+                  />
+                </div>
+                <AccountingStatementRowsTable
+                  currencyCode={organization.currencyCode}
+                  rows={[
+                    ...(balanceSheetQuery.data?.assetRows ?? []),
+                    ...(balanceSheetQuery.data?.liabilityRows ?? []),
+                    ...(balanceSheetQuery.data?.equityRows ?? []),
+                    {
+                      accountId: 'retained-earnings',
+                      accountCode: 'RE',
+                      accountName: 'Retained Earnings',
+                      accountType: 'EQUITY',
+                      amount: balanceSheetQuery.data?.retainedEarnings ?? 0,
+                    },
+                  ]}
+                />
+              </>
+            )}
+          </section>
+
+          <section className="panel-card">
+            <PanelHeader icon="bi-water" title="Cash Flow" tone="blue" />
+            {cashFlowQuery.isPending ? (
+              <LoadingPanel label="Loading cash flow..." />
+            ) : cashFlowQuery.isError ? (
+              <EmptyState
+                icon="bi-exclamation-circle"
+                title="Cash flow could not be loaded"
+                detail="Refresh after cash, bank, M-Pesa, or petty cash journals are posted."
+              />
+            ) : (
+              <>
+                <div className="accounting-report-kpis">
+                  <SummaryMetric
+                    icon="bi-box-arrow-in-down"
+                    label="Cash In"
+                    value={formatMoney(cashFlowQuery.data?.cashIn ?? 0, organization.currencyCode)}
+                    tone="green"
+                  />
+                  <SummaryMetric
+                    icon="bi-box-arrow-up"
+                    label="Cash Out"
+                    value={formatMoney(cashFlowQuery.data?.cashOut ?? 0, organization.currencyCode)}
+                    tone="orange"
+                  />
+                  <SummaryMetric
+                    icon="bi-cash"
+                    label="Closing Cash"
+                    value={formatMoney(
+                      cashFlowQuery.data?.closingCash ?? 0,
+                      organization.currencyCode,
+                    )}
+                    tone="blue"
+                  />
+                </div>
+                <div className="responsive-table compact-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Account</th>
+                        <th>Opening</th>
+                        <th>In</th>
+                        <th>Out</th>
+                        <th>Closing</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(cashFlowQuery.data?.rows ?? []).map((row) => (
+                        <tr key={row.accountId}>
+                          <td data-label="Account">
+                            {row.accountCode} - {row.accountName}
+                          </td>
+                          <td data-label="Opening">
+                            {formatMoney(row.openingBalance, organization.currencyCode)}
+                          </td>
+                          <td data-label="In">
+                            {formatMoney(row.cashIn, organization.currencyCode)}
+                          </td>
+                          <td data-label="Out">
+                            {formatMoney(row.cashOut, organization.currencyCode)}
+                          </td>
+                          <td data-label="Closing">
+                            {formatMoney(row.closingBalance, organization.currencyCode)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === 'accounts' ? (
+        <div className="accounting-two-column">
+          <section className="panel-card accounting-form-panel">
+            <PanelHeader icon="bi-diagram-3" title="Chart Account" tone="green" />
+            {!canManageAccounting ? (
+              <EmptyState
+                icon="bi-lock"
+                title="Read-only chart"
+                detail="Accounting management permission is required to change accounts."
+              />
+            ) : (
+              <form className="record-form" onSubmit={handleAccountSubmit}>
+                <label className="field-stack">
+                  <span>Code</span>
+                  <input
+                    required
+                    maxLength={40}
+                    value={accountForm.accountCode}
+                    onChange={(event) =>
+                      setAccountForm((current) => ({
+                        ...current,
+                        accountCode: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Type</span>
+                  <select
+                    value={accountForm.accountType}
+                    onChange={(event) =>
+                      setAccountForm((current) => ({
+                        ...current,
+                        accountType: event.target.value as AccountingAccountType,
+                      }))
+                    }
+                  >
+                    {accountingAccountTypeOptions.map((type) => (
+                      <option key={type} value={type}>
+                        {labelizeEnum(type)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Name</span>
+                  <input
+                    required
+                    maxLength={160}
+                    value={accountForm.accountName}
+                    onChange={(event) =>
+                      setAccountForm((current) => ({
+                        ...current,
+                        accountName: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Parent Account</span>
+                  <select
+                    value={accountForm.parentAccountId}
+                    onChange={(event) =>
+                      setAccountForm((current) => ({
+                        ...current,
+                        parentAccountId: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">No parent</option>
+                    {accounts
+                      .filter((account) => account.id !== editingAccountId)
+                      .map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.accountCode} - {account.accountName}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label className="toggle-row wide-field">
+                  <input
+                    type="checkbox"
+                    checked={accountForm.active}
+                    onChange={(event) =>
+                      setAccountForm((current) => ({ ...current, active: event.target.checked }))
+                    }
+                  />
+                  <span>Active account</span>
+                </label>
+                <div className="form-actions wide-field">
+                  <button
+                    className="primary-action compact-action"
+                    type="submit"
+                    disabled={saveAccountMutation.isPending}
+                  >
+                    <i className="bi bi-save" aria-hidden="true" />
+                    {saveAccountMutation.isPending ? 'Saving...' : 'Save Account'}
+                  </button>
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={() => {
+                      setAccountForm(defaultAccountingAccountForm());
+                      setEditingAccountId(null);
+                    }}
+                  >
+                    <i className="bi bi-x-circle" aria-hidden="true" />
+                    Clear
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
+
+          <section className="panel-card">
+            <PanelHeader icon="bi-list-check" title="Chart of Accounts" tone="blue" />
+            {accountsQuery.isPending ? (
+              <LoadingPanel label="Loading accounts..." />
+            ) : accounts.length === 0 ? (
+              <EmptyState
+                icon="bi-diagram-3"
+                title="No accounts"
+                detail="Create chart accounts before posting journals."
+              />
+            ) : (
+              <div className="responsive-table compact-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {accounts.map((account) => (
+                      <tr key={account.id}>
+                        <td data-label="Code">{account.accountCode}</td>
+                        <td data-label="Name">
+                          <strong>{account.accountName}</strong>
+                          <small>
+                            {account.parentAccountCode
+                              ? `Parent ${account.parentAccountCode}`
+                              : 'Top level'}
+                          </small>
+                        </td>
+                        <td data-label="Type">{labelizeEnum(account.accountType)}</td>
+                        <td data-label="Status">
+                          <StatusPill
+                            status={account.active ? 'posted' : 'pending'}
+                            label={account.active ? 'Active' : 'Inactive'}
+                          />
+                        </td>
+                        <td data-label="Actions">
+                          {canManageAccounting ? (
+                            <span className="table-actions commercial-table-actions">
+                              <button
+                                className="text-button"
+                                type="button"
+                                onClick={() => editAccount(account)}
+                              >
+                                <i className="bi bi-pencil" aria-hidden="true" />
+                                Edit
+                              </button>
+                              {account.active ? (
+                                <button
+                                  className="text-button danger-text"
+                                  type="button"
+                                  onClick={() => handleDeactivateAccount(account.id)}
+                                >
+                                  <i className="bi bi-pause-circle" aria-hidden="true" />
+                                  Deactivate
+                                </button>
+                              ) : null}
+                            </span>
+                          ) : (
+                            'Read only'
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === 'periods' ? (
+        <div className="accounting-two-column">
+          <section className="panel-card accounting-form-panel">
+            <PanelHeader icon="bi-calendar-range" title="Financial Period" tone="purple" />
+            {!canManageAccounting ? (
+              <EmptyState
+                icon="bi-lock"
+                title="Read-only periods"
+                detail="Accounting management permission is required to change periods."
+              />
+            ) : (
+              <form className="record-form" onSubmit={handlePeriodSubmit}>
+                <label className="field-stack wide-field">
+                  <span>Name</span>
+                  <input
+                    required
+                    maxLength={120}
+                    value={periodForm.name}
+                    onChange={(event) =>
+                      setPeriodForm((current) => ({ ...current, name: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Start</span>
+                  <input
+                    required
+                    type="date"
+                    value={periodForm.periodStart}
+                    onChange={(event) =>
+                      setPeriodForm((current) => ({
+                        ...current,
+                        periodStart: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>End</span>
+                  <input
+                    required
+                    type="date"
+                    value={periodForm.periodEnd}
+                    onChange={(event) =>
+                      setPeriodForm((current) => ({ ...current, periodEnd: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Status</span>
+                  <select
+                    value={periodForm.status}
+                    onChange={(event) =>
+                      setPeriodForm((current) => ({
+                        ...current,
+                        status: event.target.value as AccountingPeriodStatus,
+                      }))
+                    }
+                  >
+                    <option value="OPEN">Open</option>
+                    <option value="CLOSED">Closed</option>
+                    <option value="LOCKED">Locked</option>
+                  </select>
+                </label>
+                <div className="form-actions wide-field">
+                  <button
+                    className="primary-action compact-action"
+                    type="submit"
+                    disabled={savePeriodMutation.isPending}
+                  >
+                    <i className="bi bi-save" aria-hidden="true" />
+                    {savePeriodMutation.isPending ? 'Saving...' : 'Save Period'}
+                  </button>
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={() => {
+                      setPeriodForm(defaultAccountingPeriodForm());
+                      setEditingPeriodId(null);
+                    }}
+                  >
+                    <i className="bi bi-x-circle" aria-hidden="true" />
+                    Clear
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
+
+          <section className="panel-card">
+            <PanelHeader icon="bi-calendar-check" title="Periods" tone="blue" />
+            <div className="responsive-table compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Range</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {periods.map((period) => (
+                    <tr key={period.id}>
+                      <td data-label="Name">{period.name}</td>
+                      <td data-label="Range">
+                        {formatDateOnly(period.periodStart)} - {formatDateOnly(period.periodEnd)}
+                      </td>
+                      <td data-label="Status">
+                        <StatusPill
+                          status={accountingStatusTone(period.status)}
+                          label={labelizeEnum(period.status)}
+                        />
+                      </td>
+                      <td data-label="Actions">
+                        {canManageAccounting ? (
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => editPeriod(period)}
+                          >
+                            <i className="bi bi-pencil" aria-hidden="true" />
+                            Edit
+                          </button>
+                        ) : (
+                          'Read only'
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === 'tax' ? (
+        <div className="accounting-two-column">
+          <section className="panel-card accounting-form-panel">
+            <PanelHeader icon="bi-percent" title="Tax Rule" tone="orange" />
+            {!canManageAccounting ? (
+              <EmptyState
+                icon="bi-lock"
+                title="Read-only tax rules"
+                detail="Accounting management permission is required to change tax rules."
+              />
+            ) : (
+              <form className="record-form" onSubmit={handleTaxRuleSubmit}>
+                <label className="field-stack">
+                  <span>Tax Code</span>
+                  <input
+                    required
+                    maxLength={40}
+                    value={taxRuleForm.taxCode}
+                    onChange={(event) =>
+                      setTaxRuleForm((current) => ({ ...current, taxCode: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Category</span>
+                  <input
+                    required
+                    maxLength={40}
+                    value={taxRuleForm.taxCategory}
+                    onChange={(event) =>
+                      setTaxRuleForm((current) => ({
+                        ...current,
+                        taxCategory: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Name</span>
+                  <input
+                    required
+                    maxLength={120}
+                    value={taxRuleForm.name}
+                    onChange={(event) =>
+                      setTaxRuleForm((current) => ({ ...current, name: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Rate %</span>
+                  <input
+                    required
+                    min="0"
+                    step="0.01"
+                    type="number"
+                    value={taxRuleForm.rate}
+                    onChange={(event) =>
+                      setTaxRuleForm((current) => ({
+                        ...current,
+                        rate: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Effective From</span>
+                  <input
+                    required
+                    type="date"
+                    value={taxRuleForm.effectiveFrom}
+                    onChange={(event) =>
+                      setTaxRuleForm((current) => ({
+                        ...current,
+                        effectiveFrom: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Effective To</span>
+                  <input
+                    type="date"
+                    value={taxRuleForm.effectiveTo}
+                    onChange={(event) =>
+                      setTaxRuleForm((current) => ({
+                        ...current,
+                        effectiveTo: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={taxRuleForm.inclusive}
+                    onChange={(event) =>
+                      setTaxRuleForm((current) => ({
+                        ...current,
+                        inclusive: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>Inclusive tax</span>
+                </label>
+                <label className="toggle-row wide-field">
+                  <input
+                    type="checkbox"
+                    checked={taxRuleForm.active}
+                    onChange={(event) =>
+                      setTaxRuleForm((current) => ({
+                        ...current,
+                        active: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>Active rule</span>
+                </label>
+                <div className="form-actions wide-field">
+                  <button
+                    className="primary-action compact-action"
+                    type="submit"
+                    disabled={saveTaxRuleMutation.isPending}
+                  >
+                    <i className="bi bi-save" aria-hidden="true" />
+                    {saveTaxRuleMutation.isPending ? 'Saving...' : 'Save Tax Rule'}
+                  </button>
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={() => {
+                      setTaxRuleForm(defaultAccountingTaxRuleForm());
+                      setEditingTaxRuleId(null);
+                    }}
+                  >
+                    <i className="bi bi-x-circle" aria-hidden="true" />
+                    Clear
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
+
+          <section className="panel-card">
+            <PanelHeader icon="bi-receipt-cutoff" title="Tax Rules" tone="blue" />
+            <div className="responsive-table compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Rate</th>
+                    <th>Effective</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {taxRules.map((rule) => (
+                    <tr key={rule.id}>
+                      <td data-label="Code">{rule.taxCode}</td>
+                      <td data-label="Name">
+                        <strong>{rule.name}</strong>
+                        <small>{rule.taxCategory}</small>
+                      </td>
+                      <td data-label="Rate">{formatPercentValue(rule.rate)}</td>
+                      <td data-label="Effective">
+                        {formatDateOnly(rule.effectiveFrom)}
+                        {rule.effectiveTo ? ` - ${formatDateOnly(rule.effectiveTo)}` : ''}
+                      </td>
+                      <td data-label="Status">
+                        <StatusPill
+                          status={rule.active ? 'posted' : 'pending'}
+                          label={rule.active ? 'Active' : 'Inactive'}
+                        />
+                      </td>
+                      <td data-label="Actions">
+                        {canManageAccounting ? (
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => editTaxRule(rule)}
+                          >
+                            <i className="bi bi-pencil" aria-hidden="true" />
+                            Edit
+                          </button>
+                        ) : (
+                          'Read only'
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isAccountingLoading ? <LoadingPanel label="Refreshing accounting data..." /> : null}
+
+      {recentWorkItems.length > 0 ? (
+        <section className="panel-card">
+          <PanelHeader icon="bi-clock-history" title="Recent Accounting Work" tone="blue" />
+          <ModuleWorkItemsTable organization={organization} workItems={recentWorkItems} />
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function AccountingTrialBalanceTable({
+  currencyCode,
+  rows,
+}: {
+  currencyCode: string;
+  rows: NonNullable<Awaited<ReturnType<typeof getAccountingTrialBalance>>>['rows'];
+}) {
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon="bi-scale"
+        title="No trial balance rows"
+        detail="Posted journal activity will appear here."
+      />
+    );
+  }
+
+  return (
+    <div className="responsive-table compact-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Type</th>
+            <th>Debit</th>
+            <th>Credit</th>
+            <th>Net Debit</th>
+            <th>Net Credit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.accountId}>
+              <td data-label="Account">
+                {row.accountCode} - {row.accountName}
+              </td>
+              <td data-label="Type">{labelizeEnum(row.accountType)}</td>
+              <td data-label="Debit">{formatMoney(row.debitAmount, currencyCode)}</td>
+              <td data-label="Credit">{formatMoney(row.creditAmount, currencyCode)}</td>
+              <td data-label="Net Debit">{formatMoney(row.netDebit, currencyCode)}</td>
+              <td data-label="Net Credit">{formatMoney(row.netCredit, currencyCode)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AccountingStatementRowsTable({
+  currencyCode,
+  rows,
+}: {
+  currencyCode: string;
+  rows: AccountingStatementRow[];
+}) {
+  const visibleRows = rows.filter((row) => row.amount !== 0);
+  if (visibleRows.length === 0) {
+    return (
+      <EmptyState
+        icon="bi-table"
+        title="No statement rows"
+        detail="Posted accounts for this report will appear here."
+      />
+    );
+  }
+
+  return (
+    <div className="responsive-table compact-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Type</th>
+            <th>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visibleRows.map((row) => (
+            <tr key={`${row.accountId}-${row.accountType}`}>
+              <td data-label="Account">
+                {row.accountCode} - {row.accountName}
+              </td>
+              <td data-label="Type">{labelizeEnum(row.accountType)}</td>
+              <td data-label="Amount">{formatMoney(row.amount, currencyCode)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const accountingAccountTypeOptions: AccountingAccountType[] = [
+  'ASSET',
+  'LIABILITY',
+  'EQUITY',
+  'REVENUE',
+  'COGS',
+  'EXPENSE',
+];
+
+function defaultAccountingAccountForm(): AccountingAccountRequest {
+  return {
+    parentAccountId: '',
+    accountCode: '',
+    accountName: '',
+    accountType: 'ASSET',
+    active: true,
+  };
+}
+
+function defaultAccountingPeriodForm(): AccountingPeriodRequest {
+  const today = new Date();
+  const year = today.getFullYear();
+  return {
+    name: `FY ${year}`,
+    periodStart: `${year}-01-01`,
+    periodEnd: `${year}-12-31`,
+    status: 'OPEN',
+  };
+}
+
+function defaultAccountingTaxRuleForm(): AccountingTaxRuleRequest {
+  return {
+    taxCode: '',
+    name: '',
+    taxCategory: 'VAT',
+    rate: 0,
+    inclusive: false,
+    effectiveFrom: todayInputValue(),
+    effectiveTo: '',
+    active: true,
+  };
+}
+
+function defaultAccountingJournalLineForm(): AccountingJournalLineFormState {
+  return {
+    accountId: '',
+    debitAmount: '0',
+    creditAmount: '0',
+    description: '',
+  };
+}
+
+function defaultAccountingJournalForm(
+  branchId = '',
+  financialPeriodId = '',
+): AccountingJournalFormState {
+  return {
+    branchId,
+    financialPeriodId,
+    journalNumber: '',
+    entryDate: todayInputValue(),
+    description: '',
+    reference: '',
+    sourceModule: 'Manual',
+    status: 'DRAFT',
+    lines: [defaultAccountingJournalLineForm(), defaultAccountingJournalLineForm()],
+  };
+}
+
+function defaultAccountingLedgerFilters(branchId = ''): AccountingLedgerFilters {
+  return {
+    accountId: '',
+    branchId,
+    from: monthStartInputValue(),
+    to: todayInputValue(),
+  };
+}
+
+function defaultAccountingReportFilters(branchId = ''): AccountingReportFilters {
+  return {
+    branchId,
+    from: monthStartInputValue(),
+    to: todayInputValue(),
+    asOf: todayInputValue(),
+  };
+}
+
+function monthStartInputValue() {
+  const date = new Date();
+  date.setDate(1);
+  return date.toISOString().slice(0, 10);
+}
+
+function accountingJournalFormTotals(form: AccountingJournalFormState) {
+  const debit = form.lines.reduce((total, line) => total + Math.max(0, toNumber(line.debitAmount)), 0);
+  const credit = form.lines.reduce(
+    (total, line) => total + Math.max(0, toNumber(line.creditAmount)),
+    0,
+  );
+  return { debit, credit };
+}
+
+function validateAccountingJournalForm(form: AccountingJournalFormState) {
+  if (!form.description.trim()) {
+    return 'Enter a journal description.';
+  }
+  const meaningfulLines = form.lines.filter((line) => line.accountId);
+  if (meaningfulLines.length < 2) {
+    return 'Select at least two journal accounts.';
+  }
+  const invalidLine = meaningfulLines.find((line) => {
+    const debit = Math.max(0, toNumber(line.debitAmount));
+    const credit = Math.max(0, toNumber(line.creditAmount));
+    return (debit > 0 && credit > 0) || (debit === 0 && credit === 0);
+  });
+  if (invalidLine) {
+    return 'Each journal line must have either a debit or a credit amount.';
+  }
+  const totals = accountingJournalFormTotals({ ...form, lines: meaningfulLines });
+  if (totals.debit <= 0 || Math.abs(totals.debit - totals.credit) > 0.005) {
+    return 'Journal debits and credits must balance.';
+  }
+  return '';
+}
+
+function accountingJournalFormToRequest(
+  form: AccountingJournalFormState,
+): AccountingJournalRequest {
+  return {
+    ...form,
+    branchId: form.branchId,
+    financialPeriodId: form.financialPeriodId,
+    journalNumber: form.journalNumber.trim(),
+    description: form.description.trim(),
+    reference: form.reference.trim(),
+    sourceModule: form.sourceModule.trim(),
+    lines: form.lines
+      .filter((line) => line.accountId)
+      .map((line) => ({
+        accountId: line.accountId,
+        debitAmount: Math.max(0, toNumber(line.debitAmount)),
+        creditAmount: Math.max(0, toNumber(line.creditAmount)),
+        description: line.description.trim(),
+      })),
+  };
+}
+
+function accountingJournalToForm(journal: AccountingJournal): AccountingJournalFormState {
+  return {
+    branchId: journal.branchId ?? '',
+    financialPeriodId: journal.financialPeriodId ?? '',
+    journalNumber: journal.journalNumber,
+    entryDate: journal.entryDate,
+    description: journal.description,
+    reference: journal.reference ?? '',
+    sourceModule: journal.sourceModule ?? 'Manual',
+    status: journal.status === 'POSTED' ? 'POSTED' : 'DRAFT',
+    lines: journal.lines.map((line) => ({
+      accountId: line.accountId,
+      debitAmount: String(line.debitAmount),
+      creditAmount: String(line.creditAmount),
+      description: line.description ?? '',
+    })),
+  };
+}
+
+function normalizeAccountingLedgerFilters(filters: AccountingLedgerFilters) {
+  return {
+    accountId: filters.accountId || undefined,
+    branchId: filters.branchId || undefined,
+    from: filters.from || undefined,
+    to: filters.to || undefined,
+  };
+}
+
+function normalizeAccountingReportFilters(filters: AccountingReportFilters) {
+  return {
+    branchId: filters.branchId || undefined,
+    from: filters.from || undefined,
+    to: filters.to || undefined,
+  };
+}
+
+function accountingStatusTone(status: AccountingJournalStatus | AccountingPeriodStatus | string) {
+  if (['POSTED', 'OPEN', 'ACTIVE'].includes(status)) {
+    return 'posted' as const;
+  }
+  if (['VOID', 'LOCKED', 'CLOSED', 'INACTIVE'].includes(status)) {
+    return 'pending' as const;
+  }
+  return 'review' as const;
+}
+
+async function invalidateAccountingQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['accounting'] }),
+    queryClient.invalidateQueries({ queryKey: ['accounting-summary'] }),
+  ]);
+}
+
+function formatPercentValue(value: number) {
+  return `${new Intl.NumberFormat('en-KE', {
+    maximumFractionDigits: 2,
+  }).format(value)}%`;
+}
+
+const PROCUREMENT_PURCHASE_ORDERS_STORAGE_KEY = 'keen-procurement-purchase-orders-v1';
+const PROCUREMENT_SHARE_PARAM = 'purchaseOrder';
+
+type PurchaseOrderLine = {
+  id: string;
+  productId: string;
+  description: string;
+  sku: string;
+  quantity: string;
+  unitPrice: string;
+  taxRate: string;
+};
+
+type PurchaseOrderDocument = {
+  id: string;
+  purchaseOrderNumber: string;
+  status: string;
+  supplierId: string;
+  supplierName: string;
+  supplierEmail: string;
+  supplierPhone: string;
+  supplierAddress: string;
+  issueDate: string;
+  deliveryDate: string;
+  deliveryLocationName: string;
+  deliveryAddress: string;
+  orderedByName: string;
+  orderedByEmail: string;
+  summary: string;
+  deliveryFee: string;
+  terms: string;
+  whatsappMessage: string;
+  notes: string;
+  lines: PurchaseOrderLine[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+function ProcurementPage({
+  branches,
+  organization,
+}: {
+  branches: Branch[];
+  organization: Organization;
+}) {
+  const summaryQuery = useQuery({
+    queryKey: ['procurement-summary'],
+    queryFn: getProcurementSummary,
+  });
+  const productsQuery = useQuery({ queryKey: ['products'], queryFn: getProducts });
+  const suppliersQuery = useQuery({ queryKey: ['suppliers'], queryFn: getSuppliers });
+  const products = productsQuery.data ?? [];
+  const suppliers = suppliersQuery.data ?? [];
+  const activeProducts = products.filter((product) => product.status === 'ACTIVE');
+  const activeSuppliers = suppliers.filter((supplier) => supplier.status === 'ACTIVE');
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderDocument[]>(() =>
+    loadPurchaseOrders(),
+  );
+  const [initialSharedPurchaseOrder] = useState<PurchaseOrderDocument | null>(() =>
+    parsePurchaseOrderFromUrl(organization, branches),
+  );
+  const [draft, setDraft] = useState<PurchaseOrderDocument>(() =>
+    initialSharedPurchaseOrder ??
+    createPurchaseOrderDocument(
+      organization,
+      branches,
+      nextPurchaseOrderNumber(purchaseOrders),
+    ),
+  );
+  const [selectedPurchaseOrderId, setSelectedPurchaseOrderId] = useState<string | null>(
+    initialSharedPurchaseOrder?.id ?? null,
+  );
+  const [message, setMessage] = useState(
+    initialSharedPurchaseOrder ? 'Shared purchase order loaded.' : '',
+  );
+  const [error, setError] = useState('');
+  const [shareLink, setShareLink] = useState('');
+
+  useEffect(() => {
+    savePurchaseOrders(purchaseOrders);
+  }, [purchaseOrders]);
+
+  const title = summaryQuery.data?.title ?? 'Procurement';
+  const description =
+    summaryQuery.data?.description ??
+    'Generate purchase orders for supplier restocking and share them for fulfillment.';
+  const totals = purchaseOrderTotals(draft);
+  const savedPurchaseOrder = purchaseOrders.find((order) => order.id === selectedPurchaseOrderId);
+  const recentWorkItems = summaryQuery.data?.workItems ?? [];
+  const metrics = procurementMetricsFromPurchaseOrders(
+    purchaseOrders,
+    draft,
+    organization.currencyCode,
+  );
+
+  function updateDraftField<K extends keyof PurchaseOrderDocument>(
+    field: K,
+    value: PurchaseOrderDocument[K],
+  ) {
+    setDraft((current) => ({ ...current, [field]: value, updatedAt: new Date().toISOString() }));
+    setError('');
+  }
+
+  function startPurchaseOrder() {
+    const nextOrder = createPurchaseOrderDocument(
+      organization,
+      branches,
+      nextPurchaseOrderNumber(purchaseOrders),
+    );
+    setDraft(nextOrder);
+    setSelectedPurchaseOrderId(null);
+    setShareLink('');
+    setError('');
+    setMessage('New purchase order draft started.');
+  }
+
+  function selectSupplier(supplierId: string) {
+    const supplier = activeSuppliers.find((item) => item.id === supplierId);
+    setDraft((current) => ({
+      ...current,
+      supplierId,
+      supplierName: supplier?.name ?? '',
+      supplierEmail: supplier?.email ?? '',
+      supplierPhone: supplier?.phone ?? '',
+      supplierAddress: supplier?.address ?? '',
+      updatedAt: new Date().toISOString(),
+    }));
+    setError('');
+  }
+
+  function updateLineItem<K extends keyof PurchaseOrderLine>(
+    lineId: string,
+    field: K,
+    value: PurchaseOrderLine[K],
+  ) {
+    setDraft((current) => ({
+      ...current,
+      lines: current.lines.map((line) =>
+        line.id === lineId ? { ...line, [field]: value } : line,
+      ),
+      updatedAt: new Date().toISOString(),
+    }));
+    setError('');
+  }
+
+  function selectLineProduct(lineId: string, productId: string, product?: Product) {
+    setDraft((current) => ({
+      ...current,
+      lines: current.lines.map((line) => {
+        if (line.id !== lineId) {
+          return line;
+        }
+
+        return {
+          ...line,
+          productId,
+          description: product?.name ?? '',
+          sku: product?.sku ?? '',
+          unitPrice:
+            product == null
+              ? line.unitPrice
+              : String(product.costPrice ?? product.unitPrice ?? toNumber(line.unitPrice)),
+          taxRate:
+            product == null
+              ? line.taxRate
+              : product.vatCategory === 'A'
+                ? '16'
+                : '0',
+        };
+      }),
+      updatedAt: new Date().toISOString(),
+    }));
+    setError('');
+  }
+
+  function addLineItem() {
+    setDraft((current) => ({
+      ...current,
+      lines: [...current.lines, createPurchaseOrderLine()],
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  function removeLineItem(lineId: string) {
+    setDraft((current) => ({
+      ...current,
+      lines:
+        current.lines.length === 1
+          ? [createPurchaseOrderLine()]
+          : current.lines.filter((line) => line.id !== lineId),
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  function savePurchaseOrder() {
+    const validationError = validatePurchaseOrder(draft);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+
+    const normalizedPurchaseOrder = normalizePurchaseOrder(draft);
+    setPurchaseOrders((current) => [
+      normalizedPurchaseOrder,
+      ...current.filter((order) => order.id !== normalizedPurchaseOrder.id),
+    ]);
+    setDraft(normalizedPurchaseOrder);
+    setSelectedPurchaseOrderId(normalizedPurchaseOrder.id);
+    setShareLink('');
+    setError('');
+    setMessage(`Purchase order ${normalizedPurchaseOrder.purchaseOrderNumber} saved.`);
+  }
+
+  function loadPurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
+    setDraft(purchaseOrder);
+    setSelectedPurchaseOrderId(purchaseOrder.id);
+    setShareLink('');
+    setError('');
+    setMessage(`Purchase order ${purchaseOrder.purchaseOrderNumber} loaded.`);
+  }
+
+  async function sharePurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
+    const validationError = validatePurchaseOrder(purchaseOrder);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+
+    const link = purchaseOrderShareUrl(normalizePurchaseOrder(purchaseOrder));
+    setShareLink(link);
+    try {
+      await copyTextToClipboard(link);
+      setMessage('Purchase order link copied to clipboard.');
+      setError('');
+    } catch {
+      setMessage('Purchase order link generated. Copy it from the link field.');
+      setError('');
+    }
+  }
+
+  function emailPurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
+    const normalizedPurchaseOrder = normalizePurchaseOrder(purchaseOrder);
+    const validationError = validatePurchaseOrder(normalizedPurchaseOrder);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+
+    const link = purchaseOrderShareUrl(normalizedPurchaseOrder);
+    setShareLink(link);
+    window.location.href = purchaseOrderEmailUrl(normalizedPurchaseOrder, link, organization);
+  }
+
+  function whatsappPurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
+    const normalizedPurchaseOrder = normalizePurchaseOrder(purchaseOrder);
+    const validationError = validatePurchaseOrder(normalizedPurchaseOrder);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+
+    const phoneNumber = normalizeWhatsAppNumber(normalizedPurchaseOrder.supplierPhone);
+    if (!phoneNumber) {
+      setError('Enter a supplier WhatsApp number before sending this purchase order.');
+      setMessage('');
+      return;
+    }
+
+    const link = purchaseOrderShareUrl(normalizedPurchaseOrder);
+    setShareLink(link);
+    setError('');
+    setMessage('Opening WhatsApp with the purchase order message.');
+    window.open(purchaseOrderWhatsAppUrl(normalizedPurchaseOrder, link, organization), '_blank', 'noopener,noreferrer');
+  }
+
+  function printPurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
+    setDraft(purchaseOrder);
+    setSelectedPurchaseOrderId(purchaseOrder.id);
+    setShareLink('');
+    window.setTimeout(() => window.print(), 80);
+  }
+
+  return (
+    <section className="table-workspace procurement-workspace">
+      <PageHeader
+        title={title}
+        subtitle={description}
+        action={
+          <button className="primary-action compact-action" type="button" onClick={startPurchaseOrder}>
+            <i className="bi bi-file-earmark-plus" aria-hidden="true" />
+            New Purchase Order
+          </button>
+        }
+      />
+
+      <FormMessages error={error} message={message} />
+
+      <div className="branch-summary-row commercial-summary-row">
+        {metrics.map((metric, index) => (
+          <SummaryMetric
+            icon={moduleMetricIcon(index, 'bi-clipboard-check')}
+            key={metric.label}
+            label={metric.label}
+            tone={moduleMetricTone(index)}
+            value={metric.value}
+          />
+        ))}
+      </div>
+
+      <div className="commercial-layout procurement-layout">
+        <section className="panel-card commercial-builder-panel procurement-builder-panel">
+          <PanelHeader icon="bi-pencil-square" title="Purchase Order Builder" tone="blue" />
+          <form
+            className="record-form commercial-form procurement-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              savePurchaseOrder();
+            }}
+          >
+            <label className="field-stack">
+              <span>P.O Number</span>
+              <input
+                required
+                maxLength={24}
+                value={draft.purchaseOrderNumber}
+                onChange={(event) => updateDraftField('purchaseOrderNumber', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Status</span>
+              <select
+                value={draft.status}
+                onChange={(event) => updateDraftField('status', event.target.value)}
+              >
+                {purchaseOrderStatusOptions().map((status) => (
+                  <option key={status} value={status}>
+                    {labelizeEnum(status)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-stack">
+              <span>Supplier</span>
+              <select
+                required
+                disabled={suppliersQuery.isPending || activeSuppliers.length === 0}
+                value={draft.supplierId}
+                onChange={(event) => selectSupplier(event.target.value)}
+              >
+                <option value="">
+                  {suppliersQuery.isPending
+                    ? 'Loading suppliers...'
+                    : activeSuppliers.length === 0
+                      ? 'Add an active supplier first'
+                      : 'Select supplier'}
+                </option>
+                {activeSuppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-stack">
+              <span>Supplier Email</span>
+              <input
+                type="email"
+                maxLength={120}
+                value={draft.supplierEmail}
+                onChange={(event) => updateDraftField('supplierEmail', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Supplier WhatsApp</span>
+              <input
+                inputMode="tel"
+                maxLength={32}
+                placeholder="+254..."
+                value={draft.supplierPhone}
+                onChange={(event) => updateDraftField('supplierPhone', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Issue Date</span>
+              <input
+                required
+                type="date"
+                value={draft.issueDate}
+                onChange={(event) => updateDraftField('issueDate', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Delivery Date</span>
+              <input
+                required
+                type="date"
+                value={draft.deliveryDate}
+                onChange={(event) => updateDraftField('deliveryDate', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Delivery Fee</span>
+              <input
+                min="0"
+                step="0.01"
+                type="number"
+                value={draft.deliveryFee}
+                onChange={(event) => updateDraftField('deliveryFee', event.target.value)}
+              />
+            </label>
+            <label className="field-stack wide-field">
+              <span>Supplier Address</span>
+              <textarea
+                maxLength={220}
+                value={draft.supplierAddress}
+                onChange={(event) => updateDraftField('supplierAddress', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Ordered By</span>
+              <input
+                required
+                maxLength={90}
+                value={draft.orderedByName}
+                onChange={(event) => updateDraftField('orderedByName', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Procurement Email</span>
+              <input
+                type="email"
+                maxLength={120}
+                value={draft.orderedByEmail}
+                onChange={(event) => updateDraftField('orderedByEmail', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Delivery Location</span>
+              <input
+                maxLength={90}
+                value={draft.deliveryLocationName}
+                onChange={(event) => updateDraftField('deliveryLocationName', event.target.value)}
+              />
+            </label>
+            <label className="field-stack wide-field">
+              <span>Delivery Address</span>
+              <textarea
+                maxLength={240}
+                value={draft.deliveryAddress}
+                onChange={(event) => updateDraftField('deliveryAddress', event.target.value)}
+              />
+            </label>
+            <label className="field-stack wide-field">
+              <span>Summary</span>
+              <textarea
+                maxLength={240}
+                value={draft.summary}
+                onChange={(event) => updateDraftField('summary', event.target.value)}
+              />
+            </label>
+
+            <div className="procurement-lines-editor wide-field">
+              <div className="commercial-section-heading">
+                <h3>Purchase Items</h3>
+                <button className="text-button" type="button" onClick={addLineItem}>
+                  <i className="bi bi-plus-lg" aria-hidden="true" />
+                  Add Line
+                </button>
+              </div>
+              <div className="procurement-line-grid">
+                {draft.lines.map((line, index) => {
+                  const lineTotals = purchaseOrderLineTotals(line);
+                  return (
+                    <div className="procurement-line-row" key={line.id}>
+                      <div className="field-stack procurement-product-field">
+                        <span>Product</span>
+                        <ProductSearchSelect
+                          disabled={productsQuery.isPending}
+                          emptyLabel={
+                            productsQuery.isPending
+                              ? 'Loading products...'
+                              : 'No active products available'
+                          }
+                          products={activeProducts}
+                          selectLabel={`Product ${index + 1}`}
+                          value={line.productId}
+                          onChange={(productId, product) =>
+                            selectLineProduct(line.id, productId, product)
+                          }
+                        />
+                      </div>
+                      <label className="field-stack">
+                        <span>Qty</span>
+                        <input
+                          min="0"
+                          step="0.01"
+                          type="number"
+                          value={line.quantity}
+                          onChange={(event) =>
+                            updateLineItem(line.id, 'quantity', event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="field-stack">
+                        <span>Unit Price</span>
+                        <input
+                          min="0"
+                          step="0.01"
+                          type="number"
+                          value={line.unitPrice}
+                          onChange={(event) =>
+                            updateLineItem(line.id, 'unitPrice', event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="field-stack">
+                        <span>Tax %</span>
+                        <input
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          type="number"
+                          value={line.taxRate}
+                          onChange={(event) =>
+                            updateLineItem(line.id, 'taxRate', event.target.value)
+                          }
+                        />
+                      </label>
+                      <div className="commercial-line-total">
+                        <span>Total</span>
+                        <strong>{formatMoney(lineTotals.total, organization.currencyCode)}</strong>
+                      </div>
+                      <button
+                        className="icon-button compact-icon"
+                        type="button"
+                        aria-label="Remove purchase item"
+                        onClick={() => removeLineItem(line.id)}
+                      >
+                        <i className="bi bi-trash" aria-hidden="true" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <label className="field-stack wide-field">
+              <span>WhatsApp Message</span>
+              <textarea
+                maxLength={420}
+                value={draft.whatsappMessage}
+                onChange={(event) => updateDraftField('whatsappMessage', event.target.value)}
+              />
+            </label>
+            <label className="field-stack wide-field">
+              <span>Terms & Delivery Notes</span>
+              <textarea
+                maxLength={420}
+                value={draft.terms}
+                onChange={(event) => updateDraftField('terms', event.target.value)}
+              />
+            </label>
+            <label className="field-stack wide-field">
+              <span>Internal Notes</span>
+              <textarea
+                maxLength={360}
+                value={draft.notes}
+                onChange={(event) => updateDraftField('notes', event.target.value)}
+              />
+            </label>
+
+            <div className="commercial-total-strip wide-field">
+              <div>
+                <span>Subtotal</span>
+                <strong>{formatMoney(totals.subtotal, organization.currencyCode)}</strong>
+              </div>
+              <div>
+                <span>VAT</span>
+                <strong>{formatMoney(totals.tax, organization.currencyCode)}</strong>
+              </div>
+              <div>
+                <span>Delivery</span>
+                <strong>{formatMoney(totals.deliveryFee, organization.currencyCode)}</strong>
+              </div>
+              <div>
+                <span>Grand Total</span>
+                <strong>{formatMoney(totals.total, organization.currencyCode)}</strong>
+              </div>
+            </div>
+
+            <div className="form-actions wide-field">
+              <button className="primary-action compact-action" type="submit">
+                <i className="bi bi-save" aria-hidden="true" />
+                Save P.O
+              </button>
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                onClick={() => sharePurchaseOrder(draft)}
+              >
+                <i className="bi bi-link-45deg" aria-hidden="true" />
+                Share Link
+              </button>
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                onClick={() => emailPurchaseOrder(draft)}
+              >
+                <i className="bi bi-envelope" aria-hidden="true" />
+                Email
+              </button>
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                onClick={() => whatsappPurchaseOrder(draft)}
+              >
+                <i className="bi bi-whatsapp" aria-hidden="true" />
+                WhatsApp
+              </button>
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                onClick={() => printPurchaseOrder(draft)}
+              >
+                <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
+                Save PDF
+              </button>
+            </div>
+
+            {shareLink ? (
+              <label className="field-stack wide-field commercial-share-field">
+                <span>Share Link</span>
+                <input readOnly value={shareLink} onFocus={(event) => event.target.select()} />
+              </label>
+            ) : null}
+          </form>
+        </section>
+
+        <section className="panel-card commercial-preview-panel procurement-preview-panel">
+          <PanelHeader
+            icon="bi-eye"
+            title="P.O Preview"
+            tone="purple"
+            action={
+              <div className="header-actions">
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => whatsappPurchaseOrder(draft)}
+                >
+                  <i className="bi bi-whatsapp" aria-hidden="true" />
+                  WhatsApp
+                </button>
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => sharePurchaseOrder(draft)}
+                >
+                  <i className="bi bi-link-45deg" aria-hidden="true" />
+                  Link
+                </button>
+                <button
+                  className="primary-action compact-action"
+                  type="button"
+                  onClick={() => printPurchaseOrder(draft)}
+                >
+                  <i className="bi bi-printer" aria-hidden="true" />
+                  Print
+                </button>
+              </div>
+            }
+          />
+          <div className="procurement-document-print-root">
+            <PurchaseOrderPreview purchaseOrder={draft} organization={organization} />
+          </div>
+        </section>
+      </div>
+
+      <section className="panel-card commercial-documents-panel">
+        <PanelHeader
+          icon="bi-folder2-open"
+          title="Generated Purchase Orders"
+          tone="green"
+          action={
+            savedPurchaseOrder ? (
+              <span className="invoice-total-pill">
+                Loaded {savedPurchaseOrder.purchaseOrderNumber}
+              </span>
+            ) : undefined
+          }
+        />
+        {purchaseOrders.length === 0 ? (
+          <EmptyState
+            icon="bi-file-earmark-plus"
+            title="No purchase orders"
+            detail="Saved purchase orders will appear here."
+          />
+        ) : (
+          <div className="responsive-table compact-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>P.O</th>
+                  <th>Supplier</th>
+                  <th>Status</th>
+                  <th>Total</th>
+                  <th>Delivery</th>
+                  <th>Updated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {purchaseOrders.map((purchaseOrder) => {
+                  const orderTotals = purchaseOrderTotals(purchaseOrder);
+                  return (
+                    <tr key={purchaseOrder.id}>
+                      <td data-label="P.O">
+                        <span className="table-label">
+                          <i className="bi bi-clipboard-check" aria-hidden="true" />
+                          <span>
+                            <strong>{purchaseOrder.purchaseOrderNumber}</strong>
+                            <small>Purchase Order</small>
+                          </span>
+                        </span>
+                      </td>
+                      <td data-label="Supplier">{purchaseOrder.supplierName || 'Supplier'}</td>
+                      <td data-label="Status">
+                        <StatusPill
+                          label={labelizeEnum(purchaseOrder.status)}
+                          status={moduleStatusTone(purchaseOrder.status)}
+                        />
+                      </td>
+                      <td data-label="Total">
+                        {formatMoney(orderTotals.total, organization.currencyCode)}
+                      </td>
+                      <td data-label="Delivery">{commercialFormatDate(purchaseOrder.deliveryDate)}</td>
+                      <td data-label="Updated">{formatDateTime(purchaseOrder.updatedAt)}</td>
+                      <td data-label="Actions">
+                        <div className="table-actions commercial-table-actions">
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => loadPurchaseOrder(purchaseOrder)}
+                          >
+                            <i className="bi bi-pencil" aria-hidden="true" />
+                            Edit
+                          </button>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => sharePurchaseOrder(purchaseOrder)}
+                          >
+                            <i className="bi bi-link-45deg" aria-hidden="true" />
+                            Link
+                          </button>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => emailPurchaseOrder(purchaseOrder)}
+                          >
+                            <i className="bi bi-envelope" aria-hidden="true" />
+                            Email
+                          </button>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => whatsappPurchaseOrder(purchaseOrder)}
+                          >
+                            <i className="bi bi-whatsapp" aria-hidden="true" />
+                            WhatsApp
+                          </button>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => printPurchaseOrder(purchaseOrder)}
+                          >
+                            <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
+                            PDF
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {summaryQuery.isPending ? (
+        <LoadingPanel label="Loading procurement snapshot..." />
+      ) : recentWorkItems.length > 0 ? (
+        <section className="panel-card">
+          <PanelHeader icon="bi-clock-history" title="System Recent Work" tone="blue" />
+          <ModuleWorkItemsTable organization={organization} workItems={recentWorkItems} />
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function PurchaseOrderPreview({
+  organization,
+  purchaseOrder,
+}: {
+  organization: Organization;
+  purchaseOrder: PurchaseOrderDocument;
+}) {
+  const totals = purchaseOrderTotals(purchaseOrder);
+  const meaningfulLines = purchaseOrder.lines.filter((line) => line.description.trim());
+
+  return (
+    <article className="commercial-document-preview purchase-order-preview">
+      <header className="commercial-document-heading">
+        <span>Documents</span>
+        <h2>Purchase Order {purchaseOrder.purchaseOrderNumber || 'PO-0001'}</h2>
+        <p>Procurement Order</p>
+      </header>
+
+      <div className="commercial-document-brandbar">
+        <div className="commercial-document-brand">
+          <strong>{organization.name}</strong>
+          <span>{organization.taxRegistrationNumber ? `PIN ${organization.taxRegistrationNumber}` : 'Procurement Desk'}</span>
+        </div>
+        <div>
+          <strong>PURCHASE ORDER</strong>
+          <span>No. {purchaseOrder.purchaseOrderNumber}</span>
+          <span>Date: {commercialFormatDate(purchaseOrder.issueDate)}</span>
+        </div>
+      </div>
+
+      <section className="commercial-document-intro">
+        <h3>Purchase Order</h3>
+        <p>
+          {purchaseOrder.summary ||
+            `Authorised purchase order for goods and services, issued by ${organization.name}.`}
+        </p>
+      </section>
+
+      <section className="commercial-document-parties purchase-order-parties">
+        <div>
+          <span>Supplier</span>
+          <strong>{purchaseOrder.supplierName || 'Supplier name'}</strong>
+          {purchaseOrder.supplierAddress ? <p>{purchaseOrder.supplierAddress}</p> : null}
+          {purchaseOrder.supplierEmail ? <a href={`mailto:${purchaseOrder.supplierEmail}`}>{purchaseOrder.supplierEmail}</a> : null}
+          <span>Delivery Date</span>
+          <strong>{commercialFormatDate(purchaseOrder.deliveryDate)}</strong>
+        </div>
+        <div>
+          <span>Ordered By</span>
+          <strong>{purchaseOrder.orderedByName || organization.name}</strong>
+          <p>{purchaseOrder.purchaseOrderNumber}</p>
+          {purchaseOrder.orderedByEmail ? <a href={`mailto:${purchaseOrder.orderedByEmail}`}>{purchaseOrder.orderedByEmail}</a> : null}
+          <span>Delivery Location</span>
+          <strong>{purchaseOrder.deliveryLocationName || `${organization.name} Warehouse`}</strong>
+          {purchaseOrder.deliveryAddress ? <p>{purchaseOrder.deliveryAddress}</p> : null}
+        </div>
+      </section>
+
+      <section className="commercial-document-items">
+        <h3>Purchase Items</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Item Description</th>
+              <th>Qty</th>
+              <th>Unit Price ({organization.currencyCode})</th>
+              <th>Tax</th>
+              <th>Total ({organization.currencyCode})</th>
+            </tr>
+          </thead>
+          <tbody>
+            {meaningfulLines.length === 0 ? (
+              <tr>
+                <td colSpan={5}>Add products to complete this purchase order.</td>
+              </tr>
+            ) : (
+              meaningfulLines.map((line) => {
+                const lineTotals = purchaseOrderLineTotals(line);
+                return (
+                  <tr key={line.id}>
+                    <td>
+                      {line.description}
+                      {line.sku ? <small className="po-line-sku">SKU {line.sku}</small> : null}
+                    </td>
+                    <td>{formatQuantity(toNumber(line.quantity))}</td>
+                    <td>{formatWholeNumber(toNumber(line.unitPrice))}</td>
+                    <td>{commercialPercentLabel(line.taxRate)}</td>
+                    <td>{formatWholeNumber(lineTotals.total)}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="commercial-document-totals">
+        <div>
+          <span>Subtotal ({organization.currencyCode})</span>
+          <strong>{formatWholeNumber(totals.subtotal)}</strong>
+        </div>
+        <div>
+          <span>VAT</span>
+          <strong>{formatWholeNumber(totals.tax)}</strong>
+        </div>
+        <div>
+          <span>Delivery</span>
+          <strong>{formatWholeNumber(totals.deliveryFee)}</strong>
+        </div>
+        <div className="commercial-total-due">
+          <span>Grand Total ({organization.currencyCode})</span>
+          <strong>{formatWholeNumber(totals.total)}</strong>
+        </div>
+      </section>
+
+      <section className="commercial-document-notes purchase-order-terms">
+        <h3>Terms & Delivery Notes</h3>
+        <p>{purchaseOrder.terms || 'Delivery should match the quantities, pricing, and product specifications listed in this purchase order.'}</p>
+      </section>
+    </article>
+  );
+}
+
+function createPurchaseOrderDocument(
+  organization: Organization,
+  branches: Branch[],
+  purchaseOrderNumber: string,
+): PurchaseOrderDocument {
+  const now = new Date().toISOString();
+  const today = todayInputValue();
+  const locationName = branches.find((branch) => branch.status === 'ACTIVE')?.name;
+
+  return {
+    id: createCommercialId(),
+    purchaseOrderNumber,
+    status: 'DRAFT',
+    supplierId: '',
+    supplierName: '',
+    supplierEmail: '',
+    supplierPhone: '',
+    supplierAddress: '',
+    issueDate: today,
+    deliveryDate: addDaysInputValue(today, 7),
+    deliveryLocationName: locationName ? `${locationName} Warehouse` : `${organization.name} Warehouse`,
+    deliveryAddress: '',
+    orderedByName: organization.name,
+    orderedByEmail: defaultProcurementEmail(organization),
+    summary: `Authorised purchase order for goods and services, issued by ${organization.name}.`,
+    deliveryFee: '0',
+    terms:
+      'Please confirm availability, delivery date, and final invoice details before dispatch.',
+    whatsappMessage: defaultPurchaseOrderWhatsAppMessage(purchaseOrderNumber, organization),
+    notes: '',
+    lines: [createPurchaseOrderLine()],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function createPurchaseOrderLine(): PurchaseOrderLine {
+  return {
+    id: createCommercialId(),
+    productId: '',
+    description: '',
+    sku: '',
+    quantity: '1',
+    unitPrice: '0',
+    taxRate: '16',
+  };
+}
+
+function purchaseOrderStatusOptions() {
+  return ['DRAFT', 'SENT', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'];
+}
+
+function nextPurchaseOrderNumber(purchaseOrders: PurchaseOrderDocument[]) {
+  const maxNumber = purchaseOrders.reduce((highest, purchaseOrder) => {
+    const [, suffix] = purchaseOrder.purchaseOrderNumber.split('-');
+    const numericSuffix = Number(suffix);
+    return Number.isFinite(numericSuffix) ? Math.max(highest, numericSuffix) : highest;
+  }, 0);
+
+  return `PO-${String(maxNumber + 1).padStart(4, '0')}`;
+}
+
+function purchaseOrderLineTotals(line: PurchaseOrderLine) {
+  const quantity = Math.max(0, toNumber(line.quantity));
+  const unitPrice = Math.max(0, toNumber(line.unitPrice));
+  const subtotal = quantity * unitPrice;
+  const taxRate = clampCommercialPercent(toNumber(line.taxRate));
+  const tax = subtotal * (taxRate / 100);
+
+  return {
+    subtotal,
+    tax,
+    total: subtotal + tax,
+  };
+}
+
+function purchaseOrderTotals(purchaseOrder: PurchaseOrderDocument) {
+  const lineTotals = purchaseOrder.lines.map(purchaseOrderLineTotals);
+  const subtotal = lineTotals.reduce((total, line) => total + line.subtotal, 0);
+  const tax = lineTotals.reduce((total, line) => total + line.tax, 0);
+  const deliveryFee = Math.max(0, toNumber(purchaseOrder.deliveryFee));
+
+  return {
+    deliveryFee,
+    subtotal,
+    tax,
+    total: subtotal + tax + deliveryFee,
+  };
+}
+
+function procurementMetricsFromPurchaseOrders(
+  purchaseOrders: PurchaseOrderDocument[],
+  draft: PurchaseOrderDocument,
+  currencyCode: string,
+) {
+  const draftTotals = purchaseOrderTotals(draft);
+  const approvedCount = purchaseOrders.filter((order) =>
+    ['APPROVED', 'SENT', 'PARTIALLY_RECEIVED'].includes(order.status),
+  ).length;
+  const totalValue = purchaseOrders.reduce(
+    (total, order) => total + purchaseOrderTotals(order).total,
+    0,
+  );
+
+  return [
+    {
+      label: 'Purchase Orders',
+      value: String(purchaseOrders.length),
+    },
+    {
+      label: 'Active Orders',
+      value: String(approvedCount),
+    },
+    {
+      label: 'Saved Value',
+      value: formatMoney(totalValue, currencyCode),
+    },
+    {
+      label: 'Current P.O',
+      value: formatMoney(draftTotals.total, currencyCode),
+    },
+  ];
+}
+
+function validatePurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
+  if (!purchaseOrder.purchaseOrderNumber.trim()) {
+    return 'Enter a purchase order number before saving or sharing.';
+  }
+  if (!purchaseOrder.supplierName.trim()) {
+    return 'Select or enter a supplier before saving or sharing.';
+  }
+  if (
+    !purchaseOrder.lines.some(
+      (line) => line.description.trim() && purchaseOrderLineTotals(line).total > 0,
+    )
+  ) {
+    return 'Add at least one product line with a quantity and price.';
+  }
+  return '';
+}
+
+function normalizePurchaseOrder(purchaseOrder: PurchaseOrderDocument): PurchaseOrderDocument {
+  const now = new Date().toISOString();
+  const meaningfulLines = purchaseOrder.lines
+    .filter((line) => line.description.trim())
+    .map((line) => ({
+      ...line,
+      description: line.description.trim(),
+      sku: line.sku.trim(),
+      quantity: String(Math.max(0, toNumber(line.quantity))),
+      unitPrice: String(Math.max(0, toNumber(line.unitPrice))),
+      taxRate: String(clampCommercialPercent(toNumber(line.taxRate))),
+    }));
+
+  return {
+    ...purchaseOrder,
+    purchaseOrderNumber: purchaseOrder.purchaseOrderNumber.trim(),
+    supplierId: purchaseOrder.supplierId.trim(),
+    supplierName: purchaseOrder.supplierName.trim(),
+    supplierEmail: purchaseOrder.supplierEmail.trim(),
+    supplierPhone: purchaseOrder.supplierPhone.trim(),
+    supplierAddress: purchaseOrder.supplierAddress.trim(),
+    deliveryLocationName: purchaseOrder.deliveryLocationName.trim(),
+    deliveryAddress: purchaseOrder.deliveryAddress.trim(),
+    orderedByName: purchaseOrder.orderedByName.trim(),
+    orderedByEmail: purchaseOrder.orderedByEmail.trim(),
+    summary: purchaseOrder.summary.trim(),
+    deliveryFee: String(Math.max(0, toNumber(purchaseOrder.deliveryFee))),
+    terms: purchaseOrder.terms.trim(),
+    whatsappMessage: purchaseOrder.whatsappMessage.trim(),
+    notes: purchaseOrder.notes.trim(),
+    lines: meaningfulLines.length > 0 ? meaningfulLines : [createPurchaseOrderLine()],
+    updatedAt: now,
+    createdAt: purchaseOrder.createdAt || now,
+  };
+}
+
+function loadPurchaseOrders() {
+  try {
+    const rawPurchaseOrders = window.localStorage.getItem(PROCUREMENT_PURCHASE_ORDERS_STORAGE_KEY);
+    if (!rawPurchaseOrders) {
+      return [];
+    }
+    const parsedPurchaseOrders = JSON.parse(rawPurchaseOrders);
+    if (!Array.isArray(parsedPurchaseOrders)) {
+      return [];
+    }
+    return parsedPurchaseOrders
+      .map((purchaseOrder) => coercePurchaseOrder(purchaseOrder))
+      .filter((purchaseOrder): purchaseOrder is PurchaseOrderDocument => Boolean(purchaseOrder));
+  } catch {
+    return [];
+  }
+}
+
+function savePurchaseOrders(purchaseOrders: PurchaseOrderDocument[]) {
+  try {
+    window.localStorage.setItem(
+      PROCUREMENT_PURCHASE_ORDERS_STORAGE_KEY,
+      JSON.stringify(purchaseOrders),
+    );
+  } catch {
+    // Local persistence is best-effort when storage is unavailable.
+  }
+}
+
+function coercePurchaseOrder(value: unknown): PurchaseOrderDocument | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const raw = value as Partial<PurchaseOrderDocument>;
+  const now = new Date().toISOString();
+  const purchaseOrderNumber =
+    typeof raw.purchaseOrderNumber === 'string' && raw.purchaseOrderNumber.trim()
+      ? raw.purchaseOrderNumber
+      : 'PO-0001';
+
+  return {
+    id: typeof raw.id === 'string' ? raw.id : createCommercialId(),
+    purchaseOrderNumber,
+    status: stringValue(raw.status) || 'DRAFT',
+    supplierId: stringValue(raw.supplierId),
+    supplierName: stringValue(raw.supplierName),
+    supplierEmail: stringValue(raw.supplierEmail),
+    supplierPhone: stringValue(raw.supplierPhone),
+    supplierAddress: stringValue(raw.supplierAddress),
+    issueDate: stringValue(raw.issueDate) || todayInputValue(),
+    deliveryDate: stringValue(raw.deliveryDate) || addDaysInputValue(todayInputValue(), 7),
+    deliveryLocationName: stringValue(raw.deliveryLocationName),
+    deliveryAddress: stringValue(raw.deliveryAddress),
+    orderedByName: stringValue(raw.orderedByName),
+    orderedByEmail: stringValue(raw.orderedByEmail),
+    summary: stringValue(raw.summary),
+    deliveryFee: stringValue(raw.deliveryFee) || '0',
+    terms: stringValue(raw.terms),
+    whatsappMessage:
+      stringValue(raw.whatsappMessage) || defaultPurchaseOrderWhatsAppMessage(purchaseOrderNumber),
+    notes: stringValue(raw.notes),
+    lines:
+      Array.isArray(raw.lines) && raw.lines.length > 0
+        ? raw.lines.map(coercePurchaseOrderLine)
+        : [createPurchaseOrderLine()],
+    createdAt: stringValue(raw.createdAt) || now,
+    updatedAt: stringValue(raw.updatedAt) || now,
+  };
+}
+
+function coercePurchaseOrderLine(value: unknown): PurchaseOrderLine {
+  if (!value || typeof value !== 'object') {
+    return createPurchaseOrderLine();
+  }
+
+  const raw = value as Partial<PurchaseOrderLine>;
+  return {
+    id: typeof raw.id === 'string' ? raw.id : createCommercialId(),
+    productId: stringValue(raw.productId),
+    description: stringValue(raw.description),
+    sku: stringValue(raw.sku),
+    quantity: stringValue(raw.quantity) || '1',
+    unitPrice: stringValue(raw.unitPrice) || '0',
+    taxRate: stringValue(raw.taxRate) || '0',
+  };
+}
+
+function parsePurchaseOrderFromUrl(organization: Organization, branches: Branch[]) {
+  try {
+    const encodedPurchaseOrder = new URLSearchParams(window.location.search).get(
+      PROCUREMENT_SHARE_PARAM,
+    );
+    if (!encodedPurchaseOrder) {
+      return null;
+    }
+    const decodedPurchaseOrder = decodePurchaseOrder(encodedPurchaseOrder);
+    if (!decodedPurchaseOrder) {
+      return null;
+    }
+    return {
+      ...createPurchaseOrderDocument(
+        organization,
+        branches,
+        decodedPurchaseOrder.purchaseOrderNumber,
+      ),
+      ...decodedPurchaseOrder,
+      id: createCommercialId(),
+      updatedAt: new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function purchaseOrderShareUrl(purchaseOrder: PurchaseOrderDocument) {
+  const url = new URL(window.location.href);
+  url.pathname = '/procurement';
+  url.search = '';
+  url.searchParams.set(PROCUREMENT_SHARE_PARAM, encodePurchaseOrder(purchaseOrder));
+  return url.toString();
+}
+
+function encodePurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
+  const json = JSON.stringify(normalizePurchaseOrder(purchaseOrder));
+  const bytes = new TextEncoder().encode(json);
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return window
+    .btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function decodePurchaseOrder(encodedPurchaseOrder: string) {
+  try {
+    const padded = encodedPurchaseOrder.replace(/-/g, '+').replace(/_/g, '/');
+    const binary = window.atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, '='));
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const parsedPurchaseOrder = JSON.parse(new TextDecoder().decode(bytes));
+    return coercePurchaseOrder(parsedPurchaseOrder);
+  } catch {
+    return null;
+  }
+}
+
+function purchaseOrderEmailUrl(
+  purchaseOrder: PurchaseOrderDocument,
+  shareUrl: string,
+  organization: Organization,
+) {
+  const totals = purchaseOrderTotals(purchaseOrder);
+  const body = [
+    `Hello ${purchaseOrder.supplierName || 'there'},`,
+    '',
+    `${organization.name} has issued purchase order ${purchaseOrder.purchaseOrderNumber}.`,
+    `Grand total: ${formatMoney(totals.total, organization.currencyCode)}`,
+    `Delivery date: ${commercialFormatDate(purchaseOrder.deliveryDate)}`,
+    `Link: ${shareUrl}`,
+    '',
+    'Regards,',
+    purchaseOrder.orderedByName || organization.name,
+  ].join('\n');
+
+  return `mailto:${encodeURIComponent(
+    purchaseOrder.supplierEmail.trim(),
+  )}?subject=${encodeURIComponent(
+    `Purchase Order ${purchaseOrder.purchaseOrderNumber} from ${organization.name}`,
+  )}&body=${encodeURIComponent(body)}`;
+}
+
+function purchaseOrderWhatsAppUrl(
+  purchaseOrder: PurchaseOrderDocument,
+  shareUrl: string,
+  organization: Organization,
+) {
+  const phoneNumber = normalizeWhatsAppNumber(purchaseOrder.supplierPhone);
+  const text = purchaseOrderWhatsAppText(purchaseOrder, shareUrl, organization);
+  return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(text)}`;
+}
+
+function purchaseOrderWhatsAppText(
+  purchaseOrder: PurchaseOrderDocument,
+  shareUrl: string,
+  organization: Organization,
+) {
+  const message = purchaseOrder.whatsappMessage.trim();
+  if (message) {
+    return `${message}\n\n${shareUrl}`;
+  }
+
+  const totals = purchaseOrderTotals(purchaseOrder);
+  return [
+    `Hello ${purchaseOrder.supplierName || 'there'},`,
+    `${organization.name} has shared purchase order ${purchaseOrder.purchaseOrderNumber}.`,
+    `Grand total: ${formatMoney(totals.total, organization.currencyCode)}`,
+    `Delivery date: ${commercialFormatDate(purchaseOrder.deliveryDate)}`,
+    shareUrl,
+  ].join('\n');
+}
+
+function defaultProcurementEmail(organization: Organization) {
+  const slug = organization.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 36);
+  return `procurement@${slug || 'company'}.co.ke`;
+}
+
+function defaultPurchaseOrderWhatsAppMessage(
+  purchaseOrderNumber: string,
+  organization?: Pick<Organization, 'name'>,
+) {
+  const sender = organization?.name ?? 'our team';
+  return `Hello, please review purchase order ${purchaseOrderNumber} from ${sender}.`;
+}
+
+const COMMERCIAL_DOCUMENTS_STORAGE_KEY = 'keen-commercial-documents-v1';
+const COMMERCIAL_SHARE_PARAM = 'document';
+
+type CommercialDocumentType = 'quotation' | 'invoice';
+
+type CommercialLineItem = {
+  id: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  discountRate: string;
+  taxRate: string;
+};
+
+type CommercialDocument = {
+  id: string;
+  type: CommercialDocumentType;
+  documentNumber: string;
+  status: string;
+  title: string;
+  customerName: string;
+  customerCompany: string;
+  customerEmail: string;
+  customerPhone: string;
+  customerAddress: string;
+  issueDate: string;
+  validUntil: string;
+  dueDate: string;
+  paymentTerms: string;
+  preparedBy: string;
+  preparedEmail: string;
+  senderAddress: string;
+  projectSummary: string;
+  depositRate: string;
+  amountPaid: string;
+  bankName: string;
+  bankAccountName: string;
+  bankAccountNumber: string;
+  bankBranch: string;
+  swiftCode: string;
+  mpesaPaybill: string;
+  mpesaAccountNumber: string;
+  mpesaAccountName: string;
+  whatsappMessage: string;
+  notes: string;
+  lines: CommercialLineItem[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+function CommercialPage({ organization }: { organization: Organization }) {
+  const summaryQuery = useQuery({
+    queryKey: ['commercial-summary'],
+    queryFn: getCommercialSummary,
+  });
+  const [documents, setDocuments] = useState<CommercialDocument[]>(() =>
+    loadCommercialDocuments(),
+  );
+  const [initialSharedDocument] = useState<CommercialDocument | null>(() =>
+    parseCommercialDocumentFromUrl(organization),
+  );
+  const [draft, setDraft] = useState<CommercialDocument>(() =>
+    initialSharedDocument ??
+    createCommercialDocument(
+      organization,
+      'quotation',
+      nextCommercialDocumentNumber(documents, 'quotation'),
+    ),
+  );
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
+    initialSharedDocument?.id ?? null,
+  );
+  const [message, setMessage] = useState(initialSharedDocument ? 'Shared document loaded.' : '');
+  const [error, setError] = useState('');
+  const [shareLink, setShareLink] = useState('');
+
+  useEffect(() => {
+    saveCommercialDocuments(documents);
+  }, [documents]);
+
+  const title = summaryQuery.data?.title ?? 'Quotations & Invoicing';
+  const description =
+    summaryQuery.data?.description ??
+    'Generate commercial documents, share them with customers, and save printable PDF copies.';
+  const draftTotals = commercialDocumentTotals(draft);
+  const metrics = commercialMetricsFromDocuments(documents, draft, organization.currencyCode);
+  const savedDocument = documents.find((document) => document.id === selectedDocumentId);
+  const recentWorkItems = summaryQuery.data?.workItems ?? [];
+
+  function updateDraftField<K extends keyof CommercialDocument>(
+    field: K,
+    value: CommercialDocument[K],
+  ) {
+    setDraft((current) => ({ ...current, [field]: value, updatedAt: new Date().toISOString() }));
+    setError('');
+  }
+
+  function handleDocumentTypeChange(type: CommercialDocumentType) {
+    setDraft((current) => {
+      if (current.type === type) {
+        return current;
+      }
+
+      return {
+        ...current,
+        type,
+        documentNumber: nextCommercialDocumentNumber(documents, type),
+        status: type === 'quotation' ? 'DRAFT' : 'UNPAID',
+        title: type === 'quotation' ? 'Service Quotation' : 'Customer Invoice',
+        dueDate: addDaysInputValue(todayInputValue(), 14),
+        validUntil: addDaysInputValue(todayInputValue(), 30),
+        updatedAt: new Date().toISOString(),
+      };
+    });
+    setSelectedDocumentId(null);
+    setShareLink('');
+    setError('');
+  }
+
+  function startCommercialDocument(type: CommercialDocumentType) {
+    const nextDocument = createCommercialDocument(
+      organization,
+      type,
+      nextCommercialDocumentNumber(documents, type),
+    );
+    setDraft(nextDocument);
+    setSelectedDocumentId(null);
+    setShareLink('');
+    setError('');
+    setMessage(`New ${commercialDocumentLabel(type).toLowerCase()} draft started.`);
+  }
+
+  function updateLineItem<K extends keyof CommercialLineItem>(
+    lineId: string,
+    field: K,
+    value: CommercialLineItem[K],
+  ) {
+    setDraft((current) => ({
+      ...current,
+      lines: current.lines.map((line) =>
+        line.id === lineId ? { ...line, [field]: value } : line,
+      ),
+      updatedAt: new Date().toISOString(),
+    }));
+    setError('');
+  }
+
+  function addLineItem() {
+    setDraft((current) => ({
+      ...current,
+      lines: [...current.lines, createCommercialLineItem()],
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  function removeLineItem(lineId: string) {
+    setDraft((current) => ({
+      ...current,
+      lines:
+        current.lines.length === 1
+          ? [createCommercialLineItem()]
+          : current.lines.filter((line) => line.id !== lineId),
+      updatedAt: new Date().toISOString(),
+    }));
+  }
+
+  function saveDocument() {
+    const validationError = validateCommercialDocument(draft);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+
+    const normalizedDocument = normalizeCommercialDocument(draft);
+    setDocuments((current) => [
+      normalizedDocument,
+      ...current.filter((document) => document.id !== normalizedDocument.id),
+    ]);
+    setDraft(normalizedDocument);
+    setSelectedDocumentId(normalizedDocument.id);
+    setShareLink('');
+    setError('');
+    setMessage(`${commercialDocumentLabel(normalizedDocument.type)} ${normalizedDocument.documentNumber} saved.`);
+  }
+
+  function loadDocument(document: CommercialDocument) {
+    setDraft(document);
+    setSelectedDocumentId(document.id);
+    setShareLink('');
+    setError('');
+    setMessage(`${commercialDocumentLabel(document.type)} ${document.documentNumber} loaded.`);
+  }
+
+  async function shareDocument(document: CommercialDocument) {
+    const validationError = validateCommercialDocument(document);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+
+    const link = commercialDocumentShareUrl(normalizeCommercialDocument(document));
+    setShareLink(link);
+    try {
+      await copyTextToClipboard(link);
+      setMessage('Share link copied to clipboard.');
+      setError('');
+    } catch {
+      setMessage('Share link generated. Copy it from the link field.');
+      setError('');
+    }
+  }
+
+  function emailDocument(document: CommercialDocument) {
+    const normalizedDocument = normalizeCommercialDocument(document);
+    const link = commercialDocumentShareUrl(normalizedDocument);
+    setShareLink(link);
+    window.location.href = commercialDocumentEmailUrl(normalizedDocument, link, organization);
+  }
+
+  function whatsappDocument(document: CommercialDocument) {
+    const normalizedDocument = normalizeCommercialDocument(document);
+    const validationError = validateCommercialDocument(normalizedDocument);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+
+    const phoneNumber = normalizeWhatsAppNumber(normalizedDocument.customerPhone);
+    if (!phoneNumber) {
+      setError('Enter a WhatsApp number before sending this document.');
+      setMessage('');
+      return;
+    }
+
+    const link = commercialDocumentShareUrl(normalizedDocument);
+    setShareLink(link);
+    setError('');
+    setMessage('Opening WhatsApp with the document message.');
+    window.open(commercialDocumentWhatsAppUrl(normalizedDocument, link, organization), '_blank', 'noopener,noreferrer');
+  }
+
+  function printDocument(document: CommercialDocument) {
+    setDraft(document);
+    setSelectedDocumentId(document.id);
+    setShareLink('');
+    window.setTimeout(() => window.print(), 80);
+  }
+
+  return (
+    <section className="table-workspace commercial-workspace">
+      <PageHeader
+        title={title}
+        subtitle={description}
+        action={
+          <div className="header-actions">
+            <button
+              className="secondary-action compact-action"
+              type="button"
+              onClick={() => startCommercialDocument('quotation')}
+            >
+              <i className="bi bi-file-earmark-text" aria-hidden="true" />
+              New Quotation
+            </button>
+            <button
+              className="primary-action compact-action"
+              type="button"
+              onClick={() => startCommercialDocument('invoice')}
+            >
+              <i className="bi bi-receipt-cutoff" aria-hidden="true" />
+              New Invoice
+            </button>
+          </div>
+        }
+      />
+
+      <FormMessages error={error} message={message} />
+
+      <div className="branch-summary-row commercial-summary-row">
+        {metrics.map((metric, index) => (
+          <SummaryMetric
+            icon={moduleMetricIcon(index, 'bi-receipt-cutoff')}
+            key={metric.label}
+            label={metric.label}
+            tone={moduleMetricTone(index)}
+            value={metric.value}
+          />
+        ))}
+      </div>
+
+      <div className="commercial-layout">
+        <section className="panel-card commercial-builder-panel">
+          <PanelHeader icon="bi-pencil-square" title="Document Builder" tone="blue" />
+          <form
+            className="record-form commercial-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveDocument();
+            }}
+          >
+            <div className="commercial-type-toggle wide-field" role="group" aria-label="Document type">
+              <button
+                className={draft.type === 'quotation' ? 'active' : ''}
+                type="button"
+                onClick={() => handleDocumentTypeChange('quotation')}
+              >
+                <i className="bi bi-file-earmark-text" aria-hidden="true" />
+                Quotation
+              </button>
+              <button
+                className={draft.type === 'invoice' ? 'active' : ''}
+                type="button"
+                onClick={() => handleDocumentTypeChange('invoice')}
+              >
+                <i className="bi bi-receipt-cutoff" aria-hidden="true" />
+                Invoice
+              </button>
+            </div>
+
+            <label className="field-stack">
+              <span>Document No.</span>
+              <input
+                required
+                maxLength={24}
+                value={draft.documentNumber}
+                onChange={(event) => updateDraftField('documentNumber', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Status</span>
+              <select
+                value={draft.status}
+                onChange={(event) => updateDraftField('status', event.target.value)}
+              >
+                {commercialStatusOptions(draft.type).map((status) => (
+                  <option key={status} value={status}>
+                    {labelizeEnum(status)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-stack wide-field">
+              <span>Title</span>
+              <input
+                required
+                maxLength={90}
+                value={draft.title}
+                onChange={(event) => updateDraftField('title', event.target.value)}
+              />
+            </label>
+            <label className="field-stack wide-field">
+              <span>Summary</span>
+              <textarea
+                maxLength={240}
+                value={draft.projectSummary}
+                onChange={(event) => updateDraftField('projectSummary', event.target.value)}
+              />
+            </label>
+
+            <label className="field-stack">
+              <span>Customer Name</span>
+              <input
+                required
+                maxLength={90}
+                value={draft.customerName}
+                onChange={(event) => updateDraftField('customerName', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Company</span>
+              <input
+                maxLength={90}
+                value={draft.customerCompany}
+                onChange={(event) => updateDraftField('customerCompany', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Email</span>
+              <input
+                type="email"
+                maxLength={120}
+                value={draft.customerEmail}
+                onChange={(event) => updateDraftField('customerEmail', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>WhatsApp Number</span>
+              <input
+                inputMode="tel"
+                maxLength={32}
+                placeholder="+254..."
+                value={draft.customerPhone}
+                onChange={(event) => updateDraftField('customerPhone', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Issue Date</span>
+              <input
+                required
+                type="date"
+                value={draft.issueDate}
+                onChange={(event) => updateDraftField('issueDate', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>{draft.type === 'quotation' ? 'Valid Until' : 'Due Date'}</span>
+              <input
+                required
+                type="date"
+                value={draft.type === 'quotation' ? draft.validUntil : draft.dueDate}
+                onChange={(event) =>
+                  draft.type === 'quotation'
+                    ? updateDraftField('validUntil', event.target.value)
+                    : updateDraftField('dueDate', event.target.value)
+                }
+              />
+            </label>
+            <label className="field-stack">
+              <span>Payment Terms</span>
+              <input
+                maxLength={80}
+                value={draft.paymentTerms}
+                onChange={(event) => updateDraftField('paymentTerms', event.target.value)}
+              />
+            </label>
+            <label className="field-stack wide-field">
+              <span>Customer Address</span>
+              <textarea
+                maxLength={220}
+                value={draft.customerAddress}
+                onChange={(event) => updateDraftField('customerAddress', event.target.value)}
+              />
+            </label>
+
+            <div className="commercial-lines-editor wide-field">
+              <div className="commercial-section-heading">
+                <h3>Line Items</h3>
+                <button className="text-button" type="button" onClick={addLineItem}>
+                  <i className="bi bi-plus-lg" aria-hidden="true" />
+                  Add Line
+                </button>
+              </div>
+              <div className="commercial-line-grid">
+                {draft.lines.map((line) => {
+                  const lineTotals = commercialLineTotals(line);
+                  return (
+                    <div className="commercial-line-row" key={line.id}>
+                      <label className="field-stack commercial-line-description">
+                        <span>Description</span>
+                        <input
+                          maxLength={120}
+                          value={line.description}
+                          onChange={(event) =>
+                            updateLineItem(line.id, 'description', event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="field-stack commercial-line-qty">
+                        <span>Qty</span>
+                        <input
+                          min="0"
+                          step="0.01"
+                          type="number"
+                          value={line.quantity}
+                          onChange={(event) =>
+                            updateLineItem(line.id, 'quantity', event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="field-stack commercial-line-rate">
+                        <span>Rate</span>
+                        <input
+                          min="0"
+                          step="0.01"
+                          type="number"
+                          value={line.unitPrice}
+                          onChange={(event) =>
+                            updateLineItem(line.id, 'unitPrice', event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="field-stack commercial-line-discount">
+                        <span>Disc. %</span>
+                        <input
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          type="number"
+                          value={line.discountRate}
+                          onChange={(event) =>
+                            updateLineItem(line.id, 'discountRate', event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="field-stack commercial-line-tax">
+                        <span>Tax %</span>
+                        <input
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          type="number"
+                          value={line.taxRate}
+                          onChange={(event) =>
+                            updateLineItem(line.id, 'taxRate', event.target.value)
+                          }
+                        />
+                      </label>
+                      <div className="commercial-line-total">
+                        <span>Total</span>
+                        <strong>{formatMoney(lineTotals.total, organization.currencyCode)}</strong>
+                      </div>
+                      <button
+                        className="icon-button compact-icon"
+                        type="button"
+                        aria-label="Remove line item"
+                        onClick={() => removeLineItem(line.id)}
+                      >
+                        <i className="bi bi-trash" aria-hidden="true" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="commercial-payment-grid wide-field">
+              <label className="field-stack">
+                <span>Deposit %</span>
+                <input
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  type="number"
+                  value={draft.depositRate}
+                  onChange={(event) => updateDraftField('depositRate', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Amount Paid</span>
+                <input
+                  min="0"
+                  step="0.01"
+                  type="number"
+                  value={draft.amountPaid}
+                  onChange={(event) => updateDraftField('amountPaid', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Bank Name</span>
+                <input
+                  maxLength={80}
+                  value={draft.bankName}
+                  onChange={(event) => updateDraftField('bankName', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Account Name</span>
+                <input
+                  maxLength={80}
+                  value={draft.bankAccountName}
+                  onChange={(event) => updateDraftField('bankAccountName', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Account Number</span>
+                <input
+                  maxLength={60}
+                  value={draft.bankAccountNumber}
+                  onChange={(event) => updateDraftField('bankAccountNumber', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>M-Pesa Paybill</span>
+                <input
+                  maxLength={40}
+                  value={draft.mpesaPaybill}
+                  onChange={(event) => updateDraftField('mpesaPaybill', event.target.value)}
+                />
+              </label>
+            </div>
+
+            <label className="field-stack wide-field">
+              <span>WhatsApp Message</span>
+              <textarea
+                maxLength={420}
+                value={draft.whatsappMessage}
+                onChange={(event) => updateDraftField('whatsappMessage', event.target.value)}
+              />
+            </label>
+
+            <label className="field-stack wide-field">
+              <span>Notes</span>
+              <textarea
+                maxLength={360}
+                value={draft.notes}
+                onChange={(event) => updateDraftField('notes', event.target.value)}
+              />
+            </label>
+
+            <div className="commercial-total-strip wide-field">
+              <div>
+                <span>Subtotal</span>
+                <strong>{formatMoney(draftTotals.subtotal, organization.currencyCode)}</strong>
+              </div>
+              <div>
+                <span>Discount</span>
+                <strong>{formatMoney(draftTotals.discount, organization.currencyCode)}</strong>
+              </div>
+              <div>
+                <span>VAT</span>
+                <strong>{formatMoney(draftTotals.tax, organization.currencyCode)}</strong>
+              </div>
+              <div>
+                <span>{draft.type === 'invoice' ? 'Total Due' : 'Total'}</span>
+                <strong>{formatMoney(draftTotals.balanceDue, organization.currencyCode)}</strong>
+              </div>
+            </div>
+
+            <div className="form-actions wide-field">
+              <button className="primary-action compact-action" type="submit">
+                <i className="bi bi-save" aria-hidden="true" />
+                Save {commercialDocumentLabel(draft.type)}
+              </button>
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                onClick={() => shareDocument(draft)}
+              >
+                <i className="bi bi-link-45deg" aria-hidden="true" />
+                Share Link
+              </button>
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                onClick={() => emailDocument(draft)}
+              >
+                <i className="bi bi-envelope" aria-hidden="true" />
+                Email
+              </button>
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                onClick={() => whatsappDocument(draft)}
+              >
+                <i className="bi bi-whatsapp" aria-hidden="true" />
+                WhatsApp
+              </button>
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                onClick={() => printDocument(draft)}
+              >
+                <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
+                Save PDF
+              </button>
+            </div>
+
+            {shareLink ? (
+              <label className="field-stack wide-field commercial-share-field">
+                <span>Share Link</span>
+                <input readOnly value={shareLink} onFocus={(event) => event.target.select()} />
+              </label>
+            ) : null}
+          </form>
+        </section>
+
+        <section className="panel-card commercial-preview-panel">
+          <PanelHeader
+            icon="bi-eye"
+            title="Document Preview"
+            tone="purple"
+            action={
+              <div className="header-actions">
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => whatsappDocument(draft)}
+                >
+                  <i className="bi bi-whatsapp" aria-hidden="true" />
+                  WhatsApp
+                </button>
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => shareDocument(draft)}
+                >
+                  <i className="bi bi-link-45deg" aria-hidden="true" />
+                  Link
+                </button>
+                <button
+                  className="primary-action compact-action"
+                  type="button"
+                  onClick={() => printDocument(draft)}
+                >
+                  <i className="bi bi-printer" aria-hidden="true" />
+                  Print
+                </button>
+              </div>
+            }
+          />
+          <div className="commercial-document-print-root">
+            <CommercialDocumentPreview document={draft} organization={organization} />
+          </div>
+        </section>
+      </div>
+
+      <section className="panel-card commercial-documents-panel">
+        <PanelHeader
+          icon="bi-folder2-open"
+          title="Generated Documents"
+          tone="green"
+          action={
+            savedDocument ? (
+              <span className="invoice-total-pill">
+                Loaded {savedDocument.documentNumber}
+              </span>
+            ) : undefined
+          }
+        />
+        {documents.length === 0 ? (
+          <EmptyState
+            icon="bi-file-earmark-plus"
+            title="No generated documents"
+            detail="Saved quotations and invoices will appear here."
+          />
+        ) : (
+          <div className="responsive-table compact-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Document</th>
+                  <th>Customer</th>
+                  <th>Status</th>
+                  <th>Total</th>
+                  <th>Updated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.map((document) => {
+                  const totals = commercialDocumentTotals(document);
+                  return (
+                    <tr key={document.id}>
+                      <td data-label="Document">
+                        <span className="table-label">
+                          <i
+                            className={`bi ${
+                              document.type === 'quotation'
+                                ? 'bi-file-earmark-text'
+                                : 'bi-receipt-cutoff'
+                            }`}
+                            aria-hidden="true"
+                          />
+                          <span>
+                            <strong>{document.documentNumber}</strong>
+                            <small>{commercialDocumentLabel(document.type)}</small>
+                          </span>
+                        </span>
+                      </td>
+                      <td data-label="Customer">
+                        {document.customerName || document.customerCompany || 'Customer'}
+                      </td>
+                      <td data-label="Status">
+                        <StatusPill
+                          label={labelizeEnum(document.status)}
+                          status={moduleStatusTone(document.status)}
+                        />
+                      </td>
+                      <td data-label="Total">
+                        {formatMoney(totals.balanceDue, organization.currencyCode)}
+                      </td>
+                      <td data-label="Updated">{formatDateTime(document.updatedAt)}</td>
+                      <td data-label="Actions">
+                        <div className="table-actions commercial-table-actions">
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => loadDocument(document)}
+                          >
+                            <i className="bi bi-pencil" aria-hidden="true" />
+                            Edit
+                          </button>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => shareDocument(document)}
+                          >
+                            <i className="bi bi-link-45deg" aria-hidden="true" />
+                            Link
+                          </button>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => emailDocument(document)}
+                          >
+                            <i className="bi bi-envelope" aria-hidden="true" />
+                            Email
+                          </button>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => whatsappDocument(document)}
+                          >
+                            <i className="bi bi-whatsapp" aria-hidden="true" />
+                            WhatsApp
+                          </button>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => printDocument(document)}
+                          >
+                            <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
+                            PDF
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {summaryQuery.isPending ? (
+        <LoadingPanel label="Loading commercial snapshot..." />
+      ) : recentWorkItems.length > 0 ? (
+        <section className="panel-card">
+          <PanelHeader icon="bi-clock-history" title="System Recent Work" tone="blue" />
+          <ModuleWorkItemsTable organization={organization} workItems={recentWorkItems} />
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function CommercialDocumentPreview({
+  document,
+  organization,
+}: {
+  document: CommercialDocument;
+  organization: Organization;
+}) {
+  const totals = commercialDocumentTotals(document);
+  const meaningfulLines = document.lines.filter((line) => line.description.trim());
+  const documentLabel = commercialDocumentLabel(document.type);
+  const isInvoice = document.type === 'invoice';
+
+  return (
+    <article className="commercial-document-preview">
+      <header className="commercial-document-heading">
+        <span>Documents</span>
+        <h2>
+          {documentLabel} {document.documentNumber || commercialDocumentPrefix(document.type)}
+        </h2>
+        <p>{isInvoice ? 'Sales Invoice' : `${labelizeEnum(document.status)} - Service Quotation`}</p>
+      </header>
+
+      <div className="commercial-document-brandbar">
+        <div className="commercial-document-brand">
+          <strong>{organization.name}</strong>
+          <span>{organization.taxRegistrationNumber ? `PIN ${organization.taxRegistrationNumber}` : 'Commercial Desk'}</span>
+        </div>
+        <div>
+          <strong>{isInvoice ? 'INVOICE' : `QUOTATION (${labelizeEnum(document.status)})`}</strong>
+          <span>No. {document.documentNumber}</span>
+          <span>Date: {commercialFormatDate(document.issueDate)}</span>
+        </div>
+      </div>
+
+      <section className="commercial-document-intro">
+        <h3>{document.title || (isInvoice ? 'Customer Invoice' : 'Service Quotation')}</h3>
+        <p>
+          {document.projectSummary ||
+            (isInvoice
+              ? 'Thank you for your business. Please find below the details for services provided.'
+              : `Proposed services prepared by ${organization.name}.`)}
+        </p>
+      </section>
+
+      <section className="commercial-document-parties">
+        <div>
+          <span>{isInvoice ? 'Billed To' : 'Prepared For'}</span>
+          <strong>{document.customerName || 'Customer name'}</strong>
+          {document.customerCompany ? <p>{document.customerCompany}</p> : null}
+          {document.customerAddress ? <p>{document.customerAddress}</p> : null}
+          {isInvoice ? (
+            <>
+              <span>Due Date</span>
+              <strong>{commercialFormatDate(document.dueDate)}</strong>
+            </>
+          ) : (
+            <>
+              <span>Valid Until</span>
+              <strong>{commercialFormatDate(document.validUntil)}</strong>
+            </>
+          )}
+        </div>
+        <div>
+          <span>{isInvoice ? 'Issued By' : 'Prepared By'}</span>
+          <strong>{document.preparedBy || organization.name}</strong>
+          {document.senderAddress ? <p>{document.senderAddress}</p> : null}
+          {document.preparedEmail ? <a href={`mailto:${document.preparedEmail}`}>{document.preparedEmail}</a> : null}
+          <span>Payment Terms</span>
+          <strong>{document.paymentTerms || (isInvoice ? 'Due on receipt' : 'As agreed')}</strong>
+        </div>
+      </section>
+
+      <section className="commercial-document-items">
+        <h3>{isInvoice ? 'Invoice Items' : 'Pricing Summary'}</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th>Qty</th>
+              <th>Rate ({organization.currencyCode})</th>
+              <th>Disc.</th>
+              <th>Tax</th>
+              <th>Amount ({organization.currencyCode})</th>
+            </tr>
+          </thead>
+          <tbody>
+            {meaningfulLines.length === 0 ? (
+              <tr>
+                <td colSpan={6}>Add line items to complete this document.</td>
+              </tr>
+            ) : (
+              meaningfulLines.map((line) => {
+                const lineTotals = commercialLineTotals(line);
+                return (
+                  <tr key={line.id}>
+                    <td>{line.description}</td>
+                    <td>{formatQuantity(toNumber(line.quantity))}</td>
+                    <td>{formatWholeNumber(toNumber(line.unitPrice))}</td>
+                    <td>{commercialPercentLabel(line.discountRate)}</td>
+                    <td>{commercialPercentLabel(line.taxRate)}</td>
+                    <td>{formatWholeNumber(lineTotals.total)}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="commercial-document-totals">
+        {isInvoice ? (
+          <>
+            <div>
+              <span>Subtotal ({organization.currencyCode})</span>
+              <strong>{formatWholeNumber(totals.subtotalAfterDiscount)}</strong>
+            </div>
+            <div>
+              <span>VAT</span>
+              <strong>{formatWholeNumber(totals.tax)}</strong>
+            </div>
+            <div>
+              <span>Amount Paid</span>
+              <strong>{formatWholeNumber(totals.amountPaid)}</strong>
+            </div>
+            <div className="commercial-total-due">
+              <span>Total Due ({organization.currencyCode})</span>
+              <strong>{formatWholeNumber(totals.balanceDue)}</strong>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <span>{formatWholeNumber(totals.depositRate)}% deposit to start</span>
+              <strong>{formatMoney(totals.depositAmount, organization.currencyCode)}</strong>
+            </div>
+            <div>
+              <span>{formatWholeNumber(100 - totals.depositRate)}% balance on completion</span>
+              <strong>{formatMoney(totals.balanceAfterDeposit, organization.currencyCode)}</strong>
+            </div>
+            <div className="commercial-total-due">
+              <span>Total</span>
+              <strong>{formatMoney(totals.total, organization.currencyCode)}</strong>
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className="commercial-document-payment">
+        <h3>Payment Information</h3>
+        <div>
+          <div>
+            <strong>Bank Transfer</strong>
+            <dl>
+              <dt>Bank Name</dt>
+              <dd>{document.bankName || 'Bank name'}</dd>
+              <dt>Account Name</dt>
+              <dd>{document.bankAccountName || organization.name}</dd>
+              <dt>Account Number</dt>
+              <dd>{document.bankAccountNumber || 'Account number'}</dd>
+              <dt>Branch</dt>
+              <dd>{document.bankBranch || 'Branch'}</dd>
+              <dt>Swift Code</dt>
+              <dd>{document.swiftCode || 'Swift code'}</dd>
+            </dl>
+          </div>
+          <div>
+            <strong>Mobile Money (M-Pesa)</strong>
+            <dl>
+              <dt>Paybill Number</dt>
+              <dd>{document.mpesaPaybill || 'Paybill'}</dd>
+              <dt>Account Number</dt>
+              <dd>{document.mpesaAccountNumber || document.documentNumber}</dd>
+              <dt>Account Name</dt>
+              <dd>{document.mpesaAccountName || organization.name}</dd>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      {document.notes ? (
+        <section className="commercial-document-notes">
+          <h3>Notes</h3>
+          <p>{document.notes}</p>
+        </section>
+      ) : null}
+    </article>
+  );
+}
+
+function createCommercialDocument(
+  organization: Organization,
+  type: CommercialDocumentType,
+  documentNumber: string,
+): CommercialDocument {
+  const now = new Date().toISOString();
+  const today = todayInputValue();
+  const defaultEmail = defaultCommercialEmail(organization);
+
+  return {
+    id: createCommercialId(),
+    type,
+    documentNumber,
+    status: type === 'quotation' ? 'DRAFT' : 'UNPAID',
+    title: type === 'quotation' ? 'Service Quotation' : 'Customer Invoice',
+    customerName: '',
+    customerCompany: '',
+    customerEmail: '',
+    customerPhone: '',
+    customerAddress: '',
+    issueDate: today,
+    validUntil: addDaysInputValue(today, 30),
+    dueDate: addDaysInputValue(today, 14),
+    paymentTerms: type === 'quotation' ? '20% deposit, balance on completion' : 'Net 14 Days',
+    preparedBy: organization.name,
+    preparedEmail: defaultEmail,
+    senderAddress: 'Nairobi, Kenya',
+    projectSummary:
+      type === 'quotation'
+        ? `Proposed services prepared by ${organization.name}.`
+        : 'Thank you for your business. Please find below the details for services provided.',
+    depositRate: type === 'quotation' ? '20' : '0',
+    amountPaid: '0',
+    bankName: '',
+    bankAccountName: organization.name,
+    bankAccountNumber: '',
+    bankBranch: '',
+    swiftCode: '',
+    mpesaPaybill: '',
+    mpesaAccountNumber: documentNumber,
+    mpesaAccountName: organization.name,
+    whatsappMessage: defaultCommercialWhatsAppMessage(type, documentNumber, organization),
+    notes: '',
+    lines: [
+      {
+        ...createCommercialLineItem(),
+        description: type === 'quotation' ? 'Consultation and assessment' : 'Product or service',
+        quantity: '1',
+        unitPrice: '0',
+        taxRate: organization.defaultProductVatCategory === 'A' ? '16' : '0',
+      },
+    ],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function createCommercialLineItem(): CommercialLineItem {
+  return {
+    id: createCommercialId(),
+    description: '',
+    quantity: '1',
+    unitPrice: '0',
+    discountRate: '0',
+    taxRate: '16',
+  };
+}
+
+function createCommercialId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `commercial-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function commercialDocumentLabel(type: CommercialDocumentType) {
+  return type === 'quotation' ? 'Quotation' : 'Invoice';
+}
+
+function commercialDocumentPrefix(type: CommercialDocumentType) {
+  return type === 'quotation' ? 'QT' : 'INV';
+}
+
+function commercialStatusOptions(type: CommercialDocumentType) {
+  return type === 'quotation'
+    ? ['DRAFT', 'SENT', 'ACCEPTED', 'DECLINED', 'EXPIRED']
+    : ['UNPAID', 'SENT', 'PARTIALLY_PAID', 'PAID', 'OVERDUE', 'VOID'];
+}
+
+function nextCommercialDocumentNumber(
+  documents: CommercialDocument[],
+  type: CommercialDocumentType,
+) {
+  const prefix = commercialDocumentPrefix(type);
+  const maxNumber = documents.reduce((highest, document) => {
+    if (document.type !== type) {
+      return highest;
+    }
+    const [, suffix] = document.documentNumber.split('-');
+    const numericSuffix = Number(suffix);
+    return Number.isFinite(numericSuffix) ? Math.max(highest, numericSuffix) : highest;
+  }, 0);
+
+  return `${prefix}-${String(maxNumber + 1).padStart(4, '0')}`;
+}
+
+function commercialLineTotals(line: CommercialLineItem) {
+  const quantity = Math.max(0, toNumber(line.quantity));
+  const unitPrice = Math.max(0, toNumber(line.unitPrice));
+  const subtotal = quantity * unitPrice;
+  const discountRate = clampCommercialPercent(toNumber(line.discountRate));
+  const taxRate = clampCommercialPercent(toNumber(line.taxRate));
+  const discount = subtotal * (discountRate / 100);
+  const taxableAmount = Math.max(0, subtotal - discount);
+  const tax = taxableAmount * (taxRate / 100);
+  const total = taxableAmount + tax;
+
+  return {
+    discount,
+    subtotal,
+    taxableAmount,
+    tax,
+    total,
+  };
+}
+
+function commercialDocumentTotals(document: CommercialDocument) {
+  const lineTotals = document.lines.map(commercialLineTotals);
+  const subtotal = lineTotals.reduce((total, line) => total + line.subtotal, 0);
+  const discount = lineTotals.reduce((total, line) => total + line.discount, 0);
+  const subtotalAfterDiscount = lineTotals.reduce((total, line) => total + line.taxableAmount, 0);
+  const tax = lineTotals.reduce((total, line) => total + line.tax, 0);
+  const total = lineTotals.reduce((totalValue, line) => totalValue + line.total, 0);
+  const amountPaid = Math.min(Math.max(0, toNumber(document.amountPaid)), total);
+  const balanceDue = Math.max(0, total - amountPaid);
+  const depositRate = clampCommercialPercent(toNumber(document.depositRate));
+  const depositAmount = total * (depositRate / 100);
+
+  return {
+    amountPaid,
+    balanceAfterDeposit: Math.max(0, total - depositAmount),
+    balanceDue,
+    depositAmount,
+    depositRate,
+    discount,
+    subtotal,
+    subtotalAfterDiscount,
+    tax,
+    total,
+  };
+}
+
+function commercialMetricsFromDocuments(
+  documents: CommercialDocument[],
+  draft: CommercialDocument,
+  currencyCode: string,
+) {
+  const pipelineValue = documents.reduce(
+    (total, document) => total + commercialDocumentTotals(document).balanceDue,
+    0,
+  );
+  const quotationCount = documents.filter((document) => document.type === 'quotation').length;
+  const invoiceCount = documents.filter((document) => document.type === 'invoice').length;
+
+  return [
+    {
+      label: 'Generated Docs',
+      value: String(documents.length),
+    },
+    {
+      label: 'Quotations',
+      value: String(quotationCount),
+    },
+    {
+      label: 'Invoices',
+      value: String(invoiceCount),
+    },
+    {
+      label: 'Current Total',
+      value: formatMoney(commercialDocumentTotals(draft).total || pipelineValue, currencyCode),
+    },
+  ];
+}
+
+function validateCommercialDocument(document: CommercialDocument) {
+  if (!document.documentNumber.trim()) {
+    return 'Enter a document number before saving or sharing.';
+  }
+  if (!document.customerName.trim() && !document.customerCompany.trim()) {
+    return 'Enter a customer name or company before saving or sharing.';
+  }
+  if (!document.lines.some((line) => line.description.trim() && commercialLineTotals(line).total > 0)) {
+    return 'Add at least one line item with a description and amount.';
+  }
+  return '';
+}
+
+function normalizeCommercialDocument(document: CommercialDocument): CommercialDocument {
+  const now = new Date().toISOString();
+  const meaningfulLines = document.lines
+    .filter((line) => line.description.trim())
+    .map((line) => ({
+      ...line,
+      description: line.description.trim(),
+      quantity: String(Math.max(0, toNumber(line.quantity))),
+      unitPrice: String(Math.max(0, toNumber(line.unitPrice))),
+      discountRate: String(clampCommercialPercent(toNumber(line.discountRate))),
+      taxRate: String(clampCommercialPercent(toNumber(line.taxRate))),
+    }));
+
+  return {
+    ...document,
+    documentNumber: document.documentNumber.trim(),
+    title: document.title.trim(),
+    customerName: document.customerName.trim(),
+    customerCompany: document.customerCompany.trim(),
+    customerEmail: document.customerEmail.trim(),
+    customerPhone: document.customerPhone.trim(),
+    customerAddress: document.customerAddress.trim(),
+    preparedBy: document.preparedBy.trim(),
+    preparedEmail: document.preparedEmail.trim(),
+    senderAddress: document.senderAddress.trim(),
+    projectSummary: document.projectSummary.trim(),
+    bankName: document.bankName.trim(),
+    bankAccountName: document.bankAccountName.trim(),
+    bankAccountNumber: document.bankAccountNumber.trim(),
+    bankBranch: document.bankBranch.trim(),
+    swiftCode: document.swiftCode.trim(),
+    mpesaPaybill: document.mpesaPaybill.trim(),
+    mpesaAccountNumber: (document.mpesaAccountNumber || document.documentNumber).trim(),
+    mpesaAccountName: document.mpesaAccountName.trim(),
+    whatsappMessage: document.whatsappMessage.trim(),
+    notes: document.notes.trim(),
+    depositRate: String(clampCommercialPercent(toNumber(document.depositRate))),
+    amountPaid: String(Math.max(0, toNumber(document.amountPaid))),
+    lines: meaningfulLines.length > 0 ? meaningfulLines : [createCommercialLineItem()],
+    updatedAt: now,
+    createdAt: document.createdAt || now,
+  };
+}
+
+function loadCommercialDocuments() {
+  try {
+    const rawDocuments = window.localStorage.getItem(COMMERCIAL_DOCUMENTS_STORAGE_KEY);
+    if (!rawDocuments) {
+      return [];
+    }
+    const parsedDocuments = JSON.parse(rawDocuments);
+    if (!Array.isArray(parsedDocuments)) {
+      return [];
+    }
+    return parsedDocuments
+      .map((document) => coerceCommercialDocument(document))
+      .filter((document): document is CommercialDocument => Boolean(document));
+  } catch {
+    return [];
+  }
+}
+
+function saveCommercialDocuments(documents: CommercialDocument[]) {
+  try {
+    window.localStorage.setItem(COMMERCIAL_DOCUMENTS_STORAGE_KEY, JSON.stringify(documents));
+  } catch {
+    // Storage can be unavailable in private browsing. The in-memory state still works.
+  }
+}
+
+function coerceCommercialDocument(value: unknown): CommercialDocument | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const raw = value as Partial<CommercialDocument>;
+  const type: CommercialDocumentType = raw.type === 'invoice' ? 'invoice' : 'quotation';
+  const now = new Date().toISOString();
+  const documentNumber =
+    typeof raw.documentNumber === 'string' && raw.documentNumber.trim()
+      ? raw.documentNumber
+      : `${commercialDocumentPrefix(type)}-0001`;
+
+  return {
+    id: typeof raw.id === 'string' ? raw.id : createCommercialId(),
+    type,
+    documentNumber,
+    status:
+      typeof raw.status === 'string' && raw.status
+        ? raw.status
+        : type === 'quotation'
+          ? 'DRAFT'
+          : 'UNPAID',
+    title:
+      typeof raw.title === 'string' && raw.title
+        ? raw.title
+        : type === 'quotation'
+          ? 'Service Quotation'
+          : 'Customer Invoice',
+    customerName: stringValue(raw.customerName),
+    customerCompany: stringValue(raw.customerCompany),
+    customerEmail: stringValue(raw.customerEmail),
+    customerPhone: stringValue(raw.customerPhone),
+    customerAddress: stringValue(raw.customerAddress),
+    issueDate: stringValue(raw.issueDate) || todayInputValue(),
+    validUntil: stringValue(raw.validUntil) || addDaysInputValue(todayInputValue(), 30),
+    dueDate: stringValue(raw.dueDate) || addDaysInputValue(todayInputValue(), 14),
+    paymentTerms: stringValue(raw.paymentTerms),
+    preparedBy: stringValue(raw.preparedBy),
+    preparedEmail: stringValue(raw.preparedEmail),
+    senderAddress: stringValue(raw.senderAddress),
+    projectSummary: stringValue(raw.projectSummary),
+    depositRate: stringValue(raw.depositRate) || '0',
+    amountPaid: stringValue(raw.amountPaid) || '0',
+    bankName: stringValue(raw.bankName),
+    bankAccountName: stringValue(raw.bankAccountName),
+    bankAccountNumber: stringValue(raw.bankAccountNumber),
+    bankBranch: stringValue(raw.bankBranch),
+    swiftCode: stringValue(raw.swiftCode),
+    mpesaPaybill: stringValue(raw.mpesaPaybill),
+    mpesaAccountNumber: stringValue(raw.mpesaAccountNumber) || documentNumber,
+    mpesaAccountName: stringValue(raw.mpesaAccountName),
+    whatsappMessage:
+      stringValue(raw.whatsappMessage) || defaultCommercialWhatsAppMessage(type, documentNumber),
+    notes: stringValue(raw.notes),
+    lines:
+      Array.isArray(raw.lines) && raw.lines.length > 0
+        ? raw.lines.map(coerceCommercialLineItem)
+        : [createCommercialLineItem()],
+    createdAt: stringValue(raw.createdAt) || now,
+    updatedAt: stringValue(raw.updatedAt) || now,
+  };
+}
+
+function coerceCommercialLineItem(value: unknown): CommercialLineItem {
+  if (!value || typeof value !== 'object') {
+    return createCommercialLineItem();
+  }
+  const raw = value as Partial<CommercialLineItem>;
+  return {
+    id: typeof raw.id === 'string' ? raw.id : createCommercialId(),
+    description: stringValue(raw.description),
+    quantity: stringValue(raw.quantity) || '1',
+    unitPrice: stringValue(raw.unitPrice) || '0',
+    discountRate: stringValue(raw.discountRate) || '0',
+    taxRate: stringValue(raw.taxRate) || '0',
+  };
+}
+
+function parseCommercialDocumentFromUrl(organization: Organization) {
+  try {
+    const encodedDocument = new URLSearchParams(window.location.search).get(COMMERCIAL_SHARE_PARAM);
+    if (!encodedDocument) {
+      return null;
+    }
+    const decodedDocument = decodeCommercialDocument(encodedDocument);
+    if (!decodedDocument) {
+      return null;
+    }
+    return {
+      ...createCommercialDocument(organization, decodedDocument.type, decodedDocument.documentNumber),
+      ...decodedDocument,
+      id: createCommercialId(),
+      updatedAt: new Date().toISOString(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function commercialDocumentShareUrl(document: CommercialDocument) {
+  const url = new URL(window.location.href);
+  url.pathname = '/commercial';
+  url.search = '';
+  url.searchParams.set(COMMERCIAL_SHARE_PARAM, encodeCommercialDocument(document));
+  return url.toString();
+}
+
+function encodeCommercialDocument(document: CommercialDocument) {
+  const json = JSON.stringify(normalizeCommercialDocument(document));
+  const bytes = new TextEncoder().encode(json);
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return window
+    .btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function decodeCommercialDocument(encodedDocument: string) {
+  try {
+    const padded = encodedDocument.replace(/-/g, '+').replace(/_/g, '/');
+    const binary = window.atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, '='));
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const parsedDocument = JSON.parse(new TextDecoder().decode(bytes));
+    return coerceCommercialDocument(parsedDocument);
+  } catch {
+    return null;
+  }
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.setAttribute('readonly', 'true');
+  textArea.style.position = 'fixed';
+  textArea.style.top = '-999px';
+  document.body.appendChild(textArea);
+  textArea.select();
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textArea);
+  if (!copied) {
+    throw new Error('Clipboard copy failed');
+  }
+}
+
+function commercialDocumentEmailUrl(
+  document: CommercialDocument,
+  shareUrl: string,
+  organization: Organization,
+) {
+  const label = commercialDocumentLabel(document.type);
+  const totals = commercialDocumentTotals(document);
+  const recipient = document.customerEmail.trim();
+  const subject = `${label} ${document.documentNumber} from ${organization.name}`;
+  const body = [
+    `Hello ${document.customerName || document.customerCompany || 'there'},`,
+    '',
+    `Please find ${label.toLowerCase()} ${document.documentNumber} from ${organization.name}.`,
+    `Amount: ${formatMoney(totals.balanceDue, organization.currencyCode)}`,
+    `Link: ${shareUrl}`,
+    '',
+    'Regards,',
+    organization.name,
+  ].join('\n');
+
+  return `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(
+    subject,
+  )}&body=${encodeURIComponent(body)}`;
+}
+
+function commercialDocumentWhatsAppUrl(
+  document: CommercialDocument,
+  shareUrl: string,
+  organization: Organization,
+) {
+  const phoneNumber = normalizeWhatsAppNumber(document.customerPhone);
+  const text = commercialDocumentWhatsAppText(document, shareUrl, organization);
+  return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(text)}`;
+}
+
+function commercialDocumentWhatsAppText(
+  document: CommercialDocument,
+  shareUrl: string,
+  organization: Organization,
+) {
+  const label = commercialDocumentLabel(document.type).toLowerCase();
+  const totals = commercialDocumentTotals(document);
+  const message = document.whatsappMessage.trim();
+
+  if (message) {
+    return `${message}\n\n${shareUrl}`;
+  }
+
+  return [
+    `Hello ${document.customerName || document.customerCompany || 'there'},`,
+    `${organization.name} has shared ${label} ${document.documentNumber}.`,
+    `Amount: ${formatMoney(totals.balanceDue, organization.currencyCode)}`,
+    shareUrl,
+  ].join('\n');
+}
+
+function normalizeWhatsAppNumber(value: string) {
+  const digits = value.replace(/[^\d+]/g, '').replace(/^\+/, '');
+  if (!digits) {
+    return '';
+  }
+  if (digits.startsWith('0') && digits.length >= 10) {
+    return `254${digits.slice(1)}`;
+  }
+  return digits;
+}
+
+function defaultCommercialWhatsAppMessage(
+  type: CommercialDocumentType,
+  documentNumber: string,
+  organization?: Pick<Organization, 'name'>,
+) {
+  const label = commercialDocumentLabel(type).toLowerCase();
+  const sender = organization?.name ?? 'our team';
+  return `Hello, please review ${label} ${documentNumber} from ${sender}.`;
+}
+
+function commercialFormatDate(value: string) {
+  if (!value) {
+    return 'N/A';
+  }
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return 'N/A';
+  }
+  return new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(date);
+}
+
+function commercialPercentLabel(value: string) {
+  const numericValue = toNumber(value);
+  if (numericValue <= 0) {
+    return '-';
+  }
+  return `${new Intl.NumberFormat('en-KE', {
+    maximumFractionDigits: Number.isInteger(numericValue) ? 0 : 2,
+  }).format(numericValue)}%`;
+}
+
+function defaultCommercialEmail(organization: Organization) {
+  const slug = organization.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 36);
+  return `accounts@${slug || 'company'}.co.ke`;
+}
+
+function todayInputValue() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysInputValue(value: string, days: number) {
+  const date = value ? new Date(`${value}T00:00:00`) : new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function toNumber(value: string | number | undefined) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
+function clampCommercialPercent(value: number) {
+  return Math.min(Math.max(value, 0), 100);
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value : value == null ? '' : String(value);
+}
+
+function NotificationsPage({ organization }: { organization: Organization }) {
+  const summaryQuery = useQuery({
+    queryKey: ['notifications-summary'],
+    queryFn: getNotificationsSummary,
+  });
+  const notificationsQuery = useQuery({ queryKey: ['notifications'], queryFn: getNotifications });
+  const notifications = notificationsQuery.data ?? [];
+
+  return (
+    <section className="table-workspace erp-module-page">
+      <PageHeader
+        title={summaryQuery.data?.title ?? 'Notifications'}
+        subtitle={
+          summaryQuery.data?.description ??
+          'Operational alerts for approvals, stock, fiscalization, payroll, and payments.'
+        }
+      />
+      <ErpModuleSummaryContent
+        icon="bi-bell"
+        isError={summaryQuery.isError}
+        isLoading={summaryQuery.isPending}
+        organization={organization}
+        summary={summaryQuery.data}
+      />
+
+      <section className="panel-card">
+        <PanelHeader icon="bi-inbox" title="Notification Inbox" tone="blue" />
+        {notificationsQuery.isPending ? (
+          <LoadingPanel label="Loading notifications..." />
+        ) : notificationsQuery.isError ? (
+          <EmptyState
+            icon="bi-exclamation-circle"
+            title="Notifications could not be loaded"
+            detail="Refresh the page or try again after the API is available."
+          />
+        ) : notifications.length === 0 ? (
+          <EmptyState
+            icon="bi-bell"
+            title="No notifications"
+            detail="Workflow alerts and approval reminders will appear here."
+          />
+        ) : (
+          <div className="responsive-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Notification</th>
+                  <th>Type</th>
+                  <th>Source</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {notifications.map((notification) => (
+                  <tr key={notification.id}>
+                    <td data-label="Notification">
+                      <span className="table-label">
+                        <i className="bi bi-bell" aria-hidden="true" />
+                        <span>
+                          <strong>{notification.title}</strong>
+                          <small>{notification.message}</small>
+                        </span>
+                      </span>
+                    </td>
+                    <td data-label="Type">{labelizeEnum(notification.notificationType)}</td>
+                    <td data-label="Source">{notification.sourceModule ?? 'System'}</td>
+                    <td data-label="Status">
+                      <StatusPill
+                        status={moduleStatusTone(notification.status)}
+                        label={labelizeEnum(notification.status)}
+                      />
+                    </td>
+                    <td data-label="Created">{formatDateTime(notification.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </section>
+  );
+}
+
+function AuditLogPage() {
+  const auditQuery = useQuery({ queryKey: ['audit-events'], queryFn: getAuditEvents });
+  const auditEvents = auditQuery.data ?? [];
+
+  return (
+    <section className="table-workspace erp-module-page">
+      <PageHeader
+        title="Audit Logs"
+        subtitle="Backend-recorded activity across users, branches, HR, AI, and workflow modules."
+      />
+
+      <section className="panel-card">
+        <PanelHeader icon="bi-journal-text" title="Recent Audit Events" tone="purple" />
+        {auditQuery.isPending ? (
+          <LoadingPanel label="Loading audit events..." />
+        ) : auditQuery.isError ? (
+          <EmptyState
+            icon="bi-exclamation-circle"
+            title="Audit logs could not be loaded"
+            detail="Refresh the page or try again after the API is available."
+          />
+        ) : auditEvents.length === 0 ? (
+          <EmptyState
+            icon="bi-journal-text"
+            title="No audit events recorded"
+            detail="Sensitive changes and workflow actions will appear here."
+          />
+        ) : (
+          <div className="responsive-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Action</th>
+                  <th>Target</th>
+                  <th>Actor</th>
+                  <th>Branch</th>
+                  <th>Details</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditEvents.map((event) => (
+                  <tr key={event.id}>
+                    <td data-label="Action">
+                      <span className="table-label">
+                        <i className="bi bi-shield-check" aria-hidden="true" />
+                        {event.action}
+                      </span>
+                    </td>
+                    <td data-label="Target">
+                      {event.targetType}
+                      {event.targetId ? (
+                        <>
+                          <br />
+                          <small>{event.targetId}</small>
+                        </>
+                      ) : null}
+                    </td>
+                    <td data-label="Actor">{event.actorName ?? 'System'}</td>
+                    <td data-label="Branch">{event.branchName ?? 'All branches'}</td>
+                    <td data-label="Details">
+                      {event.reason || auditMetadataPreview(event) || 'N/A'}
+                    </td>
+                    <td data-label="Time">{formatDateTime(event.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </section>
+  );
+}
+
+function ErpModuleSummaryContent({
+  icon,
+  isError,
+  isLoading,
+  organization,
+  summary,
+}: {
+  icon: string;
+  isError: boolean;
+  isLoading: boolean;
+  organization: Organization;
+  summary?: ModuleSummary;
+}) {
+  if (isLoading) {
+    return <LoadingPanel label="Loading module snapshot..." />;
+  }
+
+  if (isError || !summary) {
+    return (
+      <EmptyState
+        icon="bi-exclamation-circle"
+        title="Module snapshot could not be loaded"
+        detail="Refresh the page or try again after the API is available."
+      />
+    );
+  }
+
+  return (
+    <>
+      <div className="branch-summary-row">
+        {summary.metrics.map((metric, index) => (
+          <SummaryMetric
+            icon={moduleMetricIcon(index, icon)}
+            key={metric.label}
+            label={metric.label}
+            value={formatModuleMetricValue(metric, organization.currencyCode)}
+            tone={moduleMetricTone(index)}
+          />
+        ))}
+      </div>
+
+      <section className="panel-card">
+        <PanelHeader icon={icon} title="Recent Work" tone="blue" />
+        {summary.workItems.length === 0 ? (
+          <EmptyState
+            icon={icon}
+            title="No records yet"
+            detail="Records created in this module will appear here."
+          />
+        ) : (
+          <ModuleWorkItemsTable organization={organization} workItems={summary.workItems} />
+        )}
+      </section>
+    </>
+  );
+}
+
+function ModuleWorkItemsTable({
+  organization,
+  workItems,
+}: {
+  organization: Organization;
+  workItems: ModuleWorkItem[];
+}) {
+  return (
+    <div className="responsive-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Reference</th>
+            <th>Title</th>
+            <th>Branch</th>
+            <th>Status</th>
+            <th>Amount</th>
+            <th>Due</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {workItems.map((item) => (
+            <tr key={item.id}>
+              <td data-label="Reference">
+                <span className="table-label">
+                  <i className="bi bi-file-earmark-text" aria-hidden="true" />
+                  {item.reference}
+                </span>
+              </td>
+              <td data-label="Title">{item.title}</td>
+              <td data-label="Branch">{item.branchName ?? 'All branches'}</td>
+              <td data-label="Status">
+                <StatusPill
+                  status={moduleStatusTone(item.status)}
+                  label={labelizeEnum(item.status)}
+                />
+              </td>
+              <td data-label="Amount">
+                {item.amount == null
+                  ? 'N/A'
+                  : formatMoney(Number(item.amount), organization.currencyCode)}
+              </td>
+              <td data-label="Due">{item.dueDate ? formatDateOnly(item.dueDate) : 'N/A'}</td>
+              <td data-label="Created">
+                {item.createdAt ? formatDateTime(item.createdAt) : 'N/A'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const CRM_STORAGE_KEY = 'keen-crm-records-v1';
+
+type CrmLeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL' | 'WON' | 'LOST';
+type CrmOpportunityStage = 'NEW' | 'QUALIFIED' | 'PROPOSAL' | 'NEGOTIATION' | 'WON' | 'LOST';
+type CrmActivityType = 'CALL' | 'MEETING' | 'TASK' | 'FOLLOW_UP' | 'NOTE';
+type CrmActivityStatus = 'OPEN' | 'DONE' | 'CANCELLED';
+type CrmWorkspaceView = 'pipeline' | 'leads' | 'opportunities' | 'activities';
+
+type CrmLead = {
+  id: string;
+  leadNumber: string;
+  branchId: string;
+  assignedTo: string;
+  name: string;
+  company: string;
+  phone: string;
+  email: string;
+  location: string;
+  source: string;
+  estimatedValue: string;
+  status: CrmLeadStatus;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type CrmOpportunity = {
+  id: string;
+  opportunityNumber: string;
+  leadId: string;
+  branchId: string;
+  assignedTo: string;
+  title: string;
+  customerName: string;
+  company: string;
+  phone: string;
+  email: string;
+  expectedValue: string;
+  probabilityPercent: string;
+  expectedCloseDate: string;
+  stage: CrmOpportunityStage;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type CrmActivity = {
+  id: string;
+  leadId: string;
+  opportunityId: string;
+  branchId: string;
+  assignedTo: string;
+  activityType: CrmActivityType;
+  subject: string;
+  dueAt: string;
+  completedAt: string;
+  status: CrmActivityStatus;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type CrmRecords = {
+  leads: CrmLead[];
+  opportunities: CrmOpportunity[];
+  activities: CrmActivity[];
+};
+
+const crmLeadStatuses: CrmLeadStatus[] = [
+  'NEW',
+  'CONTACTED',
+  'QUALIFIED',
+  'PROPOSAL',
+  'WON',
+  'LOST',
+];
+
+const crmOpportunityStages: CrmOpportunityStage[] = [
+  'NEW',
+  'QUALIFIED',
+  'PROPOSAL',
+  'NEGOTIATION',
+  'WON',
+  'LOST',
+];
+
+const crmActivityTypes: CrmActivityType[] = ['CALL', 'MEETING', 'TASK', 'FOLLOW_UP', 'NOTE'];
+const crmActivityStatuses: CrmActivityStatus[] = ['OPEN', 'DONE', 'CANCELLED'];
+const crmPipelineStages: CrmOpportunityStage[] = [
+  'NEW',
+  'QUALIFIED',
+  'PROPOSAL',
+  'NEGOTIATION',
+  'WON',
+  'LOST',
+];
+
+function CrmPage({
+  branches,
+  currentUser,
+  organization,
+}: {
+  branches: Branch[];
+  currentUser: CurrentUser;
+  organization: Organization;
+}) {
+  const navigate = useNavigate();
+  const summaryQuery = useQuery({ queryKey: ['crm-summary'], queryFn: getCrmSummary });
+  const [records, setRecords] = useState<CrmRecords>(() => loadCrmRecords());
+  const [activeView, setActiveView] = useState<CrmWorkspaceView>('pipeline');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [stageFilter, setStageFilter] = useState<'ALL' | CrmOpportunityStage>('ALL');
+  const [branchFilter, setBranchFilter] = useState('ALL');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const activeBranches = branches.filter((branch) => branch.status === 'ACTIVE');
+  const defaultBranchId = activeBranches[0]?.id ?? '';
+  const [leadForm, setLeadForm] = useState<CrmLead>(() =>
+    createCrmLead(currentUser, defaultBranchId, nextCrmLeadNumber(records.leads)),
+  );
+  const [opportunityForm, setOpportunityForm] = useState<CrmOpportunity>(() =>
+    createCrmOpportunity(
+      currentUser,
+      defaultBranchId,
+      nextCrmOpportunityNumber(records.opportunities),
+    ),
+  );
+  const [activityForm, setActivityForm] = useState<CrmActivity>(() =>
+    createCrmActivity(currentUser, defaultBranchId),
+  );
+
+  const { leads, opportunities, activities } = records;
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredLeads = useMemo(
+    () =>
+      leads
+        .filter((lead) => {
+          const matchesSearch =
+            !normalizedSearch ||
+            [
+              lead.leadNumber,
+              lead.name,
+              lead.company,
+              lead.phone,
+              lead.email,
+              lead.location,
+              lead.source,
+              lead.status,
+            ]
+              .join(' ')
+              .toLowerCase()
+              .includes(normalizedSearch);
+          const matchesBranch = branchFilter === 'ALL' || lead.branchId === branchFilter;
+          return matchesSearch && matchesBranch;
+        })
+        .sort(sortCrmByUpdatedAt),
+    [branchFilter, leads, normalizedSearch],
+  );
+  const filteredOpportunities = useMemo(
+    () =>
+      opportunities
+        .filter((opportunity) => {
+          const matchesSearch =
+            !normalizedSearch ||
+            [
+              opportunity.opportunityNumber,
+              opportunity.title,
+              opportunity.customerName,
+              opportunity.company,
+              opportunity.phone,
+              opportunity.email,
+              opportunity.stage,
+            ]
+              .join(' ')
+              .toLowerCase()
+              .includes(normalizedSearch);
+          const matchesBranch =
+            branchFilter === 'ALL' || opportunity.branchId === branchFilter;
+          const matchesStage = stageFilter === 'ALL' || opportunity.stage === stageFilter;
+          return matchesSearch && matchesBranch && matchesStage;
+        })
+        .sort(sortCrmByUpdatedAt),
+    [branchFilter, normalizedSearch, opportunities, stageFilter],
+  );
+  const filteredActivities = useMemo(
+    () =>
+      activities
+        .filter((activity) => {
+          const relatedLead = leads.find((lead) => lead.id === activity.leadId);
+          const relatedOpportunity = opportunities.find(
+            (opportunity) => opportunity.id === activity.opportunityId,
+          );
+          const matchesSearch =
+            !normalizedSearch ||
+            [
+              activity.subject,
+              activity.activityType,
+              activity.status,
+              activity.notes,
+              relatedLead?.name ?? '',
+              relatedOpportunity?.title ?? '',
+            ]
+              .join(' ')
+              .toLowerCase()
+              .includes(normalizedSearch);
+          const matchesBranch = branchFilter === 'ALL' || activity.branchId === branchFilter;
+          return matchesSearch && matchesBranch;
+        })
+        .sort(sortCrmActivities),
+    [activities, branchFilter, leads, normalizedSearch, opportunities],
+  );
+  const metrics = crmMetrics(records, organization.currencyCode);
+  const summaryTitle = summaryQuery.data?.title ?? 'CRM';
+  const summaryDescription =
+    summaryQuery.data?.description ??
+    'Manage leads, sales opportunities, follow-ups, and customer conversion work.';
+  const openActivities = activities.filter((activity) => activity.status === 'OPEN');
+  const overdueActivities = openActivities.filter(isCrmActivityOverdue);
+  const nextActivities = openActivities.slice().sort(sortCrmActivities).slice(0, 6);
+
+  useEffect(() => {
+    saveCrmRecords(records);
+  }, [records]);
+
+  function resetLeadForm() {
+    setLeadForm(createCrmLead(currentUser, defaultBranchId, nextCrmLeadNumber(leads)));
+    setError('');
+  }
+
+  function resetOpportunityForm() {
+    setOpportunityForm(
+      createCrmOpportunity(
+        currentUser,
+        defaultBranchId,
+        nextCrmOpportunityNumber(opportunities),
+      ),
+    );
+    setError('');
+  }
+
+  function resetActivityForm() {
+    setActivityForm(createCrmActivity(currentUser, defaultBranchId));
+    setError('');
+  }
+
+  function saveLead(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationError = validateCrmLead(leadForm);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+
+    const savedLead = normalizeCrmLead(leadForm);
+    setRecords((current) => ({
+      ...current,
+      leads: upsertCrmRecord(current.leads, savedLead),
+    }));
+    setLeadForm(savedLead);
+    setError('');
+    setMessage(`Lead ${savedLead.leadNumber} saved.`);
+  }
+
+  function saveOpportunity(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationError = validateCrmOpportunity(opportunityForm);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+
+    const savedOpportunity = normalizeCrmOpportunity(opportunityForm);
+    setRecords((current) => ({
+      ...current,
+      opportunities: upsertCrmRecord(current.opportunities, savedOpportunity),
+    }));
+    setOpportunityForm(savedOpportunity);
+    setError('');
+    setMessage(`Opportunity ${savedOpportunity.opportunityNumber} saved.`);
+  }
+
+  function saveActivity(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationError = validateCrmActivity(activityForm);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+
+    const savedActivity = normalizeCrmActivity(activityForm);
+    setRecords((current) => ({
+      ...current,
+      activities: upsertCrmRecord(current.activities, savedActivity),
+    }));
+    setActivityForm(savedActivity);
+    setError('');
+    setMessage(`Activity "${savedActivity.subject}" saved.`);
+  }
+
+  function editLead(lead: CrmLead) {
+    setLeadForm(lead);
+    setActiveView('leads');
+    setError('');
+    setMessage(`Editing ${lead.leadNumber}.`);
+  }
+
+  function editOpportunity(opportunity: CrmOpportunity) {
+    setOpportunityForm(opportunity);
+    setActiveView('opportunities');
+    setError('');
+    setMessage(`Editing ${opportunity.opportunityNumber}.`);
+  }
+
+  function editActivity(activity: CrmActivity) {
+    setActivityForm(activity);
+    setActiveView('activities');
+    setError('');
+    setMessage(`Editing ${activity.subject}.`);
+  }
+
+  function deleteLead(leadId: string) {
+    setRecords((current) => ({
+      leads: current.leads.filter((lead) => lead.id !== leadId),
+      opportunities: current.opportunities.map((opportunity) =>
+        opportunity.leadId === leadId ? { ...opportunity, leadId: '' } : opportunity,
+      ),
+      activities: current.activities.map((activity) =>
+        activity.leadId === leadId ? { ...activity, leadId: '' } : activity,
+      ),
+    }));
+    resetLeadForm();
+    setMessage('Lead removed from the local CRM workspace.');
+    setError('');
+  }
+
+  function deleteOpportunity(opportunityId: string) {
+    setRecords((current) => ({
+      ...current,
+      opportunities: current.opportunities.filter(
+        (opportunity) => opportunity.id !== opportunityId,
+      ),
+      activities: current.activities.map((activity) =>
+        activity.opportunityId === opportunityId ? { ...activity, opportunityId: '' } : activity,
+      ),
+    }));
+    resetOpportunityForm();
+    setMessage('Opportunity removed from the local CRM workspace.');
+    setError('');
+  }
+
+  function deleteActivity(activityId: string) {
+    setRecords((current) => ({
+      ...current,
+      activities: current.activities.filter((activity) => activity.id !== activityId),
+    }));
+    resetActivityForm();
+    setMessage('Activity removed from the local CRM workspace.');
+    setError('');
+  }
+
+  function convertLeadToOpportunity(lead: CrmLead) {
+    const existingOpportunity = opportunities.find((opportunity) => opportunity.leadId === lead.id);
+    if (existingOpportunity) {
+      editOpportunity(existingOpportunity);
+      setMessage(`${lead.leadNumber} is already linked to ${existingOpportunity.opportunityNumber}.`);
+      return;
+    }
+
+    const opportunity = normalizeCrmOpportunity(
+      createCrmOpportunity(
+        currentUser,
+        lead.branchId || defaultBranchId,
+        nextCrmOpportunityNumber(opportunities),
+        lead,
+      ),
+    );
+    const updatedLead = normalizeCrmLead({ ...lead, status: 'QUALIFIED' });
+    setRecords((current) => ({
+      ...current,
+      leads: upsertCrmRecord(current.leads, updatedLead),
+      opportunities: upsertCrmRecord(current.opportunities, opportunity),
+    }));
+    setLeadForm(updatedLead);
+    setOpportunityForm(opportunity);
+    setActiveView('opportunities');
+    setError('');
+    setMessage(`${lead.leadNumber} converted to ${opportunity.opportunityNumber}.`);
+  }
+
+  function changeOpportunityStage(opportunityId: string, stage: CrmOpportunityStage) {
+    setRecords((current) => ({
+      ...current,
+      opportunities: current.opportunities.map((opportunity) =>
+        opportunity.id === opportunityId
+          ? normalizeCrmOpportunity({ ...opportunity, stage })
+          : opportunity,
+      ),
+    }));
+    setMessage(`Opportunity moved to ${labelizeEnum(stage)}.`);
+    setError('');
+  }
+
+  function updateActivityStatus(activityId: string, status: CrmActivityStatus) {
+    setRecords((current) => ({
+      ...current,
+      activities: current.activities.map((activity) =>
+        activity.id === activityId
+          ? normalizeCrmActivity({
+              ...activity,
+              status,
+              completedAt: status === 'DONE' ? new Date().toISOString() : '',
+            })
+          : activity,
+      ),
+    }));
+    setMessage(status === 'DONE' ? 'Activity marked done.' : `Activity marked ${labelizeEnum(status)}.`);
+    setError('');
+  }
+
+  function scheduleFollowUpForLead(lead: CrmLead) {
+    setActivityForm(
+      createCrmActivity(currentUser, lead.branchId || defaultBranchId, {
+        leadId: lead.id,
+        subject: `Follow up with ${lead.name}`,
+        activityType: 'FOLLOW_UP',
+      }),
+    );
+    setActiveView('activities');
+    setMessage(`Follow-up prepared for ${lead.leadNumber}.`);
+    setError('');
+  }
+
+  function scheduleFollowUpForOpportunity(opportunity: CrmOpportunity) {
+    setActivityForm(
+      createCrmActivity(currentUser, opportunity.branchId || defaultBranchId, {
+        opportunityId: opportunity.id,
+        subject: `Follow up on ${opportunity.title}`,
+        activityType: 'FOLLOW_UP',
+      }),
+    );
+    setActiveView('activities');
+    setMessage(`Follow-up prepared for ${opportunity.opportunityNumber}.`);
+    setError('');
+  }
+
+  async function copyCrmSummary(record: CrmLead | CrmOpportunity) {
+    const summary = 'leadNumber' in record ? crmLeadSummary(record, organization) : crmOpportunitySummary(record, organization);
+    try {
+      await copyTextToClipboard(summary);
+      setMessage('CRM summary copied to clipboard.');
+      setError('');
+    } catch {
+      setError('Unable to copy the CRM summary. Select and copy it manually from the record.');
+      setMessage('');
+    }
+  }
+
+  function openCrmWhatsApp(record: CrmLead | CrmOpportunity) {
+    const phoneNumber = normalizeWhatsAppNumber(record.phone);
+    if (!phoneNumber) {
+      setError('Add a WhatsApp number before opening this CRM message.');
+      setMessage('');
+      return;
+    }
+
+    const text = 'leadNumber' in record ? crmLeadSummary(record, organization) : crmOpportunitySummary(record, organization);
+    window.open(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+    setMessage('Opening WhatsApp with the CRM message.');
+    setError('');
+  }
+
+  function openCrmEmail(record: CrmLead | CrmOpportunity) {
+    if (!record.email.trim()) {
+      setError('Add an email address before preparing this CRM email.');
+      setMessage('');
+      return;
+    }
+
+    const subject =
+      'leadNumber' in record
+        ? `${record.leadNumber} follow-up from ${organization.name}`
+        : `${record.opportunityNumber} update from ${organization.name}`;
+    const body = 'leadNumber' in record ? crmLeadSummary(record, organization) : crmOpportunitySummary(record, organization);
+    window.location.href = `mailto:${encodeURIComponent(record.email.trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+
+  function exportCrmCsv() {
+    const timestamp = todayInputValue();
+    downloadCsv(`keen-crm-${timestamp}.csv`, [
+      ['CRM Export', organization.name, timestamp],
+      [],
+      ['Leads'],
+      [
+        'Lead Number',
+        'Name',
+        'Company',
+        'Phone',
+        'Email',
+        'Location',
+        'Source',
+        'Estimated Value',
+        'Status',
+        'Branch',
+        'Updated',
+      ],
+      ...leads.map((lead) => [
+        lead.leadNumber,
+        lead.name,
+        lead.company,
+        lead.phone,
+        lead.email,
+        lead.location,
+        lead.source,
+        toNumber(lead.estimatedValue).toFixed(2),
+        lead.status,
+        branchName(branches, lead.branchId),
+        formatDateTime(lead.updatedAt),
+      ]),
+      [],
+      ['Opportunities'],
+      [
+        'Opportunity Number',
+        'Title',
+        'Customer',
+        'Company',
+        'Expected Value',
+        'Probability',
+        'Weighted Value',
+        'Stage',
+        'Expected Close',
+        'Branch',
+        'Updated',
+      ],
+      ...opportunities.map((opportunity) => [
+        opportunity.opportunityNumber,
+        opportunity.title,
+        opportunity.customerName,
+        opportunity.company,
+        toNumber(opportunity.expectedValue).toFixed(2),
+        toNumber(opportunity.probabilityPercent).toFixed(2),
+        crmWeightedValue(opportunity).toFixed(2),
+        opportunity.stage,
+        opportunity.expectedCloseDate,
+        branchName(branches, opportunity.branchId),
+        formatDateTime(opportunity.updatedAt),
+      ]),
+      [],
+      ['Activities'],
+      ['Type', 'Subject', 'Due', 'Status', 'Related Record', 'Assigned To', 'Notes'],
+      ...activities.map((activity) => [
+        activity.activityType,
+        activity.subject,
+        activity.dueAt,
+        activity.status,
+        crmActivityRelatedLabel(activity, leads, opportunities),
+        activity.assignedTo,
+        activity.notes,
+      ]),
+    ]);
+    setMessage('CRM CSV export downloaded.');
+    setError('');
+  }
+
+  function updateActivityRelation(value: string) {
+    if (value === 'general') {
+      setActivityForm((current) => ({ ...current, leadId: '', opportunityId: '' }));
+      return;
+    }
+
+    const [type, id] = value.split(':');
+    if (type === 'lead') {
+      const lead = leads.find((item) => item.id === id);
+      setActivityForm((current) => ({
+        ...current,
+        leadId: id,
+        opportunityId: '',
+        branchId: lead?.branchId || current.branchId,
+      }));
+      return;
+    }
+
+    const opportunity = opportunities.find((item) => item.id === id);
+    setActivityForm((current) => ({
+      ...current,
+      leadId: '',
+      opportunityId: id,
+      branchId: opportunity?.branchId || current.branchId,
+    }));
+  }
+
+  return (
+    <section className="table-workspace crm-workspace">
+      <PageHeader
+        title={summaryTitle}
+        subtitle={summaryDescription}
+        action={
+          <div className="header-actions">
+            <button className="secondary-action compact-action" type="button" onClick={exportCrmCsv}>
+              <i className="bi bi-download" aria-hidden="true" />
+              Export CSV
+            </button>
+            <button
+              className="primary-action compact-action"
+              type="button"
+              onClick={() => {
+                resetLeadForm();
+                setActiveView('leads');
+              }}
+            >
+              <i className="bi bi-person-plus" aria-hidden="true" />
+              New Lead
+            </button>
+          </div>
+        }
+      />
+
+      <FormMessages error={error} message={message} />
+
+      <div className="branch-summary-row commercial-summary-row">
+        {metrics.map((metric) => (
+          <SummaryMetric
+            icon={metric.icon}
+            key={metric.label}
+            label={metric.label}
+            value={metric.value}
+            tone={metric.tone}
+          />
+        ))}
+      </div>
+
+      <section className="panel-card crm-control-panel">
+        <div className="commercial-type-toggle crm-view-toggle" role="tablist" aria-label="CRM views">
+          {crmWorkspaceViews().map((view) => (
+            <button
+              aria-selected={activeView === view.key}
+              className={activeView === view.key ? 'active' : ''}
+              key={view.key}
+              type="button"
+              onClick={() => setActiveView(view.key)}
+            >
+              <i className={`bi ${view.icon}`} aria-hidden="true" />
+              {view.label}
+            </button>
+          ))}
+        </div>
+        <div className="crm-filter-row">
+          <label className="field-stack">
+            <span>Search CRM</span>
+            <input
+              placeholder="Lead, customer, phone, email, source"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
+          </label>
+          <label className="field-stack">
+            <span>Branch</span>
+            <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
+              <option value="ALL">All branches</option>
+              {activeBranches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-stack">
+            <span>Opportunity Stage</span>
+            <select
+              value={stageFilter}
+              onChange={(event) => setStageFilter(event.target.value as 'ALL' | CrmOpportunityStage)}
+            >
+              <option value="ALL">All stages</option>
+              {crmOpportunityStages.map((stage) => (
+                <option key={stage} value={stage}>
+                  {labelizeEnum(stage)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="secondary-action compact-action"
+            type="button"
+            onClick={() => {
+              setSearchTerm('');
+              setBranchFilter('ALL');
+              setStageFilter('ALL');
+            }}
+          >
+            <i className="bi bi-arrow-counterclockwise" aria-hidden="true" />
+            Reset
+          </button>
+        </div>
+      </section>
+
+      {activeView === 'pipeline' ? (
+        <div className="crm-main-grid">
+          <section className="panel-card crm-pipeline-panel">
+            <PanelHeader
+              icon="bi-kanban"
+              title="Opportunity Pipeline"
+              tone="blue"
+              action={
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => {
+                    resetOpportunityForm();
+                    setActiveView('opportunities');
+                  }}
+                >
+                  <i className="bi bi-plus-lg" aria-hidden="true" />
+                  Opportunity
+                </button>
+              }
+            />
+            {filteredOpportunities.length === 0 ? (
+              <EmptyState
+                icon="bi-kanban"
+                title="No opportunities in view"
+                detail="Create an opportunity or adjust the CRM filters."
+              />
+            ) : (
+              <div className="crm-kanban-board">
+                {crmPipelineStages.map((stage) => {
+                  const stageOpportunities = filteredOpportunities.filter(
+                    (opportunity) => opportunity.stage === stage,
+                  );
+                  return (
+                    <section className="crm-kanban-column" key={stage}>
+                      <header>
+                        <span>{labelizeEnum(stage)}</span>
+                        <strong>{stageOpportunities.length}</strong>
+                      </header>
+                      <div className="crm-kanban-column-body">
+                        {stageOpportunities.length === 0 ? (
+                          <p className="crm-muted-text">No deals</p>
+                        ) : (
+                          stageOpportunities.map((opportunity) => (
+                            <article className="crm-opportunity-card" key={opportunity.id}>
+                              <div>
+                                <span>{opportunity.opportunityNumber}</span>
+                                <strong>{opportunity.title}</strong>
+                                <p>
+                                  {opportunity.customerName || opportunity.company || 'Customer'}
+                                </p>
+                              </div>
+                              <dl>
+                                <div>
+                                  <dt>Value</dt>
+                                  <dd>
+                                    {formatMoney(
+                                      toNumber(opportunity.expectedValue),
+                                      organization.currencyCode,
+                                    )}
+                                  </dd>
+                                </div>
+                                <div>
+                                  <dt>Probability</dt>
+                                  <dd>{toNumber(opportunity.probabilityPercent).toFixed(0)}%</dd>
+                                </div>
+                                <div>
+                                  <dt>Close</dt>
+                                  <dd>{formatDateOnly(opportunity.expectedCloseDate)}</dd>
+                                </div>
+                              </dl>
+                              <div className="crm-card-actions">
+                                <button type="button" onClick={() => editOpportunity(opportunity)}>
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => scheduleFollowUpForOpportunity(opportunity)}
+                                >
+                                  Follow-up
+                                </button>
+                                {opportunity.stage !== 'WON' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => changeOpportunityStage(opportunity.id, 'WON')}
+                                  >
+                                    Won
+                                  </button>
+                                ) : null}
+                                {opportunity.stage !== 'LOST' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => changeOpportunityStage(opportunity.id, 'LOST')}
+                                  >
+                                    Lost
+                                  </button>
+                                ) : null}
+                              </div>
+                            </article>
+                          ))
+                        )}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section className="panel-card crm-agenda-panel">
+            <PanelHeader
+              icon="bi-calendar-check"
+              title="Follow-up Agenda"
+              tone={overdueActivities.length > 0 ? 'orange' : 'green'}
+              action={
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => {
+                    resetActivityForm();
+                    setActiveView('activities');
+                  }}
+                >
+                  <i className="bi bi-plus-lg" aria-hidden="true" />
+                  Activity
+                </button>
+              }
+            />
+            {nextActivities.length === 0 ? (
+              <EmptyState
+                icon="bi-calendar-check"
+                title="No open follow-ups"
+                detail="Activities scheduled from leads and opportunities will appear here."
+              />
+            ) : (
+              <div className="crm-agenda-list">
+                {nextActivities.map((activity) => (
+                  <article
+                    className={`crm-agenda-item ${isCrmActivityOverdue(activity) ? 'overdue' : ''}`}
+                    key={activity.id}
+                  >
+                    <div>
+                      <span>{labelizeEnum(activity.activityType)}</span>
+                      <strong>{activity.subject}</strong>
+                      <p>{crmActivityRelatedLabel(activity, leads, opportunities)}</p>
+                    </div>
+                    <time>{activity.dueAt ? formatDateTime(activity.dueAt) : 'No due date'}</time>
+                    <div className="crm-card-actions">
+                      <button type="button" onClick={() => editActivity(activity)}>
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => updateActivityStatus(activity.id, 'DONE')}>
+                        Done
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {activeView === 'leads' ? (
+        <div className="crm-main-grid">
+          <section className="panel-card crm-form-panel">
+            <PanelHeader icon="bi-person-plus" title="Lead Capture" tone="green" />
+            <form className="record-form crm-record-form" onSubmit={saveLead}>
+              <label className="field-stack">
+                <span>Lead Number</span>
+                <input
+                  required
+                  maxLength={40}
+                  value={leadForm.leadNumber}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({ ...current, leadNumber: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Status</span>
+                <select
+                  value={leadForm.status}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({
+                      ...current,
+                      status: event.target.value as CrmLeadStatus,
+                    }))
+                  }
+                >
+                  {crmLeadStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {labelizeEnum(status)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack">
+                <span>Name</span>
+                <input
+                  required
+                  maxLength={160}
+                  value={leadForm.name}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({ ...current, name: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Company</span>
+                <input
+                  maxLength={160}
+                  value={leadForm.company}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({ ...current, company: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Phone</span>
+                <input
+                  inputMode="tel"
+                  maxLength={40}
+                  placeholder="+254..."
+                  value={leadForm.phone}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({ ...current, phone: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Email</span>
+                <input
+                  type="email"
+                  maxLength={254}
+                  value={leadForm.email}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({ ...current, email: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Location</span>
+                <input
+                  maxLength={160}
+                  value={leadForm.location}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({ ...current, location: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Source</span>
+                <input
+                  maxLength={80}
+                  placeholder="Referral, walk-in, Instagram"
+                  value={leadForm.source}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({ ...current, source: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Estimated Value</span>
+                <input
+                  min="0"
+                  step="0.01"
+                  type="number"
+                  value={leadForm.estimatedValue}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({ ...current, estimatedValue: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Branch</span>
+                <select
+                  value={leadForm.branchId}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({ ...current, branchId: event.target.value }))
+                  }
+                >
+                  <option value="">No branch assigned</option>
+                  {activeBranches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack">
+                <span>Assigned To</span>
+                <input
+                  maxLength={120}
+                  value={leadForm.assignedTo}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({ ...current, assignedTo: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Notes</span>
+                <textarea
+                  maxLength={500}
+                  value={leadForm.notes}
+                  onChange={(event) =>
+                    setLeadForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                />
+              </label>
+              <div className="form-actions wide-field">
+                <button className="primary-action compact-action" type="submit">
+                  <i className="bi bi-save" aria-hidden="true" />
+                  Save Lead
+                </button>
+                <button className="secondary-action compact-action" type="button" onClick={resetLeadForm}>
+                  <i className="bi bi-file-earmark-plus" aria-hidden="true" />
+                  New Lead
+                </button>
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => convertLeadToOpportunity(leadForm)}
+                  disabled={!leads.some((lead) => lead.id === leadForm.id)}
+                >
+                  <i className="bi bi-arrow-right-circle" aria-hidden="true" />
+                  Convert
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <CrmLeadsTable
+            branches={branches}
+            leads={filteredLeads}
+            onCopy={copyCrmSummary}
+            onDelete={deleteLead}
+            onEdit={editLead}
+            onEmail={openCrmEmail}
+            onFollowUp={scheduleFollowUpForLead}
+            onConvert={convertLeadToOpportunity}
+            onWhatsApp={openCrmWhatsApp}
+            organization={organization}
+          />
+        </div>
+      ) : null}
+
+      {activeView === 'opportunities' ? (
+        <div className="crm-main-grid">
+          <section className="panel-card crm-form-panel">
+            <PanelHeader icon="bi-graph-up-arrow" title="Opportunity Builder" tone="blue" />
+            <form className="record-form crm-record-form" onSubmit={saveOpportunity}>
+              <label className="field-stack">
+                <span>Opportunity Number</span>
+                <input
+                  required
+                  maxLength={40}
+                  value={opportunityForm.opportunityNumber}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({
+                      ...current,
+                      opportunityNumber: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Stage</span>
+                <select
+                  value={opportunityForm.stage}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({
+                      ...current,
+                      stage: event.target.value as CrmOpportunityStage,
+                    }))
+                  }
+                >
+                  {crmOpportunityStages.map((stage) => (
+                    <option key={stage} value={stage}>
+                      {labelizeEnum(stage)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack wide-field">
+                <span>Linked Lead</span>
+                <select
+                  value={opportunityForm.leadId}
+                  onChange={(event) => {
+                    const lead = leads.find((item) => item.id === event.target.value);
+                    setOpportunityForm((current) => ({
+                      ...current,
+                      leadId: event.target.value,
+                      branchId: lead?.branchId || current.branchId,
+                      customerName: current.customerName || lead?.name || '',
+                      company: current.company || lead?.company || '',
+                      phone: current.phone || lead?.phone || '',
+                      email: current.email || lead?.email || '',
+                    }));
+                  }}
+                >
+                  <option value="">No linked lead</option>
+                  {leads.map((lead) => (
+                    <option key={lead.id} value={lead.id}>
+                      {lead.leadNumber} - {lead.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack wide-field">
+                <span>Opportunity Title</span>
+                <input
+                  required
+                  maxLength={180}
+                  value={opportunityForm.title}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({ ...current, title: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Customer Name</span>
+                <input
+                  required
+                  maxLength={160}
+                  value={opportunityForm.customerName}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({
+                      ...current,
+                      customerName: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Company</span>
+                <input
+                  maxLength={160}
+                  value={opportunityForm.company}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({ ...current, company: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Phone</span>
+                <input
+                  inputMode="tel"
+                  maxLength={40}
+                  value={opportunityForm.phone}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({ ...current, phone: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Email</span>
+                <input
+                  type="email"
+                  maxLength={254}
+                  value={opportunityForm.email}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({ ...current, email: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Expected Value</span>
+                <input
+                  min="0"
+                  step="0.01"
+                  type="number"
+                  value={opportunityForm.expectedValue}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({
+                      ...current,
+                      expectedValue: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Probability %</span>
+                <input
+                  min="0"
+                  max="100"
+                  step="1"
+                  type="number"
+                  value={opportunityForm.probabilityPercent}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({
+                      ...current,
+                      probabilityPercent: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Expected Close</span>
+                <input
+                  type="date"
+                  value={opportunityForm.expectedCloseDate}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({
+                      ...current,
+                      expectedCloseDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Branch</span>
+                <select
+                  value={opportunityForm.branchId}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({ ...current, branchId: event.target.value }))
+                  }
+                >
+                  <option value="">No branch assigned</option>
+                  {activeBranches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack">
+                <span>Assigned To</span>
+                <input
+                  maxLength={120}
+                  value={opportunityForm.assignedTo}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({
+                      ...current,
+                      assignedTo: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Notes</span>
+                <textarea
+                  maxLength={500}
+                  value={opportunityForm.notes}
+                  onChange={(event) =>
+                    setOpportunityForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                />
+              </label>
+              <div className="commercial-total-strip crm-opportunity-value-strip wide-field">
+                <div>
+                  <span>Expected</span>
+                  <strong>
+                    {formatMoney(toNumber(opportunityForm.expectedValue), organization.currencyCode)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Weighted</span>
+                  <strong>
+                    {formatMoney(crmWeightedValue(opportunityForm), organization.currencyCode)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Probability</span>
+                  <strong>{toNumber(opportunityForm.probabilityPercent).toFixed(0)}%</strong>
+                </div>
+                <div>
+                  <span>Stage</span>
+                  <strong>{labelizeEnum(opportunityForm.stage)}</strong>
+                </div>
+              </div>
+              <div className="form-actions wide-field">
+                <button className="primary-action compact-action" type="submit">
+                  <i className="bi bi-save" aria-hidden="true" />
+                  Save Opportunity
+                </button>
+                <button className="secondary-action compact-action" type="button" onClick={resetOpportunityForm}>
+                  <i className="bi bi-file-earmark-plus" aria-hidden="true" />
+                  New
+                </button>
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => scheduleFollowUpForOpportunity(opportunityForm)}
+                  disabled={!opportunities.some((opportunity) => opportunity.id === opportunityForm.id)}
+                >
+                  <i className="bi bi-calendar-plus" aria-hidden="true" />
+                  Follow-up
+                </button>
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => navigate('/commercial')}
+                >
+                  <i className="bi bi-file-earmark-text" aria-hidden="true" />
+                  Quote
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <CrmOpportunitiesTable
+            branches={branches}
+            onCopy={copyCrmSummary}
+            onDelete={deleteOpportunity}
+            onEdit={editOpportunity}
+            onEmail={openCrmEmail}
+            onFollowUp={scheduleFollowUpForOpportunity}
+            onStageChange={changeOpportunityStage}
+            onWhatsApp={openCrmWhatsApp}
+            opportunities={filteredOpportunities}
+            organization={organization}
+          />
+        </div>
+      ) : null}
+
+      {activeView === 'activities' ? (
+        <div className="crm-main-grid">
+          <section className="panel-card crm-form-panel">
+            <PanelHeader icon="bi-calendar-plus" title="Activity Planner" tone="orange" />
+            <form className="record-form crm-record-form" onSubmit={saveActivity}>
+              <label className="field-stack">
+                <span>Type</span>
+                <select
+                  value={activityForm.activityType}
+                  onChange={(event) =>
+                    setActivityForm((current) => ({
+                      ...current,
+                      activityType: event.target.value as CrmActivityType,
+                    }))
+                  }
+                >
+                  {crmActivityTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {labelizeEnum(type)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack">
+                <span>Status</span>
+                <select
+                  value={activityForm.status}
+                  onChange={(event) =>
+                    setActivityForm((current) => ({
+                      ...current,
+                      status: event.target.value as CrmActivityStatus,
+                    }))
+                  }
+                >
+                  {crmActivityStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {labelizeEnum(status)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack wide-field">
+                <span>Subject</span>
+                <input
+                  required
+                  maxLength={180}
+                  value={activityForm.subject}
+                  onChange={(event) =>
+                    setActivityForm((current) => ({ ...current, subject: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Related Record</span>
+                <select
+                  value={crmActivityRelationValue(activityForm)}
+                  onChange={(event) => updateActivityRelation(event.target.value)}
+                >
+                  <option value="general">General CRM activity</option>
+                  {leads.length > 0 ? (
+                    <optgroup label="Leads">
+                      {leads.map((lead) => (
+                        <option key={lead.id} value={`lead:${lead.id}`}>
+                          {lead.leadNumber} - {lead.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                  {opportunities.length > 0 ? (
+                    <optgroup label="Opportunities">
+                      {opportunities.map((opportunity) => (
+                        <option key={opportunity.id} value={`opportunity:${opportunity.id}`}>
+                          {opportunity.opportunityNumber} - {opportunity.title}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                </select>
+              </label>
+              <label className="field-stack">
+                <span>Due At</span>
+                <input
+                  type="datetime-local"
+                  value={activityForm.dueAt}
+                  onChange={(event) =>
+                    setActivityForm((current) => ({ ...current, dueAt: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Branch</span>
+                <select
+                  value={activityForm.branchId}
+                  onChange={(event) =>
+                    setActivityForm((current) => ({ ...current, branchId: event.target.value }))
+                  }
+                >
+                  <option value="">No branch assigned</option>
+                  {activeBranches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack">
+                <span>Assigned To</span>
+                <input
+                  maxLength={120}
+                  value={activityForm.assignedTo}
+                  onChange={(event) =>
+                    setActivityForm((current) => ({ ...current, assignedTo: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Notes</span>
+                <textarea
+                  maxLength={500}
+                  value={activityForm.notes}
+                  onChange={(event) =>
+                    setActivityForm((current) => ({ ...current, notes: event.target.value }))
+                  }
+                />
+              </label>
+              <div className="form-actions wide-field">
+                <button className="primary-action compact-action" type="submit">
+                  <i className="bi bi-save" aria-hidden="true" />
+                  Save Activity
+                </button>
+                <button className="secondary-action compact-action" type="button" onClick={resetActivityForm}>
+                  <i className="bi bi-calendar-plus" aria-hidden="true" />
+                  New
+                </button>
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => updateActivityStatus(activityForm.id, 'DONE')}
+                  disabled={!activities.some((activity) => activity.id === activityForm.id)}
+                >
+                  <i className="bi bi-check2-circle" aria-hidden="true" />
+                  Done
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <CrmActivitiesTable
+            activities={filteredActivities}
+            leads={leads}
+            onDelete={deleteActivity}
+            onEdit={editActivity}
+            onStatusChange={updateActivityStatus}
+            opportunities={opportunities}
+          />
+        </div>
+      ) : null}
+
+      {summaryQuery.isError ? (
+        <p className="table-footnote">
+          CRM API summary is unavailable. Local CRM records are still available in this browser.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function CrmLeadsTable({
+  branches,
+  leads,
+  onCopy,
+  onDelete,
+  onEdit,
+  onEmail,
+  onFollowUp,
+  onConvert,
+  onWhatsApp,
+  organization,
+}: {
+  branches: Branch[];
+  leads: CrmLead[];
+  onCopy: (lead: CrmLead) => void;
+  onDelete: (leadId: string) => void;
+  onEdit: (lead: CrmLead) => void;
+  onEmail: (lead: CrmLead) => void;
+  onFollowUp: (lead: CrmLead) => void;
+  onConvert: (lead: CrmLead) => void;
+  onWhatsApp: (lead: CrmLead) => void;
+  organization: Organization;
+}) {
+  return (
+    <section className="panel-card crm-records-panel">
+      <PanelHeader icon="bi-person-lines-fill" title="Lead Directory" tone="green" />
+      {leads.length === 0 ? (
+        <EmptyState
+          icon="bi-person-plus"
+          title="No leads in view"
+          detail="Capture a lead or clear the CRM filters."
+        />
+      ) : (
+        <div className="responsive-table crm-table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Lead</th>
+                <th>Contact</th>
+                <th>Value</th>
+                <th>Status</th>
+                <th>Branch</th>
+                <th>Updated</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leads.map((lead) => (
+                <tr key={lead.id}>
+                  <td data-label="Lead">
+                    <span className="table-label">
+                      <i className="bi bi-person-vcard" aria-hidden="true" />
+                      <span>
+                        <strong>{lead.leadNumber}</strong>
+                        <small>{lead.name}</small>
+                        {lead.company ? <small>{lead.company}</small> : null}
+                      </span>
+                    </span>
+                  </td>
+                  <td data-label="Contact">
+                    {lead.phone || lead.email || 'N/A'}
+                    {lead.location ? (
+                      <>
+                        <br />
+                        <small>{lead.location}</small>
+                      </>
+                    ) : null}
+                  </td>
+                  <td data-label="Value">
+                    {formatMoney(toNumber(lead.estimatedValue), organization.currencyCode)}
+                  </td>
+                  <td data-label="Status">
+                    <StatusPill status={crmRecordTone(lead.status)} label={labelizeEnum(lead.status)} />
+                  </td>
+                  <td data-label="Branch">{branchName(branches, lead.branchId)}</td>
+                  <td data-label="Updated">{formatDateTime(lead.updatedAt)}</td>
+                  <td data-label="Actions">
+                    <div className="commercial-table-actions crm-table-actions">
+                      <button className="text-button" type="button" onClick={() => onEdit(lead)}>
+                        Edit
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onConvert(lead)}>
+                        Convert
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onFollowUp(lead)}>
+                        Follow-up
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onCopy(lead)}>
+                        Copy
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onWhatsApp(lead)}>
+                        WhatsApp
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onEmail(lead)}>
+                        Email
+                      </button>
+                      <button className="text-button danger-text-button" type="button" onClick={() => onDelete(lead.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CrmOpportunitiesTable({
+  branches,
+  onCopy,
+  onDelete,
+  onEdit,
+  onEmail,
+  onFollowUp,
+  onStageChange,
+  onWhatsApp,
+  opportunities,
+  organization,
+}: {
+  branches: Branch[];
+  onCopy: (opportunity: CrmOpportunity) => void;
+  onDelete: (opportunityId: string) => void;
+  onEdit: (opportunity: CrmOpportunity) => void;
+  onEmail: (opportunity: CrmOpportunity) => void;
+  onFollowUp: (opportunity: CrmOpportunity) => void;
+  onStageChange: (opportunityId: string, stage: CrmOpportunityStage) => void;
+  onWhatsApp: (opportunity: CrmOpportunity) => void;
+  opportunities: CrmOpportunity[];
+  organization: Organization;
+}) {
+  return (
+    <section className="panel-card crm-records-panel">
+      <PanelHeader icon="bi-graph-up-arrow" title="Opportunities" tone="blue" />
+      {opportunities.length === 0 ? (
+        <EmptyState
+          icon="bi-graph-up"
+          title="No opportunities in view"
+          detail="Create an opportunity or clear the CRM filters."
+        />
+      ) : (
+        <div className="responsive-table crm-table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Opportunity</th>
+                <th>Customer</th>
+                <th>Expected</th>
+                <th>Weighted</th>
+                <th>Stage</th>
+                <th>Close</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {opportunities.map((opportunity) => (
+                <tr key={opportunity.id}>
+                  <td data-label="Opportunity">
+                    <span className="table-label">
+                      <i className="bi bi-bullseye" aria-hidden="true" />
+                      <span>
+                        <strong>{opportunity.opportunityNumber}</strong>
+                        <small>{opportunity.title}</small>
+                        <small>{branchName(branches, opportunity.branchId)}</small>
+                      </span>
+                    </span>
+                  </td>
+                  <td data-label="Customer">
+                    {opportunity.customerName || opportunity.company || 'Customer'}
+                    {opportunity.phone ? (
+                      <>
+                        <br />
+                        <small>{opportunity.phone}</small>
+                      </>
+                    ) : null}
+                  </td>
+                  <td data-label="Expected">
+                    {formatMoney(toNumber(opportunity.expectedValue), organization.currencyCode)}
+                  </td>
+                  <td data-label="Weighted">
+                    {formatMoney(crmWeightedValue(opportunity), organization.currencyCode)}
+                  </td>
+                  <td data-label="Stage">
+                    <StatusPill
+                      status={crmRecordTone(opportunity.stage)}
+                      label={labelizeEnum(opportunity.stage)}
+                    />
+                  </td>
+                  <td data-label="Close">{formatDateOnly(opportunity.expectedCloseDate)}</td>
+                  <td data-label="Actions">
+                    <div className="commercial-table-actions crm-table-actions">
+                      <button className="text-button" type="button" onClick={() => onEdit(opportunity)}>
+                        Edit
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onFollowUp(opportunity)}>
+                        Follow-up
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onStageChange(opportunity.id, 'WON')}>
+                        Won
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onStageChange(opportunity.id, 'LOST')}>
+                        Lost
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onCopy(opportunity)}>
+                        Copy
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onWhatsApp(opportunity)}>
+                        WhatsApp
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onEmail(opportunity)}>
+                        Email
+                      </button>
+                      <button className="text-button danger-text-button" type="button" onClick={() => onDelete(opportunity.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CrmActivitiesTable({
+  activities,
+  leads,
+  onDelete,
+  onEdit,
+  onStatusChange,
+  opportunities,
+}: {
+  activities: CrmActivity[];
+  leads: CrmLead[];
+  onDelete: (activityId: string) => void;
+  onEdit: (activity: CrmActivity) => void;
+  onStatusChange: (activityId: string, status: CrmActivityStatus) => void;
+  opportunities: CrmOpportunity[];
+}) {
+  return (
+    <section className="panel-card crm-records-panel">
+      <PanelHeader icon="bi-calendar-check" title="Activity Log" tone="orange" />
+      {activities.length === 0 ? (
+        <EmptyState
+          icon="bi-calendar-check"
+          title="No activities in view"
+          detail="Schedule a call, meeting, task, note, or follow-up."
+        />
+      ) : (
+        <div className="responsive-table crm-table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Activity</th>
+                <th>Related</th>
+                <th>Due</th>
+                <th>Status</th>
+                <th>Assigned</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activities.map((activity) => (
+                <tr key={activity.id}>
+                  <td data-label="Activity">
+                    <span className="table-label">
+                      <i className={`bi ${crmActivityIcon(activity.activityType)}`} aria-hidden="true" />
+                      <span>
+                        <strong>{activity.subject}</strong>
+                        <small>{labelizeEnum(activity.activityType)}</small>
+                      </span>
+                    </span>
+                  </td>
+                  <td data-label="Related">{crmActivityRelatedLabel(activity, leads, opportunities)}</td>
+                  <td data-label="Due">
+                    {activity.dueAt ? formatDateTime(activity.dueAt) : 'N/A'}
+                    {isCrmActivityOverdue(activity) ? (
+                      <>
+                        <br />
+                        <small>Overdue</small>
+                      </>
+                    ) : null}
+                  </td>
+                  <td data-label="Status">
+                    <StatusPill
+                      status={crmRecordTone(activity.status)}
+                      label={labelizeEnum(activity.status)}
+                    />
+                  </td>
+                  <td data-label="Assigned">{activity.assignedTo || 'Unassigned'}</td>
+                  <td data-label="Actions">
+                    <div className="commercial-table-actions crm-table-actions">
+                      <button className="text-button" type="button" onClick={() => onEdit(activity)}>
+                        Edit
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onStatusChange(activity.id, 'DONE')}>
+                        Done
+                      </button>
+                      <button className="text-button" type="button" onClick={() => onStatusChange(activity.id, 'CANCELLED')}>
+                        Cancel
+                      </button>
+                      <button className="text-button danger-text-button" type="button" onClick={() => onDelete(activity.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function crmWorkspaceViews(): { key: CrmWorkspaceView; label: string; icon: string }[] {
+  return [
+    { key: 'pipeline', label: 'Pipeline', icon: 'bi-kanban' },
+    { key: 'leads', label: 'Leads', icon: 'bi-person-plus' },
+    { key: 'opportunities', label: 'Opportunities', icon: 'bi-graph-up-arrow' },
+    { key: 'activities', label: 'Activities', icon: 'bi-calendar-check' },
+  ];
+}
+
+function createCrmLead(currentUser: CurrentUser, branchId: string, leadNumber: string): CrmLead {
+  const now = new Date().toISOString();
+  return {
+    id: createCommercialId(),
+    leadNumber,
+    branchId,
+    assignedTo: currentUser.displayName,
+    name: '',
+    company: '',
+    phone: '',
+    email: '',
+    location: '',
+    source: '',
+    estimatedValue: '0',
+    status: 'NEW',
+    notes: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function createCrmOpportunity(
+  currentUser: CurrentUser,
+  branchId: string,
+  opportunityNumber: string,
+  lead?: CrmLead,
+): CrmOpportunity {
+  const now = new Date().toISOString();
+  return {
+    id: createCommercialId(),
+    opportunityNumber,
+    leadId: lead?.id ?? '',
+    branchId: lead?.branchId || branchId,
+    assignedTo: currentUser.displayName,
+    title: lead ? `${lead.company || lead.name} opportunity` : '',
+    customerName: lead?.name ?? '',
+    company: lead?.company ?? '',
+    phone: lead?.phone ?? '',
+    email: lead?.email ?? '',
+    expectedValue: lead?.estimatedValue ?? '0',
+    probabilityPercent: lead ? '45' : '20',
+    expectedCloseDate: addDaysInputValue(todayInputValue(), 14),
+    stage: lead ? 'QUALIFIED' : 'NEW',
+    notes: lead?.notes ?? '',
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function createCrmActivity(
+  currentUser: CurrentUser,
+  branchId: string,
+  options: Partial<CrmActivity> = {},
+): CrmActivity {
+  const now = new Date().toISOString();
+  return {
+    id: createCommercialId(),
+    leadId: options.leadId ?? '',
+    opportunityId: options.opportunityId ?? '',
+    branchId,
+    assignedTo: options.assignedTo ?? currentUser.displayName,
+    activityType: options.activityType ?? 'CALL',
+    subject: options.subject ?? '',
+    dueAt: options.dueAt ?? `${addDaysInputValue(todayInputValue(), 1)}T09:00`,
+    completedAt: '',
+    status: options.status ?? 'OPEN',
+    notes: options.notes ?? '',
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function validateCrmLead(lead: CrmLead) {
+  if (!lead.leadNumber.trim()) {
+    return 'Enter a lead number.';
+  }
+  if (!lead.name.trim()) {
+    return 'Enter the lead name.';
+  }
+  if (toNumber(lead.estimatedValue) < 0) {
+    return 'Estimated value cannot be negative.';
+  }
+  return '';
+}
+
+function validateCrmOpportunity(opportunity: CrmOpportunity) {
+  if (!opportunity.opportunityNumber.trim()) {
+    return 'Enter an opportunity number.';
+  }
+  if (!opportunity.title.trim()) {
+    return 'Enter an opportunity title.';
+  }
+  if (!opportunity.customerName.trim() && !opportunity.company.trim()) {
+    return 'Enter a customer name or company.';
+  }
+  if (toNumber(opportunity.expectedValue) < 0) {
+    return 'Expected value cannot be negative.';
+  }
+  const probability = toNumber(opportunity.probabilityPercent);
+  if (probability < 0 || probability > 100) {
+    return 'Probability must be between 0 and 100.';
+  }
+  return '';
+}
+
+function validateCrmActivity(activity: CrmActivity) {
+  if (!activity.subject.trim()) {
+    return 'Enter an activity subject.';
+  }
+  return '';
+}
+
+function normalizeCrmLead(lead: CrmLead): CrmLead {
+  const now = new Date().toISOString();
+  return {
+    ...lead,
+    leadNumber: lead.leadNumber.trim(),
+    branchId: lead.branchId.trim(),
+    assignedTo: lead.assignedTo.trim(),
+    name: lead.name.trim(),
+    company: lead.company.trim(),
+    phone: lead.phone.trim(),
+    email: lead.email.trim(),
+    location: lead.location.trim(),
+    source: lead.source.trim(),
+    estimatedValue: String(Math.max(0, toNumber(lead.estimatedValue))),
+    notes: lead.notes.trim(),
+    createdAt: lead.createdAt || now,
+    updatedAt: now,
+  };
+}
+
+function normalizeCrmOpportunity(opportunity: CrmOpportunity): CrmOpportunity {
+  const now = new Date().toISOString();
+  return {
+    ...opportunity,
+    opportunityNumber: opportunity.opportunityNumber.trim(),
+    leadId: opportunity.leadId.trim(),
+    branchId: opportunity.branchId.trim(),
+    assignedTo: opportunity.assignedTo.trim(),
+    title: opportunity.title.trim(),
+    customerName: opportunity.customerName.trim(),
+    company: opportunity.company.trim(),
+    phone: opportunity.phone.trim(),
+    email: opportunity.email.trim(),
+    expectedValue: String(Math.max(0, toNumber(opportunity.expectedValue))),
+    probabilityPercent: String(Math.min(100, Math.max(0, toNumber(opportunity.probabilityPercent)))),
+    expectedCloseDate: opportunity.expectedCloseDate,
+    notes: opportunity.notes.trim(),
+    createdAt: opportunity.createdAt || now,
+    updatedAt: now,
+  };
+}
+
+function normalizeCrmActivity(activity: CrmActivity): CrmActivity {
+  const now = new Date().toISOString();
+  return {
+    ...activity,
+    leadId: activity.leadId.trim(),
+    opportunityId: activity.opportunityId.trim(),
+    branchId: activity.branchId.trim(),
+    assignedTo: activity.assignedTo.trim(),
+    subject: activity.subject.trim(),
+    notes: activity.notes.trim(),
+    completedAt: activity.status === 'DONE' ? activity.completedAt || now : '',
+    createdAt: activity.createdAt || now,
+    updatedAt: now,
+  };
+}
+
+function loadCrmRecords(): CrmRecords {
+  try {
+    const rawRecords = window.localStorage.getItem(CRM_STORAGE_KEY);
+    if (!rawRecords) {
+      return emptyCrmRecords();
+    }
+    const parsed = JSON.parse(rawRecords) as Partial<CrmRecords>;
+    return {
+      leads: Array.isArray(parsed.leads) ? parsed.leads.map(coerceCrmLead) : [],
+      opportunities: Array.isArray(parsed.opportunities)
+        ? parsed.opportunities.map(coerceCrmOpportunity)
+        : [],
+      activities: Array.isArray(parsed.activities) ? parsed.activities.map(coerceCrmActivity) : [],
+    };
+  } catch {
+    return emptyCrmRecords();
+  }
+}
+
+function saveCrmRecords(records: CrmRecords) {
+  try {
+    window.localStorage.setItem(CRM_STORAGE_KEY, JSON.stringify(records));
+  } catch {
+    // Local CRM persistence is best-effort when storage is unavailable.
+  }
+}
+
+function emptyCrmRecords(): CrmRecords {
+  return { leads: [], opportunities: [], activities: [] };
+}
+
+function coerceCrmLead(value: unknown): CrmLead {
+  const raw = (value && typeof value === 'object' ? value : {}) as Partial<CrmLead>;
+  const now = new Date().toISOString();
+  return {
+    id: stringValue(raw.id) || createCommercialId(),
+    leadNumber: stringValue(raw.leadNumber) || 'LEAD-0001',
+    branchId: stringValue(raw.branchId),
+    assignedTo: stringValue(raw.assignedTo),
+    name: stringValue(raw.name),
+    company: stringValue(raw.company),
+    phone: stringValue(raw.phone),
+    email: stringValue(raw.email),
+    location: stringValue(raw.location),
+    source: stringValue(raw.source),
+    estimatedValue: stringValue(raw.estimatedValue) || '0',
+    status: crmLeadStatuses.includes(raw.status as CrmLeadStatus)
+      ? (raw.status as CrmLeadStatus)
+      : 'NEW',
+    notes: stringValue(raw.notes),
+    createdAt: stringValue(raw.createdAt) || now,
+    updatedAt: stringValue(raw.updatedAt) || now,
+  };
+}
+
+function coerceCrmOpportunity(value: unknown): CrmOpportunity {
+  const raw = (value && typeof value === 'object' ? value : {}) as Partial<CrmOpportunity>;
+  const now = new Date().toISOString();
+  return {
+    id: stringValue(raw.id) || createCommercialId(),
+    opportunityNumber: stringValue(raw.opportunityNumber) || 'OPP-0001',
+    leadId: stringValue(raw.leadId),
+    branchId: stringValue(raw.branchId),
+    assignedTo: stringValue(raw.assignedTo),
+    title: stringValue(raw.title),
+    customerName: stringValue(raw.customerName),
+    company: stringValue(raw.company),
+    phone: stringValue(raw.phone),
+    email: stringValue(raw.email),
+    expectedValue: stringValue(raw.expectedValue) || '0',
+    probabilityPercent: stringValue(raw.probabilityPercent) || '0',
+    expectedCloseDate: stringValue(raw.expectedCloseDate),
+    stage: crmOpportunityStages.includes(raw.stage as CrmOpportunityStage)
+      ? (raw.stage as CrmOpportunityStage)
+      : 'NEW',
+    notes: stringValue(raw.notes),
+    createdAt: stringValue(raw.createdAt) || now,
+    updatedAt: stringValue(raw.updatedAt) || now,
+  };
+}
+
+function coerceCrmActivity(value: unknown): CrmActivity {
+  const raw = (value && typeof value === 'object' ? value : {}) as Partial<CrmActivity>;
+  const now = new Date().toISOString();
+  return {
+    id: stringValue(raw.id) || createCommercialId(),
+    leadId: stringValue(raw.leadId),
+    opportunityId: stringValue(raw.opportunityId),
+    branchId: stringValue(raw.branchId),
+    assignedTo: stringValue(raw.assignedTo),
+    activityType: crmActivityTypes.includes(raw.activityType as CrmActivityType)
+      ? (raw.activityType as CrmActivityType)
+      : 'CALL',
+    subject: stringValue(raw.subject),
+    dueAt: stringValue(raw.dueAt),
+    completedAt: stringValue(raw.completedAt),
+    status: crmActivityStatuses.includes(raw.status as CrmActivityStatus)
+      ? (raw.status as CrmActivityStatus)
+      : 'OPEN',
+    notes: stringValue(raw.notes),
+    createdAt: stringValue(raw.createdAt) || now,
+    updatedAt: stringValue(raw.updatedAt) || now,
+  };
+}
+
+function upsertCrmRecord<T extends { id: string }>(records: T[], record: T) {
+  const existing = records.some((item) => item.id === record.id);
+  return existing
+    ? records.map((item) => (item.id === record.id ? record : item))
+    : [record, ...records];
+}
+
+function nextCrmLeadNumber(leads: CrmLead[]) {
+  return nextCrmNumber('LEAD', leads.map((lead) => lead.leadNumber));
+}
+
+function nextCrmOpportunityNumber(opportunities: CrmOpportunity[]) {
+  return nextCrmNumber('OPP', opportunities.map((opportunity) => opportunity.opportunityNumber));
+}
+
+function nextCrmNumber(prefix: string, existingNumbers: string[]) {
+  const existing = new Set(existingNumbers);
+  let counter = existingNumbers.length + 1;
+  let candidate = `${prefix}-${String(counter).padStart(4, '0')}`;
+  while (existing.has(candidate)) {
+    counter += 1;
+    candidate = `${prefix}-${String(counter).padStart(4, '0')}`;
+  }
+  return candidate;
+}
+
+function crmMetrics(records: CrmRecords, currencyCode: string) {
+  const openLeads = records.leads.filter((lead) => !['WON', 'LOST'].includes(lead.status));
+  const openOpportunities = records.opportunities.filter(
+    (opportunity) => !['WON', 'LOST'].includes(opportunity.stage),
+  );
+  const pipelineValue =
+    openLeads.reduce((sum, lead) => sum + toNumber(lead.estimatedValue), 0) +
+    openOpportunities.reduce((sum, opportunity) => sum + toNumber(opportunity.expectedValue), 0);
+  const weightedValue = openOpportunities.reduce(
+    (sum, opportunity) => sum + crmWeightedValue(opportunity),
+    0,
+  );
+  const dueActivities = records.activities.filter(
+    (activity) => activity.status === 'OPEN' && activity.dueAt,
+  );
+  const overdueCount = dueActivities.filter(isCrmActivityOverdue).length;
+  return [
+    {
+      icon: 'bi-person-plus',
+      label: 'Open Leads',
+      value: openLeads.length.toLocaleString('en-KE'),
+      tone: 'green' as const,
+    },
+    {
+      icon: 'bi-kanban',
+      label: 'Open Opportunities',
+      value: openOpportunities.length.toLocaleString('en-KE'),
+      tone: 'blue' as const,
+    },
+    {
+      icon: 'bi-cash-stack',
+      label: 'Pipeline Value',
+      value: formatMoney(pipelineValue, currencyCode),
+      tone: 'orange' as const,
+    },
+    {
+      icon: 'bi-clock-history',
+      label: overdueCount > 0 ? 'Overdue Follow-ups' : 'Weighted Pipeline',
+      value:
+        overdueCount > 0
+          ? overdueCount.toLocaleString('en-KE')
+          : formatMoney(weightedValue, currencyCode),
+      tone: 'purple' as const,
+    },
+  ];
+}
+
+function crmWeightedValue(opportunity: Pick<CrmOpportunity, 'expectedValue' | 'probabilityPercent'>) {
+  return toNumber(opportunity.expectedValue) * (toNumber(opportunity.probabilityPercent) / 100);
+}
+
+function crmRecordTone(status: string): 'posted' | 'review' | 'pending' {
+  if (['WON', 'DONE'].includes(status)) {
+    return 'posted';
+  }
+  if (['LOST', 'CANCELLED'].includes(status)) {
+    return 'pending';
+  }
+  return 'review';
+}
+
+function branchName(branches: Branch[], branchId: string) {
+  return branches.find((branch) => branch.id === branchId)?.name ?? 'No branch';
+}
+
+function sortCrmByUpdatedAt<T extends { updatedAt: string }>(first: T, second: T) {
+  return new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime();
+}
+
+function sortCrmActivities(first: CrmActivity, second: CrmActivity) {
+  if (first.status !== second.status) {
+    return first.status === 'OPEN' ? -1 : 1;
+  }
+  const firstTime = first.dueAt ? new Date(first.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+  const secondTime = second.dueAt ? new Date(second.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+  if (firstTime !== secondTime) {
+    return firstTime - secondTime;
+  }
+  return sortCrmByUpdatedAt(first, second);
+}
+
+function isCrmActivityOverdue(activity: CrmActivity) {
+  return activity.status === 'OPEN' && activity.dueAt
+    ? new Date(activity.dueAt).getTime() < Date.now()
+    : false;
+}
+
+function crmActivityRelationValue(activity: CrmActivity) {
+  if (activity.leadId) {
+    return `lead:${activity.leadId}`;
+  }
+  if (activity.opportunityId) {
+    return `opportunity:${activity.opportunityId}`;
+  }
+  return 'general';
+}
+
+function crmActivityRelatedLabel(
+  activity: CrmActivity,
+  leads: CrmLead[],
+  opportunities: CrmOpportunity[],
+) {
+  if (activity.leadId) {
+    const lead = leads.find((item) => item.id === activity.leadId);
+    return lead ? `${lead.leadNumber} - ${lead.name}` : 'Linked lead';
+  }
+  if (activity.opportunityId) {
+    const opportunity = opportunities.find((item) => item.id === activity.opportunityId);
+    return opportunity
+      ? `${opportunity.opportunityNumber} - ${opportunity.title}`
+      : 'Linked opportunity';
+  }
+  return 'General CRM';
+}
+
+function crmActivityIcon(type: CrmActivityType) {
+  const icons: Record<CrmActivityType, string> = {
+    CALL: 'bi-telephone',
+    MEETING: 'bi-people',
+    TASK: 'bi-list-check',
+    FOLLOW_UP: 'bi-arrow-repeat',
+    NOTE: 'bi-stickies',
+  };
+  return icons[type];
+}
+
+function crmLeadSummary(lead: CrmLead, organization: Organization) {
+  return [
+    `${organization.name} CRM lead ${lead.leadNumber}`,
+    `Name: ${lead.name}`,
+    lead.company ? `Company: ${lead.company}` : '',
+    lead.phone ? `Phone: ${lead.phone}` : '',
+    lead.email ? `Email: ${lead.email}` : '',
+    `Status: ${labelizeEnum(lead.status)}`,
+    `Estimated value: ${formatMoney(toNumber(lead.estimatedValue), organization.currencyCode)}`,
+    lead.notes ? `Notes: ${lead.notes}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function crmOpportunitySummary(opportunity: CrmOpportunity, organization: Organization) {
+  return [
+    `${organization.name} CRM opportunity ${opportunity.opportunityNumber}`,
+    `Title: ${opportunity.title}`,
+    `Customer: ${opportunity.customerName || opportunity.company || 'Customer'}`,
+    `Stage: ${labelizeEnum(opportunity.stage)}`,
+    `Expected value: ${formatMoney(toNumber(opportunity.expectedValue), organization.currencyCode)}`,
+    `Probability: ${toNumber(opportunity.probabilityPercent).toFixed(0)}%`,
+    opportunity.expectedCloseDate ? `Expected close: ${formatDateOnly(opportunity.expectedCloseDate)}` : '',
+    opportunity.notes ? `Notes: ${opportunity.notes}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function moduleFallbackTitle(queryKey: string) {
+  const titles: Record<string, string> = {
+    'accounting-summary': 'Accounting',
+    'commercial-summary': 'Quotations & Invoicing',
+    'crm-summary': 'CRM',
+    'customers-summary': 'Customers',
+    'etims-summary': 'eTIMS',
+    'procurement-summary': 'Procurement',
+  };
+  return titles[queryKey] ?? 'ERP Module';
+}
+
+function moduleMetricIcon(index: number, fallbackIcon: string) {
+  const icons = ['bi-list-check', 'bi-clock-history', 'bi-cash-stack', 'bi-graph-up-arrow'];
+  return icons[index] ?? fallbackIcon;
+}
+
+function moduleMetricTone(index: number) {
+  const tones = ['green', 'blue', 'orange', 'purple'];
+  return tones[index % tones.length];
+}
+
+function formatModuleMetricValue(metric: ModuleSummary['metrics'][number], currencyCode: string) {
+  const numericValue = Number(metric.value);
+  if (
+    Number.isFinite(numericValue) &&
+    metric.value.includes('.') &&
+    !metric.label.toLowerCase().includes('count')
+  ) {
+    return formatMoney(numericValue, currencyCode);
+  }
+  return metric.value;
+}
+
+function moduleStatusTone(status: string): 'posted' | 'review' | 'pending' {
+  const normalized = status.toUpperCase();
+  if (
+    [
+      'CANCELLED',
+      'CREDIT_HOLD',
+      'DISMISSED',
+      'FAILED',
+      'INACTIVE',
+      'LOST',
+      'OVERDUE',
+      'REJECTED',
+      'VOID',
+    ].some((token) => normalized.includes(token))
+  ) {
+    return 'pending';
+  }
+
+  if (
+    [
+      'ACCEPTED',
+      'ACTIVE',
+      'APPROVED',
+      'CLOSED',
+      'CONNECTED',
+      'DONE',
+      'FULFILLED',
+      'INVOICED',
+      'PAID',
+      'POSTED',
+      'PROCESSED',
+      'READ',
+      'WON',
+    ].some((token) => normalized.includes(token))
+  ) {
+    return 'posted';
+  }
+
+  return 'review';
+}
+
+function auditMetadataPreview(event: AuditEvent) {
+  if (!event.metadataJson) {
+    return '';
+  }
+
+  try {
+    const metadata = JSON.parse(event.metadataJson) as Record<string, unknown>;
+    return Object.entries(metadata)
+      .slice(0, 2)
+      .map(([key, value]) => `${labelizeEnum(key)}: ${String(value)}`)
+      .join(', ');
+  } catch {
+    return event.metadataJson;
+  }
+}
+
 type DashboardProps = {
   activeBranch?: Branch;
   branches: Branch[];
@@ -4484,21 +12229,83 @@ type SupplierFormState = SupplierRequest;
 function defaultSupplierForm(): SupplierFormState {
   return {
     name: '',
+    supplierCode: '',
+    companyName: '',
     contactPerson: '',
     phone: '',
     email: '',
+    address: '',
+    kraPin: '',
+    paymentTerms: '',
+    creditLimit: 0,
+    bankDetails: '',
+    productsSupplied: '',
+    outstandingBalance: 0,
     notes: '',
     status: 'ACTIVE',
   };
 }
 
-function SuppliersPage() {
+function supplierToRequest(supplier: Supplier): SupplierFormState {
+  return {
+    name: supplier.name,
+    supplierCode: supplier.supplierCode ?? '',
+    companyName: supplier.companyName ?? '',
+    contactPerson: supplier.contactPerson ?? '',
+    phone: supplier.phone ?? '',
+    email: supplier.email ?? '',
+    address: supplier.address ?? '',
+    kraPin: supplier.kraPin ?? '',
+    paymentTerms: supplier.paymentTerms ?? '',
+    creditLimit: supplier.creditLimit ?? 0,
+    bankDetails: supplier.bankDetails ?? '',
+    productsSupplied: supplier.productsSupplied ?? '',
+    outstandingBalance: supplier.outstandingBalance ?? 0,
+    notes: supplier.notes ?? '',
+    status: supplier.status,
+  };
+}
+
+function normalizeSupplierRequest(form: SupplierFormState): SupplierRequest {
+  return {
+    name: form.name.trim(),
+    supplierCode: optionalTrimmedValue(form.supplierCode),
+    companyName: optionalTrimmedValue(form.companyName),
+    contactPerson: form.contactPerson.trim(),
+    phone: form.phone.trim(),
+    email: form.email.trim(),
+    address: optionalTrimmedValue(form.address),
+    kraPin: optionalTrimmedValue(form.kraPin),
+    paymentTerms: optionalTrimmedValue(form.paymentTerms),
+    creditLimit: optionalPositiveAmount(form.creditLimit),
+    bankDetails: optionalTrimmedValue(form.bankDetails),
+    productsSupplied: optionalTrimmedValue(form.productsSupplied),
+    outstandingBalance: optionalPositiveAmount(form.outstandingBalance),
+    notes: form.notes.trim(),
+    status: form.status,
+  };
+}
+
+function optionalTrimmedValue(value?: string) {
+  const trimmed = value?.trim() ?? '';
+  return trimmed || undefined;
+}
+
+function optionalPositiveAmount(value?: number) {
+  return value && value > 0 ? value : undefined;
+}
+
+function SuppliersPage({ organization }: { organization: Organization }) {
   const queryClient = useQueryClient();
   const suppliersQuery = useQuery({ queryKey: ['suppliers'], queryFn: getSuppliers });
   const suppliers = suppliersQuery.data ?? [];
   const activeSuppliers = suppliers.filter((supplier) => supplier.status === 'ACTIVE');
   const inactiveSuppliers = suppliers.length - activeSuppliers.length;
   const contactableSuppliers = suppliers.filter((supplier) => supplier.phone || supplier.email);
+  const supplierOutstanding = suppliers.reduce(
+    (sum, supplier) => sum + (supplier.outstandingBalance ?? 0),
+    0,
+  );
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [form, setForm] = useState<SupplierFormState>(defaultSupplierForm);
   const [message, setMessage] = useState('');
@@ -4527,11 +12334,7 @@ function SuppliersPage() {
   const reactivateSupplierMutation = useMutation({
     mutationFn: (supplier: Supplier) =>
       updateSupplier(supplier.id, {
-        name: supplier.name,
-        contactPerson: supplier.contactPerson ?? '',
-        phone: supplier.phone ?? '',
-        email: supplier.email ?? '',
-        notes: supplier.notes ?? '',
+        ...supplierToRequest(supplier),
         status: 'ACTIVE',
       }),
     onSuccess: async (supplier) => {
@@ -4561,14 +12364,7 @@ function SuppliersPage() {
 
   function editSupplier(supplier: Supplier) {
     setEditingSupplierId(supplier.id);
-    setForm({
-      name: supplier.name,
-      contactPerson: supplier.contactPerson ?? '',
-      phone: supplier.phone ?? '',
-      email: supplier.email ?? '',
-      notes: supplier.notes ?? '',
-      status: supplier.status,
-    });
+    setForm(supplierToRequest(supplier));
     setError('');
     setMessage('');
   }
@@ -4579,14 +12375,7 @@ function SuppliersPage() {
     setMessage('');
 
     try {
-      await saveSupplierMutation.mutateAsync({
-        name: form.name.trim(),
-        contactPerson: form.contactPerson.trim(),
-        phone: form.phone.trim(),
-        email: form.email.trim(),
-        notes: form.notes.trim(),
-        status: form.status,
-      });
+      await saveSupplierMutation.mutateAsync(normalizeSupplierRequest(form));
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Unable to save supplier');
     }
@@ -4638,6 +12427,12 @@ function SuppliersPage() {
           value={String(contactableSuppliers.length)}
           tone="blue"
         />
+        <SummaryMetric
+          icon="bi-cash-stack"
+          label="Outstanding"
+          value={formatMoney(supplierOutstanding, organization.currencyCode)}
+          tone="purple"
+        />
       </div>
 
       <div className="management-grid">
@@ -4655,6 +12450,24 @@ function SuppliersPage() {
                 maxLength={160}
                 value={form.name}
                 onChange={(event) => updateForm('name', event.target.value)}
+              />
+            </label>
+
+            <label className="field-stack">
+              <span>Supplier Code</span>
+              <input
+                maxLength={40}
+                value={form.supplierCode ?? ''}
+                onChange={(event) => updateForm('supplierCode', event.target.value.toUpperCase())}
+              />
+            </label>
+
+            <label className="field-stack">
+              <span>Company Name</span>
+              <input
+                maxLength={160}
+                value={form.companyName ?? ''}
+                onChange={(event) => updateForm('companyName', event.target.value)}
               />
             </label>
 
@@ -4683,6 +12496,75 @@ function SuppliersPage() {
                 type="email"
                 value={form.email}
                 onChange={(event) => updateForm('email', event.target.value)}
+              />
+            </label>
+
+            <label className="field-stack wide-field">
+              <span>Address</span>
+              <input
+                maxLength={255}
+                value={form.address ?? ''}
+                onChange={(event) => updateForm('address', event.target.value)}
+              />
+            </label>
+
+            <label className="field-stack">
+              <span>KRA PIN</span>
+              <input
+                maxLength={40}
+                value={form.kraPin ?? ''}
+                onChange={(event) => updateForm('kraPin', event.target.value.toUpperCase())}
+              />
+            </label>
+
+            <label className="field-stack">
+              <span>Payment Terms</span>
+              <input
+                maxLength={120}
+                value={form.paymentTerms ?? ''}
+                onChange={(event) => updateForm('paymentTerms', event.target.value)}
+              />
+            </label>
+
+            <label className="field-stack">
+              <span>Credit Limit</span>
+              <input
+                min="0"
+                step="0.01"
+                type="number"
+                value={form.creditLimit ?? 0}
+                onChange={(event) => updateForm('creditLimit', Number(event.target.value) || 0)}
+              />
+            </label>
+
+            <label className="field-stack">
+              <span>Outstanding Balance</span>
+              <input
+                min="0"
+                step="0.01"
+                type="number"
+                value={form.outstandingBalance ?? 0}
+                onChange={(event) =>
+                  updateForm('outstandingBalance', Number(event.target.value) || 0)
+                }
+              />
+            </label>
+
+            <label className="field-stack wide-field">
+              <span>Bank / Payment Information</span>
+              <textarea
+                maxLength={500}
+                value={form.bankDetails ?? ''}
+                onChange={(event) => updateForm('bankDetails', event.target.value)}
+              />
+            </label>
+
+            <label className="field-stack wide-field">
+              <span>Products Supplied</span>
+              <textarea
+                maxLength={500}
+                value={form.productsSupplied ?? ''}
+                onChange={(event) => updateForm('productsSupplied', event.target.value)}
               />
             </label>
 
@@ -4751,9 +12633,13 @@ function SuppliersPage() {
                 <thead>
                   <tr>
                     <th>Supplier</th>
+                    <th>Code</th>
                     <th>Contact</th>
                     <th>Phone</th>
                     <th>Email</th>
+                    <th>KRA PIN</th>
+                    <th>Terms</th>
+                    <th>Balance</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
@@ -4767,9 +12653,15 @@ function SuppliersPage() {
                           {supplier.name}
                         </span>
                       </td>
+                      <td data-label="Code">{supplier.supplierCode || 'N/A'}</td>
                       <td data-label="Contact">{supplier.contactPerson || 'N/A'}</td>
                       <td data-label="Phone">{supplier.phone || 'N/A'}</td>
                       <td data-label="Email">{supplier.email || 'N/A'}</td>
+                      <td data-label="KRA PIN">{supplier.kraPin || 'N/A'}</td>
+                      <td data-label="Terms">{supplier.paymentTerms || 'N/A'}</td>
+                      <td data-label="Balance">
+                        {formatMoney(supplier.outstandingBalance ?? 0, organization.currencyCode)}
+                      </td>
                       <td data-label="Status">
                         <StatusPill
                           status={supplier.status === 'ACTIVE' ? 'posted' : 'pending'}
@@ -9237,7 +17129,7 @@ function HrPayrollPage({
     payslipEmployees[0] ??
     null;
   const selectedPayslipPeriod = selectedPayslipRun
-    ? periods.find((period) => period.id === selectedPayslipRun.payrollPeriodId) ?? null
+    ? (periods.find((period) => period.id === selectedPayslipRun.payrollPeriodId) ?? null)
     : null;
   const currentPeriod = selectedPayrollPeriodId ? selectedPeriod : null;
   const runPeriod = periods.find((period) => period.id === runForm.payrollPeriodId) ?? null;
@@ -9324,8 +17216,7 @@ function HrPayrollPage({
       return;
     }
 
-    const nextRun =
-      payslipRuns.find((run) => run.id === payslipRunId) ?? payslipRuns[0];
+    const nextRun = payslipRuns.find((run) => run.id === payslipRunId) ?? payslipRuns[0];
     if (payslipRunId !== nextRun.id) {
       setPayslipRunId(nextRun.id);
     }
@@ -9685,8 +17576,7 @@ function HrPayrollPage({
                 required
                 value={selectedPayslipRun?.id ?? ''}
                 onChange={(event) => {
-                  const nextRun =
-                    payslipRuns.find((run) => run.id === event.target.value) ?? null;
+                  const nextRun = payslipRuns.find((run) => run.id === event.target.value) ?? null;
                   setPayslipRunId(event.target.value);
                   setPayslipEmployeeId(
                     nextRun?.employees
@@ -10499,7 +18389,9 @@ function PayrollPayslipDialog({
             </div>
           </section>
 
-          <section className="payslip-payment-heading">{paymentHeading || 'Payment not set'}</section>
+          <section className="payslip-payment-heading">
+            {paymentHeading || 'Payment not set'}
+          </section>
 
           <section className="payslip-slip-body">
             <img className="payslip-watermark" src={keenLogoUrl} alt="" aria-hidden="true" />
@@ -10551,7 +18443,9 @@ function PayrollPayslipDialog({
             </section>
           ) : null}
 
-          <footer className="payslip-slip-footer">Report all anomalies to your HR Department.</footer>
+          <footer className="payslip-slip-footer">
+            Report all anomalies to your HR Department.
+          </footer>
         </div>
 
         <div className="receipt-actions receipt-footer-actions payslip-dialog-actions">
@@ -18409,7 +26303,7 @@ function HelpPage() {
           <img src={keenLogoUrl} alt="" />
         </div>
         <div className="help-product-copy">
-          <h2 id="help-product-title">KEEN HR, Fashion Inventory & POS</h2>
+          <h2 id="help-product-title">KEEN ERP, Fashion Inventory & POS</h2>
           <span className="help-version-badge">Version {appVersion}</span>
           <p>
             Your central workspace for branches, products, stock movement, security, sales, HR, and
@@ -18491,7 +26385,7 @@ function HelpPage() {
 
       <footer className="help-page-footer">
         <div>
-          <strong>KEEN HR, Fashion Inventory & POS</strong>
+          <strong>KEEN ERP, Fashion Inventory & POS</strong>
           <span>
             Version {appVersion} | Copyright @{copyrightYear} CRENVIXMORAVA SYSTEMS. All rights
             reserved.
@@ -22999,10 +30893,7 @@ async function ensureWorksheetCategories(
     existingCategories.map((category) => [category.code.toUpperCase(), category]),
   );
   const categoriesByName = new Map(
-    existingCategories.map((category) => [
-      normalizeWorksheetLookupValue(category.name),
-      category,
-    ]),
+    existingCategories.map((category) => [normalizeWorksheetLookupValue(category.name), category]),
   );
   const categories = [...existingCategories];
   let created = 0;

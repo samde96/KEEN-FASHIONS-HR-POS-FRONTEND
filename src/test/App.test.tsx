@@ -27,6 +27,7 @@ describe('App', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    window.localStorage.clear();
     document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
     window.history.pushState({}, '', '/');
   });
@@ -91,6 +92,218 @@ describe('App', () => {
     expect(screen.getByText("Today's Sales Performance")).toBeInTheDocument();
     expect(screen.queryByLabelText(/sales chart interval/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/search anything/i)).not.toBeInTheDocument();
+  });
+
+  it('generates and shares commercial quotations from the commercial page', async () => {
+    window.history.pushState({}, '', '/commercial');
+    const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
+    const windowOpen = vi.spyOn(window, 'open').mockImplementation(() => null);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: clipboardWriteText },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/v1/me')) {
+          return jsonResponse(testUser);
+        }
+
+        if (url.endsWith('/api/v1/organization/current')) {
+          return jsonResponse(testOrganization);
+        }
+
+        if (url.endsWith('/api/v1/branches')) {
+          return jsonResponse(testBranches);
+        }
+
+        if (url.endsWith('/api/v1/commercial/summary')) {
+          return jsonResponse({
+            moduleKey: 'commercial',
+            title: 'Quotations & Invoicing',
+            description: 'Generate commercial documents and share them with customers.',
+            metrics: [],
+            workItems: [],
+          });
+        }
+
+        return Promise.reject(new Error('API unavailable in frontend test'));
+      }),
+    );
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Quotations & Invoicing' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Document Builder')).toBeInTheDocument();
+    expect(screen.getByText('Document Preview')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/customer name/i), 'John Doe');
+    await userEvent.type(screen.getByLabelText(/company/i), 'Greenfields Enterprises');
+    await userEvent.type(screen.getByLabelText(/whatsapp number/i), '0712345678');
+    await userEvent.clear(screen.getByLabelText(/^rate$/i));
+    await userEvent.type(screen.getByLabelText(/^rate$/i), '5000');
+    await userEvent.click(screen.getByRole('button', { name: /save quotation/i }));
+
+    expect(await screen.findByText(/Quotation QT-0001 saved/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByRole('button', { name: /share link/i })[0]);
+
+    expect(clipboardWriteText).toHaveBeenCalledWith(expect.stringContaining('/commercial?document='));
+    expect(await screen.findByText(/Share link copied to clipboard/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByRole('button', { name: /whatsapp/i })[0]);
+
+    expect(windowOpen).toHaveBeenCalledWith(
+      expect.stringContaining('https://wa.me/254712345678?text='),
+      '_blank',
+      'noopener,noreferrer',
+    );
+  });
+
+  it('generates and shares procurement purchase orders with product search lines', async () => {
+    window.history.pushState({}, '', '/procurement');
+    const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
+    const windowOpen = vi.spyOn(window, 'open').mockImplementation(() => null);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: clipboardWriteText },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/v1/me')) {
+          return jsonResponse(testUser);
+        }
+
+        if (url.endsWith('/api/v1/organization/current')) {
+          return jsonResponse(testOrganization);
+        }
+
+        if (url.endsWith('/api/v1/branches')) {
+          return jsonResponse(testBranches);
+        }
+
+        if (url.endsWith('/api/v1/procurement/summary')) {
+          return jsonResponse({
+            moduleKey: 'procurement',
+            title: 'Procurement',
+            description: 'Generate purchase orders for supplier restocking.',
+            metrics: [],
+            workItems: [],
+          });
+        }
+
+        if (url.endsWith('/api/v1/catalog/products')) {
+          return jsonResponse(testProducts);
+        }
+
+        if (url.endsWith('/api/v1/suppliers')) {
+          return jsonResponse(testSuppliers);
+        }
+
+        return Promise.reject(new Error('API unavailable in frontend test'));
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Procurement' })).toBeInTheDocument();
+    expect(screen.getByText('Purchase Order Builder')).toBeInTheDocument();
+    expect(screen.getByText('P.O Preview')).toBeInTheDocument();
+
+    await screen.findByRole('option', { name: testSuppliers[0].name });
+    await userEvent.selectOptions(screen.getByLabelText(/^supplier$/i), testSuppliers[0].id);
+    await screen.findByPlaceholderText(/search product name/i);
+    await userEvent.click(screen.getByLabelText(/product 1/i));
+    await userEvent.click(await screen.findByRole('option', { name: testProducts[0].name }));
+    await userEvent.click(screen.getByRole('button', { name: /save p\.o/i }));
+
+    expect(await screen.findByText(/Purchase order PO-0001 saved/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByRole('button', { name: /share link/i })[0]);
+
+    expect(clipboardWriteText).toHaveBeenCalledWith(
+      expect.stringContaining('/procurement?purchaseOrder='),
+    );
+
+    await userEvent.click(screen.getAllByRole('button', { name: /whatsapp/i })[0]);
+
+    expect(windowOpen).toHaveBeenCalledWith(
+      expect.stringContaining('https://wa.me/254700000001?text='),
+      '_blank',
+      'noopener,noreferrer',
+    );
+  });
+
+  it('captures CRM leads, converts opportunities, and schedules follow-ups', async () => {
+    window.history.pushState({}, '', '/crm');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/v1/me')) {
+          return jsonResponse(testUser);
+        }
+
+        if (url.endsWith('/api/v1/organization/current')) {
+          return jsonResponse(testOrganization);
+        }
+
+        if (url.endsWith('/api/v1/branches')) {
+          return jsonResponse(testBranches);
+        }
+
+        if (url.endsWith('/api/v1/crm/summary')) {
+          return jsonResponse({
+            moduleKey: 'crm',
+            title: 'CRM',
+            description: 'Leads, opportunities, activities, and customer follow-up pipeline.',
+            metrics: [],
+            workItems: [],
+          });
+        }
+
+        return Promise.reject(new Error('API unavailable in frontend test'));
+      }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'CRM' })).toBeInTheDocument();
+    expect(screen.getByText('Opportunity Pipeline')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /leads/i }));
+    await userEvent.type(screen.getByLabelText(/^name$/i), 'Mary Buyer');
+    await userEvent.type(screen.getByLabelText(/^company$/i), 'Nairobi Retail');
+    await userEvent.type(screen.getByLabelText(/^phone$/i), '0700000002');
+    await userEvent.clear(screen.getByLabelText(/estimated value/i));
+    await userEvent.type(screen.getByLabelText(/estimated value/i), '25000');
+    await userEvent.click(screen.getByRole('button', { name: /save lead/i }));
+
+    expect(await screen.findByText(/Lead LEAD-0001 saved/i)).toBeInTheDocument();
+    expect(screen.getByText('Mary Buyer')).toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^convert$/i })[0]);
+
+    expect(await screen.findByText(/converted to OPP-0001/i)).toBeInTheDocument();
+    expect(screen.getByText('Opportunity Builder')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Nairobi Retail opportunity')).toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByRole('button', { name: /^follow-up$/i })[0]);
+
+    expect(await screen.findByText(/Follow-up prepared for OPP-0001/i)).toBeInTheDocument();
+    expect(screen.getByText('Activity Planner')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Follow up on Nairobi Retail opportunity')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /save activity/i }));
+
+    expect(
+      await screen.findByText(/Activity "Follow up on Nairobi Retail opportunity" saved/i),
+    ).toBeInTheDocument();
   });
 
   it('shows products at or below reorder level on the low stock page', async () => {

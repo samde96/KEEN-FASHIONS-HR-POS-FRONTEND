@@ -28,18 +28,36 @@ export type BranchRequest = {
 export type Supplier = {
   id: string;
   name: string;
+  supplierCode?: string;
+  companyName?: string;
   contactPerson?: string;
   phone?: string;
   email?: string;
+  address?: string;
+  kraPin?: string;
+  paymentTerms?: string;
+  creditLimit?: number;
+  bankDetails?: string;
+  productsSupplied?: string;
+  outstandingBalance?: number;
   notes?: string;
   status: 'ACTIVE' | 'INACTIVE';
 };
 
 export type SupplierRequest = {
   name: string;
+  supplierCode?: string;
+  companyName?: string;
   contactPerson: string;
   phone: string;
   email: string;
+  address?: string;
+  kraPin?: string;
+  paymentTerms?: string;
+  creditLimit?: number;
+  bankDetails?: string;
+  productsSupplied?: string;
+  outstandingBalance?: number;
   notes: string;
   status: Supplier['status'];
 };
@@ -860,6 +878,225 @@ export type Sale = {
   payments: SalePayment[];
 };
 
+export type AccountingAccountType =
+  | 'ASSET'
+  | 'LIABILITY'
+  | 'EQUITY'
+  | 'REVENUE'
+  | 'COGS'
+  | 'EXPENSE';
+
+export type AccountingAccount = {
+  id: string;
+  parentAccountId?: string;
+  parentAccountCode?: string;
+  accountCode: string;
+  accountName: string;
+  accountType: AccountingAccountType;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AccountingAccountRequest = {
+  parentAccountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: AccountingAccountType;
+  active: boolean;
+};
+
+export type AccountingPeriodStatus = 'OPEN' | 'CLOSED' | 'LOCKED';
+
+export type AccountingPeriod = {
+  id: string;
+  name: string;
+  periodStart: string;
+  periodEnd: string;
+  status: AccountingPeriodStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AccountingPeriodRequest = {
+  name: string;
+  periodStart: string;
+  periodEnd: string;
+  status: AccountingPeriodStatus;
+};
+
+export type AccountingTaxRule = {
+  id: string;
+  taxCode: string;
+  name: string;
+  taxCategory: string;
+  rate: number;
+  inclusive: boolean;
+  effectiveFrom: string;
+  effectiveTo?: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AccountingTaxRuleRequest = {
+  taxCode: string;
+  name: string;
+  taxCategory: string;
+  rate: number;
+  inclusive: boolean;
+  effectiveFrom: string;
+  effectiveTo: string;
+  active: boolean;
+};
+
+export type AccountingJournalStatus = 'DRAFT' | 'POSTED' | 'REVERSED' | 'VOID';
+
+export type AccountingJournalLineRequest = {
+  accountId: string;
+  debitAmount: number;
+  creditAmount: number;
+  description: string;
+};
+
+export type AccountingJournalRequest = {
+  branchId: string;
+  financialPeriodId: string;
+  journalNumber: string;
+  entryDate: string;
+  description: string;
+  reference: string;
+  sourceModule: string;
+  sourceTransactionId?: string;
+  status: 'DRAFT' | 'POSTED';
+  lines: AccountingJournalLineRequest[];
+};
+
+export type AccountingJournalLine = {
+  id: string;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: AccountingAccountType;
+  debitAmount: number;
+  creditAmount: number;
+  description?: string;
+};
+
+export type AccountingJournal = {
+  id: string;
+  branchId?: string;
+  branchName?: string;
+  financialPeriodId?: string;
+  financialPeriodName?: string;
+  createdByUserId?: string;
+  createdByName?: string;
+  journalNumber: string;
+  entryDate: string;
+  description: string;
+  reference?: string;
+  sourceModule?: string;
+  sourceTransactionId?: string;
+  status: AccountingJournalStatus;
+  totalDebit: number;
+  totalCredit: number;
+  createdAt: string;
+  updatedAt: string;
+  lines: AccountingJournalLine[];
+};
+
+export type AccountingLedgerEntry = {
+  journalEntryId: string;
+  lineId: string;
+  journalNumber: string;
+  entryDate: string;
+  journalDescription: string;
+  reference?: string;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: AccountingAccountType;
+  debitAmount: number;
+  creditAmount: number;
+  runningBalance: number;
+  branchName?: string;
+};
+
+export type AccountingTrialBalanceRow = {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: AccountingAccountType;
+  debitAmount: number;
+  creditAmount: number;
+  netDebit: number;
+  netCredit: number;
+};
+
+export type AccountingTrialBalance = {
+  fromDate: string;
+  toDate: string;
+  totalDebit: number;
+  totalCredit: number;
+  difference: number;
+  rows: AccountingTrialBalanceRow[];
+};
+
+export type AccountingStatementRow = {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: AccountingAccountType;
+  amount: number;
+};
+
+export type AccountingProfitAndLoss = {
+  fromDate: string;
+  toDate: string;
+  revenue: number;
+  costOfGoodsSold: number;
+  grossProfit: number;
+  expenses: number;
+  netIncome: number;
+  revenueRows: AccountingStatementRow[];
+  costOfGoodsSoldRows: AccountingStatementRow[];
+  expenseRows: AccountingStatementRow[];
+};
+
+export type AccountingBalanceSheet = {
+  asOfDate: string;
+  assets: number;
+  liabilities: number;
+  equity: number;
+  retainedEarnings: number;
+  totalLiabilitiesAndEquity: number;
+  difference: number;
+  assetRows: AccountingStatementRow[];
+  liabilityRows: AccountingStatementRow[];
+  equityRows: AccountingStatementRow[];
+};
+
+export type AccountingCashFlowRow = {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  openingBalance: number;
+  cashIn: number;
+  cashOut: number;
+  closingBalance: number;
+};
+
+export type AccountingCashFlow = {
+  fromDate: string;
+  toDate: string;
+  openingCash: number;
+  cashIn: number;
+  cashOut: number;
+  netCashFlow: number;
+  closingCash: number;
+  rows: AccountingCashFlowRow[];
+};
+
 export type CartLine = {
   productId: string;
   quantity: number;
@@ -876,6 +1113,58 @@ export type AiAssistantReply = {
   answer: string;
   citations: string[];
   suggestions: string[];
+};
+
+export type ModuleMetric = {
+  label: string;
+  value: string;
+  detail: string;
+};
+
+export type ModuleWorkItem = {
+  id: string;
+  reference: string;
+  title: string;
+  status: string;
+  amount?: number;
+  branchName?: string;
+  dueDate?: string;
+  createdAt?: string;
+};
+
+export type ModuleSummary = {
+  moduleKey: string;
+  title: string;
+  description: string;
+  metrics: ModuleMetric[];
+  workItems: ModuleWorkItem[];
+};
+
+export type NotificationItem = {
+  id: string;
+  notificationType: string;
+  title: string;
+  message: string;
+  sourceModule?: string;
+  sourceRecordId?: string;
+  status: 'UNREAD' | 'READ' | 'DISMISSED';
+  createdAt: string;
+  readAt?: string;
+};
+
+export type AuditEvent = {
+  id: string;
+  branchId?: string;
+  branchName?: string;
+  actorUserId?: string;
+  actorName?: string;
+  action: string;
+  targetType: string;
+  targetId?: string;
+  reason?: string;
+  correlationId?: string;
+  metadataJson?: string;
+  createdAt: string;
 };
 
 export type BranchPerformance = {

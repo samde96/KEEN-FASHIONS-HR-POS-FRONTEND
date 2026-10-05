@@ -1,4 +1,17 @@
 import type {
+  AccountingAccount,
+  AccountingAccountRequest,
+  AccountingBalanceSheet,
+  AccountingCashFlow,
+  AccountingJournal,
+  AccountingJournalRequest,
+  AccountingLedgerEntry,
+  AccountingPeriod,
+  AccountingPeriodRequest,
+  AccountingProfitAndLoss,
+  AccountingTaxRule,
+  AccountingTaxRuleRequest,
+  AccountingTrialBalance,
   Branch,
   BranchRequest,
   CurrentUser,
@@ -27,6 +40,9 @@ import type {
   LeaveRequestRecord,
   LeaveType,
   LeaveTypeRequest,
+  AuditEvent,
+  ModuleSummary,
+  NotificationItem,
   Organization,
   Permission,
   PermissionRequest,
@@ -359,6 +375,194 @@ export function deactivateSupplier(supplierId: string) {
   return requestJson<void>(`/api/v1/suppliers/${supplierId}`, {
     method: 'DELETE',
   });
+}
+
+export function getProcurementSummary() {
+  return requestJson<ModuleSummary>('/api/v1/procurement/summary');
+}
+
+export function getCustomersSummary() {
+  return requestJson<ModuleSummary>('/api/v1/customers/summary');
+}
+
+export function getCrmSummary() {
+  return requestJson<ModuleSummary>('/api/v1/crm/summary');
+}
+
+export function getCommercialSummary() {
+  return requestJson<ModuleSummary>('/api/v1/commercial/summary');
+}
+
+export function getAccountingSummary() {
+  return requestJson<ModuleSummary>('/api/v1/accounting/summary');
+}
+
+export function getAccountingAccounts() {
+  return requestJson<AccountingAccount[]>('/api/v1/accounting/accounts');
+}
+
+export function createAccountingAccount(account: AccountingAccountRequest) {
+  return requestJson<AccountingAccount>('/api/v1/accounting/accounts', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(normalizeNullableRequest(account)),
+  });
+}
+
+export function updateAccountingAccount(accountId: string, account: AccountingAccountRequest) {
+  return requestJson<AccountingAccount>(`/api/v1/accounting/accounts/${accountId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(normalizeNullableRequest(account)),
+  });
+}
+
+export function deactivateAccountingAccount(accountId: string) {
+  return requestJson<AccountingAccount>(`/api/v1/accounting/accounts/${accountId}`, {
+    method: 'DELETE',
+  });
+}
+
+export function getAccountingPeriods() {
+  return requestJson<AccountingPeriod[]>('/api/v1/accounting/periods');
+}
+
+export function createAccountingPeriod(period: AccountingPeriodRequest) {
+  return requestJson<AccountingPeriod>('/api/v1/accounting/periods', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(period),
+  });
+}
+
+export function updateAccountingPeriod(periodId: string, period: AccountingPeriodRequest) {
+  return requestJson<AccountingPeriod>(`/api/v1/accounting/periods/${periodId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(period),
+  });
+}
+
+export function getAccountingTaxRules() {
+  return requestJson<AccountingTaxRule[]>('/api/v1/accounting/tax-rules');
+}
+
+export function createAccountingTaxRule(rule: AccountingTaxRuleRequest) {
+  return requestJson<AccountingTaxRule>('/api/v1/accounting/tax-rules', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(normalizeNullableRequest(rule)),
+  });
+}
+
+export function updateAccountingTaxRule(ruleId: string, rule: AccountingTaxRuleRequest) {
+  return requestJson<AccountingTaxRule>(`/api/v1/accounting/tax-rules/${ruleId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(normalizeNullableRequest(rule)),
+  });
+}
+
+export function getAccountingJournals() {
+  return requestJson<AccountingJournal[]>('/api/v1/accounting/journals');
+}
+
+export function createAccountingJournal(journal: AccountingJournalRequest) {
+  return requestJson<AccountingJournal>('/api/v1/accounting/journals', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(normalizeNullableRequest(journal)),
+  });
+}
+
+export function updateAccountingJournal(journalId: string, journal: AccountingJournalRequest) {
+  return requestJson<AccountingJournal>(`/api/v1/accounting/journals/${journalId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(normalizeNullableRequest(journal)),
+  });
+}
+
+export function postAccountingJournal(journalId: string) {
+  return requestJson<AccountingJournal>(`/api/v1/accounting/journals/${journalId}/post`, {
+    method: 'POST',
+  });
+}
+
+export function voidAccountingJournal(journalId: string) {
+  return requestJson<AccountingJournal>(`/api/v1/accounting/journals/${journalId}`, {
+    method: 'DELETE',
+  });
+}
+
+export type AccountingReportParams = {
+  accountId?: string;
+  branchId?: string;
+  from?: string;
+  to?: string;
+  asOf?: string;
+};
+
+export function getAccountingLedger(params?: AccountingReportParams) {
+  return requestJson<AccountingLedgerEntry[]>(
+    `/api/v1/accounting/ledger${apiSearchParams(params)}`,
+  );
+}
+
+export function getAccountingTrialBalance(params?: AccountingReportParams) {
+  return requestJson<AccountingTrialBalance>(
+    `/api/v1/accounting/reports/trial-balance${apiSearchParams(params)}`,
+  );
+}
+
+export function getAccountingProfitAndLoss(params?: AccountingReportParams) {
+  return requestJson<AccountingProfitAndLoss>(
+    `/api/v1/accounting/reports/profit-and-loss${apiSearchParams(params)}`,
+  );
+}
+
+export function getAccountingBalanceSheet(params?: AccountingReportParams) {
+  return requestJson<AccountingBalanceSheet>(
+    `/api/v1/accounting/reports/balance-sheet${apiSearchParams(params)}`,
+  );
+}
+
+export function getAccountingCashFlow(params?: AccountingReportParams) {
+  return requestJson<AccountingCashFlow>(
+    `/api/v1/accounting/reports/cash-flow${apiSearchParams(params)}`,
+  );
+}
+
+export function getEtimsSummary() {
+  return requestJson<ModuleSummary>('/api/v1/etims/summary');
+}
+
+export function getNotificationsSummary() {
+  return requestJson<ModuleSummary>('/api/v1/notifications/summary');
+}
+
+export function getNotifications() {
+  return requestJson<NotificationItem[]>('/api/v1/notifications');
+}
+
+export function getAuditEvents() {
+  return requestJson<AuditEvent[]>('/api/v1/audit-events');
 }
 
 export function getRoles() {
@@ -867,6 +1071,20 @@ export function voidExpense(expenseId: string) {
   return requestJson<Expense>(`/api/v1/expenses/${expenseId}`, {
     method: 'DELETE',
   });
+}
+
+function apiSearchParams(params?: Record<string, string | undefined>) {
+  if (!params) {
+    return '';
+  }
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) {
+      search.set(key, value);
+    }
+  });
+  const value = search.toString();
+  return value ? `?${value}` : '';
 }
 
 function normalizeNullableRequest<T extends Record<string, unknown>>(payload: T) {
