@@ -1,0 +1,48 @@
+.connection-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.connection-badge.is-connected {
+  color: #176340;
+}
+.connection-badge.is-offline {
+  color: #835000;
+}
+
+.offline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #e4c77d;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #694400;
+  margin-bottom: 1rem;
+}
+
+.offline-banner p {
+  margin: 0.25rem 0 0;
+  font-size: 0.84rem;
+}
+.pos-shell > .offline-banner {
+  margin: 0.75rem 1rem;
+}
+.pos-local-draft-message {
+  margin: 0.6rem 1rem;
+}
+
+@media (max-width: 560px) {
+  .offline-banner {
+    align-items: flex-start;
+  }
+  .offline-banner button {
+    width: 100%;
+  }
+}

@@ -6,6 +6,7 @@ import whiteLogo from '../assets/keen-logo-white.png';
 import { appName } from '../appBrand';
 import { appForPath, appModules, appPath, canAccessPath, visibleApps } from './appRegistry';
 import { usePlatform } from './PlatformContext';
+import OfflineStatus, { ConnectionBadge } from '../components/OfflineStatus';
 
 function WorkspaceBackLink() {
   const { pathname } = useLocation();
@@ -339,10 +340,7 @@ export default function AppLayout({
           </div>
           <div className="topbar-actions platform-topbar-actions">
             <BranchSelector />
-            <span className="platform-online">
-              <i aria-hidden="true" />
-              Online
-            </span>
+            <ConnectionBadge />
             {canAccessPath(user, '/notifications') && (
               <Link
                 className="platform-icon-button platform-notifications"
@@ -390,6 +388,7 @@ export default function AppLayout({
               )}
             </nav>
           )}
+          <OfflineStatus />
           {children}
         </main>
       </div>

@@ -47,10 +47,27 @@ import type {
   SupplierRequest,
   UserRequest,
 } from '../data/types';
+import {
+  cacheOfflineResponse,
+  clearOfflineSession,
+  configureOfflineApi,
+  getOfflineAuthEpoch,
+  getOfflineScope,
+  isOfflineAccessLocked,
+  markConnected,
+  markOffline,
+  OfflineError,
+  readOfflineResponse,
+  readOfflineUser,
+  rememberOfflineUser,
+  removeOfflineResponse,
+  unlockOfflineAccess,
+} from './offline';
 
 const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 const isDevelopment = import.meta.env.DEV;
 const apiBaseUrl = isDevelopment ? '' : configuredApiBaseUrl;
+configureOfflineApi(apiBaseUrl);
 const localDevelopmentApiBaseUrl = 'http://localhost:8080';
 const csrfTokenPath = '/api/v1/auth/csrf';
 const csrfCookieName = 'XSRF-TOKEN';
@@ -86,13 +103,54 @@ let csrfHeaderName = fallbackCsrfHeaderName;
 let csrfTokenRequest: Promise<string> | null = null;
 
 export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const securedInit = await withCsrf(path, init);
-  const response = await fetchApi(path, securedInit);
+  const isRead = (init?.method ?? 'GET').toUpperCase() === 'GET';
+  const isIdentity = path === '/api/v1/me';
+  const epoch = getOfflineAuthEpoch();
+  const scope = getOfflineScope();
+  if (isIdentity && isOfflineAccessLocked()) {
+    throw new Error('Sign in online to continue.');
+  }
+  async function savedResponse(): Promise<{ data: T } | undefined> {
+    if (!isRead) return undefined;
+    if (isIdentity) {
+      const user = await readOfflineUser();
+      return user ? { data: user as T } : undefined;
+    }
+    return readOfflineResponse<T>(scope, path);
+  }
+  let response: Response;
+  let securedInit: RequestInit | undefined;
+  try {
+    securedInit = await withCsrf(path, init);
+    response = await fetchApi(path, securedInit);
+  } catch (error) {
+    if (init?.signal?.aborted) throw error;
+    if (!(error instanceof TypeError) && !(error instanceof OfflineError)) throw error;
+    markOffline();
+    const saved = await savedResponse();
+    if (saved) return saved.data;
+    throw new OfflineError(
+      isRead
+        ? 'This information is not saved for offline use. Connect to load it on this device.'
+        : 'The server could not confirm this change. Keep your draft and reconnect before retrying.',
+    );
+  }
+
+  if (response.status >= 500) {
+    markOffline();
+    const saved = await savedResponse();
+    if (saved) return saved.data;
+  } else {
+    markConnected();
+  }
 
   if (!response.ok) {
     if (response.status === 403 && isUnsafeMethod(securedInit?.method)) {
       clearCsrfToken();
     }
+    if (response.status === 401 || (isIdentity && response.status === 403))
+      await clearOfflineSession();
+    if (response.status === 403 && isRead) await removeOfflineResponse(scope, path);
     throw new Error(await getErrorMessage(response));
   }
 
@@ -105,7 +163,13 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
     throw new Error(await getUnexpectedResponseMessage(response, contentType));
   }
 
-  return response.json() as Promise<T>;
+  const data = (await response.json()) as T;
+  if (isIdentity && epoch === getOfflineAuthEpoch()) {
+    await rememberOfflineUser(data as CurrentUser, epoch);
+  } else if (isRead) {
+    await cacheOfflineResponse(scope, path, data);
+  }
+  return data;
 }
 
 async function fetchApi(path: string, init?: RequestInit) {
@@ -848,15 +912,18 @@ export async function login(credentials: LoginCredentials) {
     },
     body: JSON.stringify(credentials),
   });
+  await unlockOfflineAccess(currentUser);
   await refreshCsrfToken();
   return currentUser;
 }
 
 export async function logout() {
-  await requestJson<void>('/api/v1/auth/logout', {
-    method: 'POST',
-  });
-  await refreshCsrfToken();
+  try {
+    await requestJson<void>('/api/v1/auth/logout', { method: 'POST' });
+  } finally {
+    clearCsrfToken();
+    await clearOfflineSession();
+  }
 }
 
 async function getErrorMessage(response: Response) {

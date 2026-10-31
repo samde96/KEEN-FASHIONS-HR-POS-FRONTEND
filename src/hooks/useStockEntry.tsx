@@ -13,6 +13,11 @@ import type { StockDraft } from '../services/posOperations';
 import type { StockIntakeRequest } from '../data/types';
 import { useStockNavigationGuard } from './StockNavigationGuard';
 import {
+  isOfflineError,
+  markOfflineStorageUnavailable,
+  offlineOwnerKey,
+} from '../services/offline';
+import {
   defaultStockInactivityMinutes,
   formatStockInactivity,
 } from '../services/stockReminderInterval';
@@ -102,6 +107,9 @@ export default function useStockEntry<
   const latest = useRef({ form, lines, dirty, busy });
   latest.current = { form, lines, dirty, busy };
   const localKey = user.data
+    ? `keen-stock-draft:${offlineOwnerKey(user.data)}:${draftBranchId || form.branchId || 'unassigned'}`
+    : '';
+  const legacyLocalKey = user.data
     ? `keen-stock-draft:${user.data.organizationId}:${user.data.userId}`
     : '';
   const blocker = useBlocker(
@@ -146,12 +154,21 @@ export default function useStockEntry<
   useEffect(() => {
     if (!localKey) return;
     try {
-      const value = localStorage.getItem(localKey);
-      if (value) setRecovery(JSON.parse(value));
+      let value = localStorage.getItem(localKey);
+      if (!value && legacyLocalKey) {
+        const legacy = localStorage.getItem(legacyLocalKey);
+        const draft = legacy ? (JSON.parse(legacy) as StockDraft<TForm, TLine>) : undefined;
+        if (draft && draft.branchId === (draftBranchId || form.branchId)) {
+          localStorage.setItem(localKey, legacy!);
+          localStorage.removeItem(legacyLocalKey);
+          value = legacy;
+        }
+      }
+      setRecovery(value ? JSON.parse(value) : undefined);
     } catch {
       setError('Local recovery could not be read. Server drafts are still available.');
     }
-  }, [localKey]);
+  }, [localKey, legacyLocalKey, draftBranchId, form.branchId]);
 
   function interact(changed = false) {
     if (latest.current.busy) return;
@@ -190,6 +207,33 @@ export default function useStockEntry<
           }
           void client.invalidateQueries({ queryKey: ['stock-drafts'] });
           return result;
+        } catch (caughtError) {
+          if (!isOfflineError(caughtError) || !localKey) throw caughtError;
+          const local: StockDraft<TForm, TLine> = {
+            id: operationId,
+            branchId: data.form.branchId,
+            status: 'DRAFT',
+            payload: { form: data.form, lines: data.lines },
+            version: version.current,
+            createdAt: new Date(session.current?.startedAt ?? Date.now()).toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          // Keep the last server version: an offline save is not a server update.
+          try {
+            localStorage.setItem(localKey, JSON.stringify(local));
+          } catch {
+            markOfflineStorageUnavailable();
+            throw new Error(
+              'This draft could not be saved on the device. Keep the page open until you can save online.',
+            );
+          }
+          if (idRef.current === operationId) {
+            setStatus(
+              'Draft saved on this device. Reconnect to save it to the server or receive stock.',
+            );
+            setError('');
+          }
+          return local;
         } finally {
           pendingSaves.current -= 1;
         }
@@ -214,6 +258,7 @@ export default function useStockEntry<
     try {
       localStorage.setItem(localKey, JSON.stringify(local));
     } catch {
+      markOfflineStorageUnavailable();
       setError('Local storage is unavailable. Save a server draft before leaving.');
     }
     if (busy) return;

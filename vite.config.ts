@@ -118,7 +118,9 @@ export default defineConfig(({ command }) => {
         },
         workbox: {
           navigateFallbackDenylist: [/^\/api\//],
-          globPatterns: ['**/*.{js,css,html,svg,webp,ico}'],
+          globPatterns: ['**/*.{js,css,html,svg,png,webp,ico,woff,woff2,ttf}'],
+          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+          cleanupOutdatedCaches: true,
         },
       }),
     ],

@@ -28,6 +28,24 @@ Enter the location name, a unique code, timezone, and status, then select **Save
 
 The list supports search, status filtering, editing, deactivation, and reactivation. Deactivating a location removes it from active choices while keeping its history. Locations are saved through the existing backend branch API; this screen does not introduce a separate Shop/Warehouse classification.
 
+## Offline work
+
+After opening the production app online, the service worker saves its shell, local images, and fonts for offline reloads. Successfully fetched JSON records are saved in IndexedDB with a local-storage fallback, partitioned by backend, organization, user, assigned branches, roles, and permissions. Only previously fetched records are available offline. Saved identity and business snapshots expire after 24 hours; first-time sign-in always requires a connection.
+
+The connection badge and offline banner show when saved data is being used. Network failures and temporary server failures can use eligible snapshots; authentication, permission, and validation errors are never treated as successful offline responses. Reconnection refreshes active screens automatically, and the banner offers a manual retry. M-Pesa status, login credentials, CSRF tokens, and mutation responses are excluded from the snapshot cache.
+
+POS carts are saved per backend, user, and location and restored after a reload. Stock drafts can be saved and recovered locally while disconnected; their last server version is retained until an actual server save. Reconnect to submit drafts, receive stock, complete sales, or confirm payments. This version does **not** queue transactions or claim offline payments are settled. New location/product/user records and financial postings also require the server.
+
+Signing out clears the saved identity and business snapshots and blocks offline reopening until explicit online sign-in. Unsubmitted carts and stock drafts are retained under their user/location keys for recovery after signing back in. Browser data removal or unavailable/full device storage can remove/prevent local recovery; the app displays a warning when it cannot save locally. The Help page explains the offline workflow.
+
+Offline shell behavior is enabled in production builds. Development deliberately unregisters service workers to avoid stale development assets. Verify the real offline flow with:
+
+```powershell
+npm run test:offline
+```
+
+This builds the app and tests a production preview in Chromium with networking disabled, including offline reload, cart recovery, reconnection, and offline sign-out. It uses mocked business APIs and does not contact a production database or payment provider.
+
 ## Vercel deployment
 
 1. Push this folder's repository to GitHub, including `package-lock.json`, `src/`, `public/`, the Vite/TypeScript configuration, and `vercel.json`.

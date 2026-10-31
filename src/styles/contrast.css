@@ -285,6 +285,12 @@ a:focus-visible {
   outline-offset: 3px;
 }
 
+/* The login wrapper supplies the focus underline; an input outline is clipped
+   by that wrapper and leaves a vertical stripe beside the input text. */
+.login-field .field-control input:focus-visible {
+  outline: none;
+}
+
 .platform-rail a:focus-visible,
 .pos-topbar button:focus-visible {
   outline-color: #ffffff;

@@ -48,6 +48,10 @@ import CashierShiftsPage from './components/CashierShiftsPage';
 import JournalHelp from './components/JournalHelp';
 import MpesaPaymentPanel from './components/MpesaPaymentPanel';
 import LocationsPage from './components/LocationsPage';
+import OfflineStatus, { ConnectionBadge, OfflineCoordinator } from './components/OfflineStatus';
+import useOffline from './hooks/useOffline';
+import { offlineOwnerKey } from './services/offline';
+import { readPosDraft, savePosDraft } from './services/posDrafts';
 import { clearMpesaRecovery, getMpesaConfig, readMpesaRecovery } from './services/mpesa';
 import useStockEntry from './hooks/useStockEntry';
 import { StockNavigationProvider, useStockNavigationGuard } from './hooks/StockNavigationGuard';
@@ -216,7 +220,9 @@ const queryClientOptions = {
     queries: {
       retry: 1,
       staleTime: 60_000,
+      networkMode: 'always' as const,
     },
+    mutations: { networkMode: 'always' as const },
   },
 };
 
@@ -429,6 +435,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <OfflineCoordinator />
       <StockNavigationProvider>
         <RouterProvider router={router} />
       </StockNavigationProvider>
@@ -468,6 +475,8 @@ function AppShell() {
     if (!(await stockNavigation.confirmLeave())) return;
     try {
       await logoutSession();
+    } catch {
+      // Offline sign-out still revokes local access and clears saved business reads.
     } finally {
       queryClient.clear();
       navigate('/login', { replace: true });
@@ -771,6 +780,7 @@ function DataLoadError({
 }
 
 function LoginPage() {
+  const offline = useOffline();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
@@ -870,6 +880,11 @@ function LoginPage() {
             {isSubmitting ? 'Signing In...' : 'Login'}
           </button>
 
+          {!offline.connected && (
+            <p className="message-banner" role="status">
+              Connect to sign in. Previously saved records are available offline only for the last signed-in account on this device.
+            </p>
+          )}
           <p className="login-powered">Powered by CRENVIXMORAVA SYSTEMS</p>
         </form>
       </section>
@@ -931,6 +946,7 @@ function PosWorkspace({
   onLogout,
   source,
 }: WorkspaceProps) {
+  const offline = useOffline();
   const queryClient = useQueryClient();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
@@ -948,6 +964,11 @@ function PosWorkspace({
   const activeBranches = branches.filter((branch) => branch.status === 'ACTIVE');
   const registerBranch = activeBranch ?? activeBranches[0];
   const mpesaStorageKey = `keen:mpesa:${organization.id}:${currentUser.userId}:${registerBranch?.id ?? ''}`;
+  const cartStorageKey = registerBranch
+    ? `keen:pos-draft:${offlineOwnerKey(currentUser)}:${registerBranch.id}`
+    : '';
+  const [loadedCartKey, setLoadedCartKey] = useState('');
+  const [cartRecoveryMessage, setCartRecoveryMessage] = useState('');
   const productsQuery = useQuery({
     queryKey: ['products'],
     queryFn: getProducts,
@@ -1022,15 +1043,24 @@ function PosWorkspace({
 
   useEffect(() => {
     const recovery = readMpesaRecovery(mpesaStorageKey);
-    setCart(recovery?.sale.lines ?? []);
-    setCustomer(recovery?.sale.customerName || 'Walk-in Customer');
-    setCheckoutIdempotencyKey(recovery?.key ?? newSaleIdempotencyKey());
+    const cartDraft = recovery ? undefined : readPosDraft(cartStorageKey);
+    setCart(recovery?.sale.lines ?? cartDraft?.cart ?? []);
+    setCustomer(recovery?.sale.customerName || cartDraft?.customer || 'Walk-in Customer');
+    setCheckoutIdempotencyKey(recovery?.key ?? cartDraft?.checkoutKey ?? newSaleIdempotencyKey());
+    setLoadedCartKey(cartStorageKey);
+    setCartRecoveryMessage(cartDraft ? 'Saved cart restored from this device. Review current prices and stock before taking payment.' : '');
     setMpesaLocked(Boolean(recovery));
     setPaymentOpen(Boolean(recovery));
     setSaleMessage('');
     setSaleError('');
     setCompletedSale(null);
-  }, [mpesaStorageKey]);
+  }, [mpesaStorageKey, cartStorageKey]);
+
+  useEffect(() => {
+    if (loadedCartKey !== cartStorageKey || mpesaLocked) return;
+    savePosDraft(cartStorageKey, { cart, customer, checkoutKey: checkoutIdempotencyKey });
+    if (cart.length === 0) setCartRecoveryMessage('');
+  }, [cartStorageKey, loadedCartKey, cart, customer, checkoutIdempotencyKey, mpesaLocked]);
 
   useEffect(() => {
     function handleCheckoutShortcut(event: KeyboardEvent) {
@@ -1136,6 +1166,10 @@ function PosWorkspace({
   function openPayment() {
     setSaleMessage('');
     setSaleError('');
+    if (!offline.connected) {
+      setSaleError('Keep this cart as a draft. Reconnect before taking payment or completing the sale.');
+      return;
+    }
     if (!registerBranch) {
       setSaleError('Set up the shop location before completing a sale.');
       return;
@@ -1199,10 +1233,7 @@ function PosWorkspace({
               <i className="bi bi-check-circle-fill" aria-hidden="true" />
               Register Ready
             </span>
-            <span className="online-dot">
-              <span />
-              {source === 'api' ? 'Online' : 'Offline'}
-            </span>
+            <ConnectionBadge />
             <NavLink className="exit-command" to="/apps">
               <i className="bi bi-box-arrow-right" aria-hidden="true" />
               Exit POS
@@ -1215,6 +1246,8 @@ function PosWorkspace({
         </header>
 
         <PosAppNavigation user={currentUser} disabled={cart.length > 0} />
+        <OfflineStatus />
+        {cartRecoveryMessage && <p className="message-banner pos-local-draft-message">{cartRecoveryMessage}</p>}
         <main className="pos-workspace">
           <section
             id="pos-products"
@@ -19337,6 +19370,25 @@ function HelpPage() {
       </section>
 
       <div className="help-card-grid">
+        <section className="help-info-card" aria-labelledby="help-offline-title">
+          <div className="help-card-heading">
+            <span className="help-card-icon"><i className="bi bi-wifi-off" aria-hidden="true" /></span>
+            <div><h2 id="help-offline-title">Working offline</h2></div>
+          </div>
+          <p>
+            Open the pages you need while connected. Saved records can be reopened on this device
+            for up to 24 hours after your last online sign-in or session check.
+          </p>
+          <p>
+            POS carts and stock drafts stay on the device so you can continue entering them offline.
+            Reconnect before taking payments, completing sales, or receiving stock. Saved stock
+            levels and prices may have changed while you were disconnected.
+          </p>
+          <p>
+            Signing out removes access to saved business records. Your unsubmitted drafts can be
+            recovered after signing back in online with the same account.
+          </p>
+        </section>
         <section className="help-info-card" aria-labelledby="help-about-title">
           <div className="help-card-heading">
             <span className="help-card-icon">

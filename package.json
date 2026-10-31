@@ -10,6 +10,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "e2e": "playwright test",
+    "test:offline": "npm run build && playwright test --config playwright.offline.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "start": "vite preview --host 0.0.0.0 --port 5173",

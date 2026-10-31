@@ -14,6 +14,7 @@ import {
   saveStockDraft,
 } from '../services/posOperations';
 import { testProducts, testUser } from './fixtures';
+import { OfflineError, offlineOwnerKey } from '../services/offline';
 import { StockNavigationProvider, useStockNavigationGuard } from '../hooks/StockNavigationGuard';
 
 vi.mock('../services/api', () => ({ getCurrentUser: vi.fn() }));
@@ -248,6 +249,27 @@ describe('POS variants and stock entry protection', () => {
     expect(screen.getByText('Other screen')).toBeInTheDocument();
     expect(completeStockDraft).not.toHaveBeenCalled();
   });
+  it('saves and recovers a stock draft locally when the server is offline without advancing its server version', async () => {
+    vi.mocked(saveStockDraft).mockRejectedValue(new OfflineError());
+    mount();
+    await flush();
+    fireEvent.change(screen.getByLabelText('Stock quantity'), { target: { value: '9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save stock draft' }));
+    await flush();
+    expect(screen.getByText(/Draft saved on this device/)).toBeInTheDocument();
+    const key = `keen-stock-draft:${offlineOwnerKey(testUser)}:shop`;
+    const saved = JSON.parse(localStorage.getItem(key)!);
+    expect(saved.payload.form.quantity).toBe('9');
+    expect(saved.version).toBe(0);
+    expect(completeStockDraft).not.toHaveBeenCalled();
+    cleanup();
+    mount();
+    await flush();
+    fireEvent.click(screen.getByText('Resume a saved stock draft'));
+    fireEvent.click(screen.getByRole('button', { name: 'Recover entries from this device' }));
+    expect(screen.getByLabelText('Stock quantity')).toHaveValue('9');
+  });
+
   it('resumes a server draft including an incomplete quantity', async () => {
     vi.mocked(getStockDrafts).mockResolvedValue([
       {
