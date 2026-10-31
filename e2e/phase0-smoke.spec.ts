@@ -1,27 +1,27 @@
-import { expect, test, type Page } from '@playwright/test';
-import {
-  testBranches,
-  testExpenses,
-  testInventory,
-  testOrganization,
-  testPermissions,
-  testProductCategories,
-  testProducts,
-  testRoles,
-  testSuppliers,
-  testUser,
-} from '../src/test/fixtures';
+import { expect, test } from '@playwright/test';
+import { testCrmRecords, testCrmStorageKey } from '../src/test/crmFixtures';
+import { mockApi } from './support/mockApi';
+import { testProducts, testProductCategories } from '../src/test/fixtures';
+import { auditTextContrast } from './support/contrast';
 
-test('owner can open login screen and enter the dashboard', async ({ page }) => {
+test('owner lands on Apps Home and can open Business Overview', async ({ page }, testInfo) => {
   await mockApi(page);
+  await page.setViewportSize({ width: 1536, height: 1080 });
   await page.goto('/login');
 
   await expect(page.getByRole('heading', { name: 'User Login' })).toBeVisible();
   await page.getByLabel(/Email or username/i).fill('admin@example.com');
-  await page.getByLabel('Password').fill('keenpos125');
+  await page.getByLabel('Password').fill(process.env.E2E_ADMIN_PASSWORD ?? 'mock-login-password');
   await page.getByRole('button', { name: /login/i }).click();
 
+  await expect(
+    page.getByRole('heading', { name: /All your business on one platform/ }),
+  ).toBeVisible();
+  await page.getByRole('link', { name: 'Business Overview', exact: true }).click();
   await expect(page.getByRole('heading', { name: "Today's Dashboard" })).toBeVisible();
+  await expect(page.locator('.payment-panel .donut-layout')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath('dashboard-desktop.png'), fullPage: true });
   await page.getByRole('button', { name: /log out/i }).click();
   await expect(page.getByRole('heading', { name: 'User Login' })).toBeVisible();
 });
@@ -72,7 +72,9 @@ test('mobile back office menu opens above the page chrome', async ({ page }) => 
   expect(menuState.ownsBottomPoint).toBe(true);
 });
 
-test('dashboard metric cards use compact two by two mobile layout', async ({ page }) => {
+test('dashboard metric cards use a readable two by two mobile layout', async ({
+  page,
+}, testInfo) => {
   await mockApi(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dashboard');
@@ -105,15 +107,20 @@ test('dashboard metric cards use compact two by two mobile layout', async ({ pag
   expect(metricsLayout.rowCount).toBe(2);
   expect(metricsLayout.rowSizes).toEqual([2, 2]);
   expect(metricsLayout.maxHeight).toBeLessThanOrEqual(96);
-  expect(metricsLayout.labelFontSize).toBeLessThanOrEqual(11);
-  expect(metricsLayout.valueFontSize).toBeLessThanOrEqual(17);
+  expect(metricsLayout.labelFontSize).toBeGreaterThanOrEqual(12);
+  expect(metricsLayout.labelFontSize).toBeLessThanOrEqual(14);
+  expect(metricsLayout.valueFontSize).toBeGreaterThanOrEqual(16);
+  expect(metricsLayout.valueFontSize).toBeLessThanOrEqual(20);
+  await expect(page.locator('.payment-panel .donut-layout')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeEnabled();
+  await page.screenshot({ path: testInfo.outputPath('dashboard-mobile.png'), fullPage: true });
 });
 
 test('cashier can search, add an item, and open payment shell', async ({ page }) => {
   await mockApi(page);
   await page.goto('/pos');
 
-  await expect(page.getByAltText('KEEN HR and POS')).toBeVisible();
+  await expect(page.getByAltText('KEEN ERP')).toBeVisible();
   await page.getByRole('textbox', { name: /search product/i }).fill('oxford');
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await page.getByRole('button', { name: /Pay KSh 3,248/i }).click();
@@ -135,35 +142,98 @@ test('owner can open expenses register', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Expense Register' })).toBeVisible();
 });
 
-test('product catalog fits mobile viewports and downloads Excel', async ({ page }) => {
-  await mockApi(page);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/product-catalog');
-
-  await expect(page.getByRole('heading', { name: 'Product Catalog' })).toBeVisible();
-  await expect(page.getByText('Oxford Shirt')).toBeVisible();
-
-  const overflow = await page.evaluate(() => {
-    const catalogTable = document.querySelector('.catalog-table-scroll');
-    return {
-      page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      catalog:
-        catalogTable instanceof HTMLElement
-          ? catalogTable.scrollWidth - catalogTable.clientWidth
-          : 0,
+for (const width of [1536, 1024, 390]) {
+  test(`product catalog modules use full width without clipping at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    await mockApi(page);
+    const category = {
+      ...testProductCategories[0],
+      name: 'Extended product category for shirts and seasonal clothing collections',
+      code: 'CATEGORY-' + 'A'.repeat(31),
     };
+    const product = {
+      ...testProducts[0],
+      name: 'Oxford Shirt with a long product description for seasonal clothing collections, packaging options and product variants',
+      sku: 'SKU-LONG' + 'X'.repeat(72),
+      barcode: '99123456789012345678'.repeat(4),
+      categoryName: category.name,
+      department: 'Clothing and accessories for customers across all retail branches',
+    };
+    await page.route('**/api/v1/catalog/categories', (route) =>
+      route.fulfill({ json: [category] }),
+    );
+    await page.route('**/api/v1/catalog/products', (route) => route.fulfill({ json: [product] }));
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 1080 });
+    await page.goto('/product-catalog');
+    await expect(page.getByRole('heading', { name: 'Product Catalog', exact: true })).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Products', exact: true })).toBeVisible();
+    await expect(page.getByText(product.name, { exact: true })).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Product categories', exact: true })).toHaveCount(
+      0,
+    );
+
+    const assertFullWidthAndUnclipped = async () => {
+      const layout = await page.locator('.catalog-module-panel').evaluate((panel) => {
+        const workspace = panel.closest('.product-catalog-workspace')!;
+        return {
+          widthGap: Math.abs(
+            workspace.getBoundingClientRect().width - panel.getBoundingClientRect().width,
+          ),
+          pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+          clippedCells: [...panel.querySelectorAll('td, .catalog-product-label, .table-label')]
+            .filter(
+              (cell) =>
+                cell.scrollWidth > cell.clientWidth + 1 ||
+                cell.scrollHeight > cell.clientHeight + 1,
+            )
+            .map((cell) => cell.textContent),
+        };
+      });
+      expect(layout.widthGap).toBeLessThanOrEqual(1);
+      expect(layout.pageOverflow).toBeLessThanOrEqual(1);
+      expect(layout.clippedCells).toEqual([]);
+      const contrast = await auditTextContrast(page, '.product-catalog-workspace');
+      expect(contrast.filter((item) => item.ratio < 7 || item.opacity < 0.99)).toEqual([]);
+    };
+    await assertFullWidthAndUnclipped();
+    await page.screenshot({ path: testInfo.outputPath('products-full-width.png'), fullPage: true });
+    const download = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /download excel/i }).click(),
+    ]).then(([event]) => event);
+    expect(download.suggestedFilename()).toBe('keen-product-catalog.xlsx');
+
+    await page
+      .getByRole('navigation', { name: 'Product modules' })
+      .getByRole('link', { name: 'Product Categories', exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/product-categories$/);
+    await expect(
+      page.getByRole('table', { name: 'Product categories', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('table', { name: 'Products', exact: true })).toHaveCount(0);
+    await expect(page.getByText(category.code, { exact: true })).toBeVisible();
+    await assertFullWidthAndUnclipped();
+    await page.screenshot({
+      path: testInfo.outputPath('categories-full-width.png'),
+      fullPage: true,
+    });
+    await page.getByRole('button', { name: 'New Category', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'New Category', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Category Name', { exact: true })).toBeFocused();
+    const dialogContrast = await auditTextContrast(page, '[role="dialog"]');
+    expect(dialogContrast.filter((item) => item.ratio < 7 || item.opacity < 0.99)).toEqual([]);
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.reload();
+    await expect(
+      page.getByRole('table', { name: 'Product categories', exact: true }),
+    ).toBeVisible();
+    await page.goBack();
+    await expect(page.getByRole('table', { name: 'Products', exact: true })).toBeVisible();
   });
-
-  expect(overflow.page).toBeLessThanOrEqual(1);
-  expect(overflow.catalog).toBeLessThanOrEqual(1);
-
-  const download = await Promise.all([
-    page.waitForEvent('download'),
-    page.getByRole('button', { name: /download excel/i }).click(),
-  ]).then(([downloadEvent]) => downloadEvent);
-
-  expect(download.suggestedFilename()).toBe('keen-product-catalog.xlsx');
-});
+}
 
 test('inventory insight panels open from top buttons', async ({ page }) => {
   await mockApi(page);
@@ -195,9 +265,7 @@ test('inventory insight panels open from top buttons', async ({ page }) => {
   await expect(alertsDialog.getByText('No stock alerts')).toBeVisible();
 });
 
-test('roles page keeps registered roles primary and opens management dialogs from top buttons', async ({
-  page,
-}) => {
+test('roles page shows the managed roles and opens the permission catalog', async ({ page }) => {
   await mockApi(page);
   await page.setViewportSize({ width: 1536, height: 960 });
   await page.goto('/roles');
@@ -205,7 +273,7 @@ test('roles page keeps registered roles primary and opens management dialogs fro
   await expect(page.getByRole('heading', { name: 'Roles', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Registered Roles' })).toBeVisible();
   await expect(
-    page.locator('.roles-list-panel strong').filter({ hasText: 'Cashier' }),
+    page.locator('.roles-list-panel strong').filter({ hasText: 'Shop Manager' }),
   ).toBeVisible();
   await expect(page.getByRole('dialog', { name: 'Register Role' })).toHaveCount(0);
   await expect(page.getByRole('dialog', { name: 'Permissions' })).toHaveCount(0);
@@ -223,12 +291,7 @@ test('roles page keeps registered roles primary and opens management dialogs fro
   expect(overflow.page).toBeLessThanOrEqual(1);
   expect(overflow.roles).toBeLessThanOrEqual(1);
 
-  await page.getByRole('button', { name: 'New Role' }).click();
-  const roleDialog = page.getByRole('dialog', { name: 'Register Role' });
-  await expect(roleDialog).toBeVisible();
-  await expect(roleDialog.getByLabel('Role Name')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog', { name: 'Register Role' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'New Role' })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Permissions' }).click();
   const permissionsDialog = page.getByRole('dialog', { name: 'Permissions' });
@@ -268,6 +331,7 @@ test('add stock keeps receipt dialog on top and tables within the page width', a
   await expect(receiptDialog).toBeVisible();
 
   await page.getByLabel(/^Quantity$/i).fill('5');
+  await expect(page.getByLabel(/^Quantity$/i)).toHaveValue('5');
   await page.getByRole('button', { name: /^Add Line$/i }).click();
 
   await expect(receiptDialog).toBeHidden();
@@ -296,191 +360,129 @@ test('add stock keeps receipt dialog on top and tables within the page width', a
   expect(overflow.stockIntakes).toBeLessThanOrEqual(1);
 });
 
-async function mockApi(page: Page) {
-  const inventory =
-    testInventory.length > 0
-      ? testInventory
-      : [
-          {
-            id: 'inventory-001',
-            branchId: testBranches[0].id,
-            branchName: testBranches[0].name,
-            productId: testProducts[0].id,
-            productName: testProducts[0].name,
-            sku: testProducts[0].sku,
-            categoryName: testProducts[0].categoryName,
-            unitPrice: testProducts[0].unitPrice,
-            quantityOnHand: 2,
-            quantityReserved: 0,
-            quantityAvailable: 2,
-            reorderLevel: 0,
-            stockHealth: 'HEALTHY',
-          },
-        ];
-  let sales: unknown[] = [];
-  let stockIntakes: unknown[] = [
-    {
-      id: 'stock-intake-001',
-      branchId: testBranches[0].id,
-      branchName: testBranches[0].name,
-      productId: testProducts[0].id,
-      productName: 'Berrykey Mens Trench Coats Casual Blazers With Extended Seasonal Label',
-      sku: 'BLAZER-EXT-001',
-      supplierName: 'Keen Fashions Wholesale Department',
-      referenceNumber: 'REFERENCE-2026-0001',
-      quantity: 12,
-      unitCost: 1500,
-      notes: '',
-      receivedAt: '2026-09-08T12:10:00Z',
+test('CRM contact becomes an opportunity and survives a reload', async ({ page }) => {
+  await mockApi(page);
+  await page.goto('/crm');
+  await expect(page.getByRole('heading', { name: 'CRM', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Add Contact', exact: true }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Amina Kimani');
+  await page.getByLabel('Company', { exact: true }).fill('Amina Studio');
+  await page.getByLabel('Email', { exact: true }).fill('amina@example.com');
+  await page.getByLabel('Estimated Value').fill('12500');
+  await page.getByRole('button', { name: 'Save Lead' }).click();
+  await page
+    .getByRole('row', { name: /Amina Kimani/ })
+    .getByRole('button', { name: 'Convert', exact: true })
+    .click();
+  await page.getByRole('tab', { name: 'Opportunities', exact: true }).click();
+  await page.getByLabel('Stage for Amina Studio opportunity').selectOption('WON');
+  await expect(page.locator('.stage-won')).toContainText('Amina Studio opportunity');
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'CRM', exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: '100% win rate, 1 won and 0 lost' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Amina Kimani/ })).toBeVisible();
+  const download = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Export CSV' }).click(),
+  ]).then(([event]) => event);
+  expect(download.suggestedFilename()).toMatch(/^keen-crm-.*\.csv$/);
+});
+
+test('CRM overview shows live insights on desktop', async ({ page }, testInfo) => {
+  await mockApi(page);
+  await page.setViewportSize({ width: 1536, height: 1100 });
+  await page.addInitScript(
+    ({ key, records }) => {
+      if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(records));
     },
-    {
-      id: 'stock-intake-002',
-      branchId: testBranches[0].id,
-      branchName: testBranches[0].name,
-      productId: testProducts[0].id,
-      productName: 'White T-Shirt Essential Logo Soft Cotton Stop Top For Men',
-      sku: 'TS003',
-      supplierName: 'Keen Fashions',
-      referenceNumber: '',
-      quantity: 11,
-      unitCost: 1000,
-      notes: '',
-      receivedAt: '2026-09-08T12:00:00Z',
+    { key: testCrmStorageKey, records: testCrmRecords },
+  );
+  await page.goto('/crm');
+  await expect(page.getByRole('heading', { name: 'Pipeline performance' })).toBeVisible();
+  await expect(page.getByRole('img', { name: '50% win rate, 1 won and 1 lost' })).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
+  ).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath('crm-desktop.png'), fullPage: true });
+});
+
+test('CRM stays within mobile viewports and supports moving opportunities', async ({
+  page,
+}, testInfo) => {
+  await mockApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(
+    ({ key, records }) => {
+      if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(records));
     },
-  ];
+    { key: testCrmStorageKey, records: testCrmRecords },
+  );
+  await page.goto('/crm');
+  await expect(page.getByRole('heading', { name: 'Pipeline performance' })).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
+  ).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath('crm-mobile.png'), fullPage: true });
+  await page.getByRole('tab', { name: 'Opportunities', exact: true }).click();
+  await page.getByLabel('Stage for Atelier Nairobi seasonal order').selectOption('WON');
+  await expect(page.locator('.stage-won')).toContainText('Atelier Nairobi seasonal order');
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
+  ).toBeLessThanOrEqual(1);
+});
 
-  await page.route('**/api/v1/**', async (route) => {
-    const request = route.request();
-    const path = new URL(request.url()).pathname;
+test('apps platform desktop catalog and Inventory workspace', async ({ page }, testInfo) => {
+  await mockApi(page);
+  await page.setViewportSize({ width: 1536, height: 1024 });
+  await page.goto('/');
+  await expect(
+    page.getByRole('heading', { name: /All your business on one platform/ }),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open Point of Sale' })).toBeVisible();
+  await expect(page.getByText('Planned · Not yet available')).toHaveCount(2);
+  await page.screenshot({ path: testInfo.outputPath('apps-home-desktop.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Pin Inventory', exact: true }).click();
+  await page.getByRole('link', { name: 'Open Inventory' }).click();
+  await expect(page.getByRole('heading', { name: 'Inventory Overview' })).toBeVisible();
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Inventory navigation' })
+      .getByRole('link', { name: 'Stock balances' }),
+  ).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('inventory-app-desktop.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Open app launcher' }).click();
+  const launcher = page.getByRole('dialog', { name: 'Switch application' });
+  await expect(launcher).toBeVisible();
+  await launcher.getByLabel('Find an application').fill('sales');
+  await launcher.getByRole('link', { name: 'Sales', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Sales Overview' })).toBeVisible();
+  await page.goto('/favorites');
+  await expect(page.getByRole('link', { name: 'Open Inventory' })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('link', { name: 'Open Inventory' })).toBeVisible();
+});
 
-    if (path === '/api/v1/auth/logout') {
-      await route.fulfill({ status: 204 });
-      return;
-    }
-
-    if (path === '/api/v1/auth/login' || path === '/api/v1/me') {
-      await route.fulfill({ json: testUser });
-      return;
-    }
-
-    if (path === '/api/v1/organization/current') {
-      await route.fulfill({ json: testOrganization });
-      return;
-    }
-
-    if (path === '/api/v1/branches') {
-      await route.fulfill({ json: testBranches });
-      return;
-    }
-
-    if (path === '/api/v1/roles') {
-      await route.fulfill({ json: testRoles });
-      return;
-    }
-
-    if (path === '/api/v1/permissions') {
-      await route.fulfill({ json: testPermissions });
-      return;
-    }
-
-    if (path === '/api/v1/catalog/categories') {
-      await route.fulfill({ json: testProductCategories });
-      return;
-    }
-
-    if (path === '/api/v1/catalog/products') {
-      await route.fulfill({ json: testProducts });
-      return;
-    }
-
-    if (path === '/api/v1/suppliers') {
-      await route.fulfill({ json: testSuppliers });
-      return;
-    }
-
-    if (path === '/api/v1/inventory') {
-      await route.fulfill({ json: inventory });
-      return;
-    }
-
-    if (path === '/api/v1/stock-intakes') {
-      if (request.method() === 'POST') {
-        const postedRequest = await request.postDataJSON();
-        const product = testProducts.find((item) => item.id === postedRequest.productId);
-        const branch = testBranches.find((item) => item.id === postedRequest.branchId);
-        const stockIntake = {
-          id: `stock-intake-${stockIntakes.length + 1}`,
-          branchId: postedRequest.branchId,
-          branchName: branch?.name ?? 'Unknown Branch',
-          productId: postedRequest.productId,
-          productName: product?.name ?? 'Unknown Product',
-          sku: product?.sku ?? 'N/A',
-          supplierName: postedRequest.supplierName,
-          referenceNumber: postedRequest.referenceNumber,
-          quantity: postedRequest.quantity,
-          unitCost: postedRequest.unitCost,
-          notes: postedRequest.notes,
-          receivedAt: '2026-09-08T12:20:00Z',
-        };
-
-        stockIntakes = [stockIntake, ...stockIntakes];
-        await route.fulfill({ status: 201, json: stockIntake });
-        return;
-      }
-
-      await route.fulfill({ json: stockIntakes });
-      return;
-    }
-
-    if (path === '/api/v1/sales') {
-      if (request.method() === 'POST') {
-        const sale = {
-          id: 'sale-001',
-          saleNumber: 'SALE-001',
-          branchId: testBranches[0].id,
-          branchName: testBranches[0].name,
-          customerName: null,
-          subtotalAmount: 2800,
-          discountAmount: 0,
-          taxAmount: 448,
-          totalAmount: 3248,
-          status: 'COMPLETED',
-          soldAt: '2026-09-08T10:00:00Z',
-          lines: [
-            {
-              productId: testProducts[0].id,
-              productName: testProducts[0].name,
-              sku: testProducts[0].sku,
-              categoryName: testProducts[0].categoryName,
-              quantity: 1,
-              unitPrice: testProducts[0].unitPrice,
-              costPrice: testProducts[0].costPrice,
-              lineTotal: testProducts[0].unitPrice,
-            },
-          ],
-          payments: [
-            {
-              id: 'payment-001',
-              method: 'MPESA',
-              amount: 3248,
-              status: 'SETTLED',
-            },
-          ],
-        };
-        sales = [sale, ...sales];
-        await route.fulfill({ status: 201, json: sale });
-        return;
-      }
-
-      await route.fulfill({ json: sales });
-      return;
-    }
-
-    if (path === '/api/v1/expenses') {
-      await route.fulfill({ json: testExpenses });
-      return;
-    }
-
-    await route.fallback();
-  });
-}
+test('apps platform mobile layout and accessible launcher', async ({ page }, testInfo) => {
+  await mockApi(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/apps');
+  await expect(
+    page.getByRole('heading', { name: /All your business on one platform/ }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
+  ).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath('apps-home-mobile.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Open app launcher' }).click();
+  await expect(page.getByRole('dialog', { name: 'Switch application' })).toBeVisible();
+  await expect(page.getByLabel('Find an application')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Open app launcher' })).toBeFocused();
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await expect(page.getByRole('navigation', { name: 'Platform navigation' })).toBeVisible();
+  await page
+    .getByRole('navigation', { name: 'Platform navigation' })
+    .getByRole('link', { name: 'Favorites' })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Your favorite apps' })).toBeVisible();
+});

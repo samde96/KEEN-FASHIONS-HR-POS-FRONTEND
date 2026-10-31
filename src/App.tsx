@@ -10,14 +10,14 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent, ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import {
-  BrowserRouter,
+  createBrowserRouter,
+  RouterProvider,
   Navigate,
   NavLink,
   Route,
   Routes,
   useLocation,
   useNavigate,
-  useParams,
 } from 'react-router-dom';
 import {
   Area,
@@ -38,41 +38,63 @@ import {
 import { z } from 'zod';
 import * as XLSX from 'xlsx';
 import { appVersion } from './appVersion';
+import { appName } from './appBrand';
+import CrmOverview from './components/CrmOverview';
+import CommercialFormSection from './components/CommercialFormSection';
+import VariantProductFields, { isSellableProduct } from './components/VariantProductFields';
+import PosPreferencesPanel from './components/PosPreferencesPanel';
+import DailySalesReportsPanel from './components/DailySalesReportsPanel';
+import CashierShiftsPage from './components/CashierShiftsPage';
+import JournalHelp from './components/JournalHelp';
+import MpesaPaymentPanel from './components/MpesaPaymentPanel';
+import { clearMpesaRecovery, getMpesaConfig, readMpesaRecovery } from './services/mpesa';
+import useStockEntry from './hooks/useStockEntry';
+import { StockNavigationProvider, useStockNavigationGuard } from './hooks/StockNavigationGuard';
+import SaleReversalActions from './components/SaleReversalActions';
+import { getSaleReversals } from './services/posOperations';
+import AppLayout, { PosAppNavigation } from './platform/AppLayout';
+import AppsHome from './platform/AppsHome';
+import { AppWorkspace, StockActivity } from './platform/AppWorkspace';
+import { PlatformProvider, inBranch, usePlatform } from './platform/PlatformContext';
 import {
-  addStock,
+  canAccessPath,
+  hasPermission,
+  hasAnyPermission,
+  isAdminUser,
+  isCashierUser,
+} from './platform/appRegistry';
+import './styles/crm.css';
+import './styles/dashboard.css';
+import './styles/operations.css';
+import './styles/catalog.css';
+import './styles/platform.css';
+import './styles/home-hero.css';
+import './styles/contrast.css';
+import './styles/cashier.css';
+import './styles/accounting.css';
+import './styles/mobile.css';
+import {
   createAccountingAccount,
   createAccountingJournal,
   createAccountingPeriod,
   createAccountingTaxRule,
+  createCustomer,
   createStockAdjustment,
-  createBranch,
   createExpense,
-  createHrDepartment,
-  createHrAttendance,
-  createHrEmployee,
-  createHrJobTitle,
-  createHrLeaveRequest,
-  createHrLeaveType,
-  createHrPayrollComponent,
-  createHrPayrollPeriod,
-  createHrPayrollRun,
-  createHrPerformanceEntry,
   createPermission,
   createProduct,
   createProductCategory,
   createRole,
   createSale,
   createSupplier,
-  createTransfer,
   createUser,
   deactivateAccountingAccount,
-  deactivateBranch,
   deactivateProduct,
   deactivateProductCategory,
   deactivateSupplier,
+  deleteCustomer,
   deleteRole,
   disableUser,
-  downloadHrDocument,
   getAccountingAccounts,
   getAccountingBalanceSheet,
   getAccountingCashFlow,
@@ -87,19 +109,10 @@ import {
   getBranches,
   getCommercialSummary,
   getCurrentUser,
-  getCrmSummary,
+  getCustomerPeriodReport,
+  getCustomers,
   getCustomersSummary,
-  getEtimsSummary,
   getExpenses,
-  getHrAttendance,
-  getHrDepartments,
-  getHrDocuments,
-  getHrEmployee,
-  getHrEmployees,
-  getHrJobTitles,
-  getHrLeavePage,
-  getHrPayrollPage,
-  getHrPerformance,
   getInventory,
   getOrganization,
   getPermissions,
@@ -114,27 +127,17 @@ import {
   getStockAdjustmentSummary,
   getStockIntakes,
   getSuppliers,
-  getTransfers,
   getUsers,
   login,
   logout as logoutSession,
   markExpensePaid,
   postAccountingJournal,
-  recalculateHrPayrollRun,
-  syncHrEmployeesFromUsers,
+  sendDocumentEmail,
   updateAccountingAccount,
   updateAccountingJournal,
   updateAccountingPeriod,
   updateAccountingTaxRule,
-  updateBranch,
-  updateHrAttendance,
-  updateHrDepartment,
-  updateHrEmployee,
-  updateHrPayrollEmployeeAdjustment,
-  updateHrPayrollSalesBonusRule,
-  updateHrJobTitle,
-  updateHrLeaveRequest,
-  updateHrLeaveType,
+  updateCustomer,
   updateInventoryReorderLevel,
   updatePermission,
   updateProduct,
@@ -143,14 +146,13 @@ import {
   updateRole,
   updateSupplier,
   updateUser,
-  uploadHrDocument,
   voidAccountingJournal,
   voidExpense,
+  clearCustomerData,
 } from './services/api';
-import { askAiAssistant } from './services/aiAssistant';
-import bannerUrl from './assets/fashion-pos-banner.png';
-import keenLogoUrl from './assets/keen-logo.png';
-import keenLogoWhiteUrl from './assets/keen-logo-white.png';
+import bannerImageUrl from './assets/fashion-pos-banner.png';
+import keenLogoImageUrl from './assets/keen-logo.png';
+import keenLogoWhiteImageUrl from './assets/keen-logo-white.png';
 import type {
   AccountingAccount,
   AccountingAccountRequest,
@@ -165,60 +167,27 @@ import type {
   AccountingStatementRow,
   AccountingTaxRule,
   AccountingTaxRuleRequest,
-  AttendancePage,
-  AttendanceRecord,
-  AttendanceRequest,
-  AttendanceStatus,
   AuditEvent,
   ApiSource,
   Branch,
-  BranchRequest,
   CartLine,
   CurrentUser,
-  Department,
-  DepartmentRequest,
-  EmployeeEmploymentStatus,
-  EmployeeEmploymentType,
-  EmployeeDocument,
-  EmployeePerformanceEntryRequest,
-  EmployeePerformanceEntryType,
-  EmployeePerformanceSummary,
-  EmployeeProfile,
-  EmployeeRequest,
-  EmployeeSummary,
+  Customer,
+  CustomerPeriodReport,
+  CustomerRequest,
+  CustomerStatus,
+  CustomerType,
   Expense,
   ExpensePaymentMethod,
   ExpenseRequest,
   ExpenseStatus,
   InventoryItem,
-  JobTitle,
-  JobTitleRequest,
-  LeaveBalance,
-  LeavePage,
-  LeaveRequestInput,
-  LeaveRequestRecord,
-  LeaveRequestStatus,
-  LeaveType,
-  LeaveTypeRequest,
   ModuleSummary,
   ModuleWorkItem,
   Organization,
   Permission,
   PermissionRequest,
-  PayrollComponent,
-  PayrollComponentRequest,
-  PayrollComponentType,
-  PayrollEmployeeAdjustmentRequest,
-  PayrollPage,
-  PayrollPeriod,
-  PayrollPeriodRequest,
-  PayrollPeriodStatus,
-  PayrollRun,
-  PayrollRunRequest,
-  PayrollRunStatus,
-  PayrollSalesBonusRuleRequest,
   NotificationItem,
-  SalaryPaymentMethod,
   Product,
   ProductCategory,
   ProductCategoryRequest,
@@ -236,11 +205,8 @@ import type {
   StockAdjustmentSummary,
   StockIntake,
   StockIntakeRequest,
-  StockTransfer,
-  StockTransferRequest,
   Supplier,
   SupplierRequest,
-  AiAssistantReply,
   UserRequest,
 } from './data/types';
 
@@ -253,297 +219,8 @@ const queryClientOptions = {
   },
 };
 
-type AppPermission =
-  | 'admin:manage'
-  | 'accounting:manage'
-  | 'accounting:view'
-  | 'audit:view'
-  | 'commercial:manage'
-  | 'crm:manage'
-  | 'etims:manage'
-  | 'hr:attendance:correct'
-  | 'hr:attendance:manage'
-  | 'hr:attendance:view'
-  | 'hr:dashboard:view'
-  | 'hr:employee:create'
-  | 'hr:employee:edit'
-  | 'hr:employee:manage-status'
-  | 'hr:employee:view'
-  | 'hr:leave:approve'
-  | 'hr:leave:manage'
-  | 'hr:leave:request'
-  | 'hr:leave:view'
-  | 'hr:payroll:approve'
-  | 'hr:payroll:process'
-  | 'hr:payroll:view'
-  | 'hr:payroll:view-payslip'
-  | 'hr:performance:manage'
-  | 'hr:performance:view'
-  | 'hr:settings:manage'
-  | 'inventory:adjust'
-  | 'inventory:receive'
-  | 'notifications:view'
-  | 'pos:sell'
-  | 'pos:supervise'
-  | 'procurement:manage'
-  | 'profit:view'
-  | 'reports:view'
-  | 'sales:view'
-  | 'transfer:create'
-  | 'transfer:receive';
-
-type NavItem = {
-  to: string;
-  label: string;
-  icon: string;
-  adminOnly?: boolean;
-  anyPermissions?: AppPermission[];
-  allPermissions?: AppPermission[];
-};
-
-const navItems: NavItem[] = [
-  {
-    to: '/dashboard',
-    label: 'Dashboard',
-    icon: 'bi-house-door',
-    anyPermissions: ['admin:manage', 'reports:view', 'sales:view'],
-  },
-  { to: '/branches', label: 'Branches', icon: 'bi-shop', anyPermissions: ['admin:manage'] },
-  { to: '/roles', label: 'Roles', icon: 'bi-person-badge', anyPermissions: ['admin:manage'] },
-  { to: '/users', label: 'Users', icon: 'bi-people', anyPermissions: ['admin:manage'] },
-  {
-    to: '/product-catalog',
-    label: 'Product Catalog',
-    icon: 'bi-tags',
-    adminOnly: true,
-    anyPermissions: ['admin:manage'],
-  },
-  { to: '/suppliers', label: 'Suppliers', icon: 'bi-truck', anyPermissions: ['admin:manage'] },
-  {
-    to: '/customers',
-    label: 'Customers',
-    icon: 'bi-person-lines-fill',
-    anyPermissions: ['admin:manage', 'commercial:manage', 'crm:manage', 'sales:view'],
-  },
-  {
-    to: '/procurement',
-    label: 'Procurement',
-    icon: 'bi-clipboard-check',
-    anyPermissions: ['admin:manage', 'procurement:manage', 'reports:view'],
-  },
-  {
-    to: '/crm',
-    label: 'CRM',
-    icon: 'bi-kanban',
-    anyPermissions: ['admin:manage', 'crm:manage', 'sales:view', 'reports:view'],
-  },
-  {
-    to: '/inventory',
-    label: 'Inventory',
-    icon: 'bi-box',
-    anyPermissions: [
-      'admin:manage',
-      'inventory:adjust',
-      'inventory:receive',
-      'pos:sell',
-      'reports:view',
-      'sales:view',
-      'transfer:create',
-      'transfer:receive',
-    ],
-  },
-  {
-    to: '/low-stock',
-    label: 'Low Stock',
-    icon: 'bi-exclamation-triangle',
-    anyPermissions: [
-      'admin:manage',
-      'inventory:adjust',
-      'inventory:receive',
-      'pos:sell',
-      'reports:view',
-      'sales:view',
-      'transfer:create',
-      'transfer:receive',
-    ],
-  },
-  {
-    to: '/add-stock',
-    label: 'Add Stock',
-    icon: 'bi-box-arrow-in-down',
-    anyPermissions: ['admin:manage', 'inventory:receive'],
-  },
-  {
-    to: '/transfers',
-    label: 'Transfers',
-    icon: 'bi-arrow-left-right',
-    anyPermissions: ['admin:manage', 'transfer:create', 'transfer:receive'],
-  },
-  { to: '/pos', label: 'POS', icon: 'bi-bag', anyPermissions: ['admin:manage', 'pos:sell'] },
-  {
-    to: '/sales',
-    label: 'Sales',
-    icon: 'bi-bar-chart-line',
-    anyPermissions: ['admin:manage', 'sales:view'],
-  },
-  {
-    to: '/commercial',
-    label: 'Quotations & Invoices',
-    icon: 'bi-receipt-cutoff',
-    anyPermissions: ['admin:manage', 'commercial:manage', 'sales:view', 'reports:view'],
-  },
-  {
-    to: '/expenses',
-    label: 'Expenses',
-    icon: 'bi-wallet2',
-    anyPermissions: ['admin:manage', 'sales:view', 'reports:view'],
-  },
-  {
-    to: '/shifts',
-    label: 'Shifts',
-    icon: 'bi-clock',
-    allPermissions: ['pos:sell', 'sales:view'],
-  },
-  {
-    to: '/reports',
-    label: 'Reports',
-    icon: 'bi-file-earmark-text',
-    adminOnly: true,
-  },
-  {
-    to: '/accounting',
-    label: 'Accounting',
-    icon: 'bi-bank',
-    anyPermissions: ['admin:manage', 'accounting:view', 'accounting:manage', 'reports:view'],
-  },
-  {
-    to: '/etims',
-    label: 'eTIMS',
-    icon: 'bi-shield-check',
-    anyPermissions: ['admin:manage', 'etims:manage', 'reports:view'],
-  },
-  {
-    to: '/notifications',
-    label: 'Notifications',
-    icon: 'bi-bell',
-    anyPermissions: ['admin:manage', 'notifications:view'],
-  },
-  {
-    to: '/audit',
-    label: 'Audit Logs',
-    icon: 'bi-journal-text',
-    anyPermissions: ['admin:manage', 'audit:view'],
-  },
-  { to: '/hr', label: 'HR', icon: 'bi-people-fill', adminOnly: true },
-  { to: '/settings', label: 'Settings', icon: 'bi-gear', anyPermissions: ['admin:manage'] },
-  { to: '/help', label: 'Help', icon: 'bi-question-circle' },
-];
-
-const hrNavItems: NavItem[] = [
-  {
-    to: '/hr',
-    label: 'Dashboard',
-    icon: 'bi-house-door-fill',
-    adminOnly: true,
-  },
-  {
-    to: '/hr/employees',
-    label: 'Employees',
-    icon: 'bi-people',
-    adminOnly: true,
-  },
-  {
-    to: '/hr/attendance',
-    label: 'Attendance',
-    icon: 'bi-calendar2-check',
-    adminOnly: true,
-  },
-  {
-    to: '/hr/leave',
-    label: 'Leave',
-    icon: 'bi-calendar-week',
-    adminOnly: true,
-  },
-  {
-    to: '/hr/payroll',
-    label: 'Payroll',
-    icon: 'bi-wallet2',
-    adminOnly: true,
-  },
-  {
-    to: '/hr/recruitment',
-    label: 'Recruitment',
-    icon: 'bi-people-fill',
-    adminOnly: true,
-  },
-  {
-    to: '/hr/performance',
-    label: 'Performance',
-    icon: 'bi-bar-chart-line',
-    adminOnly: true,
-  },
-  {
-    to: '/hr/documents',
-    label: 'Documents',
-    icon: 'bi-file-earmark-text',
-    adminOnly: true,
-  },
-  {
-    to: '/hr/reports',
-    label: 'Reports',
-    icon: 'bi-graph-up-arrow',
-    adminOnly: true,
-  },
-  {
-    to: '/hr/settings',
-    label: 'HR Settings',
-    icon: 'bi-gear',
-    adminOnly: true,
-  },
-];
-
-function hasPermission(user: CurrentUser, permission: AppPermission) {
-  return user.permissionCodes.includes(permission);
-}
-
-function hasAnyPermission(user: CurrentUser, permissions: AppPermission[]) {
-  return permissions.some((permission) => hasPermission(user, permission));
-}
-
-function hasAllPermissions(user: CurrentUser, permissions: AppPermission[]) {
-  return permissions.every((permission) => hasPermission(user, permission));
-}
-
-function isAdminUser(user: CurrentUser) {
-  return user.roleKeys.includes('ADMIN');
-}
-
 function canViewProfit(user: CurrentUser) {
   return isAdminUser(user);
-}
-
-function canViewAllCashierSales(user: CurrentUser) {
-  return (
-    hasPermission(user, 'admin:manage') ||
-    hasPermission(user, 'pos:supervise') ||
-    hasPermission(user, 'reports:view')
-  );
-}
-
-function canAccessNavItem(user: CurrentUser, item: NavItem) {
-  if (item.adminOnly && !isAdminUser(user)) {
-    return false;
-  }
-  if (hasPermission(user, 'admin:manage')) {
-    return true;
-  }
-  if (item.allPermissions && !hasAllPermissions(user, item.allPermissions)) {
-    return false;
-  }
-  if (item.anyPermissions && !hasAnyPermission(user, item.anyPermissions)) {
-    return false;
-  }
-  return true;
 }
 
 function primaryRoleLabel(user: CurrentUser) {
@@ -555,89 +232,6 @@ function primaryRoleLabel(user: CurrentUser) {
   }
   return user.roleNames.join(' / ');
 }
-
-function canAccessPath(user: CurrentUser, path: string) {
-  const inHrModule = path === '/hr' || path.startsWith('/hr/');
-  const routeItems = inHrModule ? hrNavItems : navItems;
-  const routeItem =
-    [...routeItems]
-      .sort((first, second) => second.to.length - first.to.length)
-      .find((item) => path === item.to || path.startsWith(`${item.to}/`)) ?? null;
-  return routeItem == null ? !inHrModule : canAccessNavItem(user, routeItem);
-}
-
-const hrEmploymentTypeOptions: { value: EmployeeEmploymentType; label: string }[] = [
-  { value: 'PERMANENT', label: 'Permanent' },
-  { value: 'CONTRACT', label: 'Contract' },
-  { value: 'TEMPORARY', label: 'Temporary' },
-  { value: 'INTERN', label: 'Intern' },
-  { value: 'CASUAL', label: 'Casual' },
-];
-
-const hrEmploymentStatusOptions: { value: EmployeeEmploymentStatus; label: string }[] = [
-  { value: 'ACTIVE', label: 'Active' },
-  { value: 'PROBATION', label: 'Probation' },
-  { value: 'SUSPENDED', label: 'Suspended' },
-  { value: 'TERMINATED', label: 'Terminated' },
-  { value: 'RESIGNED', label: 'Resigned' },
-  { value: 'RETIRED', label: 'Retired' },
-];
-
-const salaryPaymentMethodOptions: { value: SalaryPaymentMethod; label: string }[] = [
-  { value: 'UNSPECIFIED', label: 'Not configured' },
-  { value: 'BANK', label: 'Bank account' },
-  { value: 'MPESA', label: 'M-Pesa' },
-];
-
-const attendanceStatusOptions: { value: AttendanceStatus; label: string }[] = [
-  { value: 'PRESENT', label: 'Present' },
-  { value: 'ABSENT', label: 'Absent' },
-  { value: 'LATE', label: 'Late' },
-  { value: 'HALF_DAY', label: 'Half Day' },
-  { value: 'ON_LEAVE', label: 'On Leave' },
-  { value: 'HOLIDAY', label: 'Holiday' },
-  { value: 'OFF_DAY', label: 'Off Day' },
-];
-
-const leaveStatusOptions: { value: LeaveRequestStatus; label: string }[] = [
-  { value: 'DRAFT', label: 'Draft' },
-  { value: 'SUBMITTED', label: 'Submitted' },
-  { value: 'PENDING_APPROVAL', label: 'Pending Approval' },
-  { value: 'APPROVED', label: 'Approved' },
-  { value: 'REJECTED', label: 'Rejected' },
-  { value: 'CANCELLED', label: 'Cancelled' },
-];
-
-const payrollComponentTypeOptions: { value: PayrollComponentType; label: string }[] = [
-  { value: 'EARNING', label: 'Earning' },
-  { value: 'DEDUCTION', label: 'Deduction' },
-];
-
-const payrollPeriodStatusOptions: { value: PayrollPeriodStatus; label: string }[] = [
-  { value: 'DRAFT', label: 'Draft' },
-  { value: 'OPEN', label: 'Open' },
-  { value: 'CLOSED', label: 'Closed' },
-];
-
-const performanceEntryTypeOptions: { value: EmployeePerformanceEntryType; label: string }[] = [
-  { value: 'PERFORMANCE_REVIEW', label: 'Performance Review' },
-  { value: 'BONUS', label: 'Bonus' },
-  { value: 'LOSS', label: 'Loss' },
-  { value: 'MANUAL_SALE', label: 'Manual Sale' },
-];
-
-const hrDocumentTypeOptions = [
-  'Employment Contract',
-  'National ID',
-  'KRA PIN',
-  'Passport Photo',
-  'Academic Certificate',
-  'Bank Details',
-  'Emergency Contact',
-  'Leave Document',
-  'Payroll Document',
-  'Other',
-];
 
 const customerLookupSchema = z.object({
   query: z.string().trim().max(80, 'Use 80 characters or less'),
@@ -660,7 +254,7 @@ const ownerMetrics = [
     value: 0,
     detail: '0%',
     comparison: 'current period',
-    tone: 'blue',
+    tone: 'green',
     icon: 'bi-database',
     profitOnly: true,
   },
@@ -679,7 +273,7 @@ const ownerMetrics = [
     value: 0,
     detail: '0%',
     comparison: 'current period',
-    tone: 'purple',
+    tone: 'cyan',
     icon: 'bi-pie-chart',
     profitOnly: true,
   },
@@ -733,7 +327,6 @@ const expensePaymentMethodOptions: {
 const expenseCategoryOptions = [
   'Rent',
   'Utilities',
-  'Payroll',
   'Transport',
   'Supplies',
   'Marketing',
@@ -781,9 +374,9 @@ const reportGroups = [
   },
   {
     heading: 'Operations',
-    hint: 'Monitor your branches, payments and inventory health.',
+    hint: 'Monitor payments, sales flow and inventory health.',
     cards: [
-      { title: 'Branch Performance', icon: 'bi-building', tone: 'blue', type: 'branches' },
+      { title: 'Shop Snapshot', icon: 'bi-shop-window', tone: 'blue', type: 'shop' },
       {
         title: 'Payments & Reconciliation',
         icon: 'bi-credit-card-2-front-fill',
@@ -794,11 +387,10 @@ const reportGroups = [
     ],
   },
   {
-    heading: 'People & Controls',
-    hint: 'Keep track of your people, expenses and compliance.',
+    heading: 'Operations & Controls',
+    hint: 'Keep track of expenses, inventory variances and compliance.',
     cards: [
       { title: 'Expenses', icon: 'bi-cash-coin', tone: 'purple', type: 'expenses' },
-      { title: 'Staff & Shifts', icon: 'bi-people-fill', tone: 'purple', type: 'staff' },
       {
         title: 'Losses & Variances',
         icon: 'bi-exclamation-triangle-fill',
@@ -832,18 +424,19 @@ const PRODUCT_IMAGE_DATA_URL_MAX_LENGTH = 1_500_000;
 
 export default function App() {
   const [queryClient] = useState(() => new QueryClient(queryClientOptions));
+  const [router] = useState(() => createBrowserRouter([{ path: '*', element: <AppShell /> }]));
 
   return (
     <QueryClientProvider client={queryClient}>
-      <style>{hrDashboardStyles}</style>
-      <BrowserRouter>
-        <AppShell />
-      </BrowserRouter>
+      <StockNavigationProvider>
+        <RouterProvider router={router} />
+      </StockNavigationProvider>
     </QueryClientProvider>
   );
 }
 
 function AppShell() {
+  const stockNavigation = useStockNavigationGuard();
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -868,23 +461,10 @@ function AppShell() {
 
   const currentUser = userQuery.data;
   const branches = branchesQuery.data ?? [];
-  const [activeBranchId, setActiveBranchId] = useState('');
-
-  useEffect(() => {
-    if (
-      activeBranchId &&
-      !branches.some((branch) => branch.id === activeBranchId && branch.status === 'ACTIVE')
-    ) {
-      setActiveBranchId('');
-    }
-  }, [activeBranchId, branches]);
-
-  const activeBranch = branches.find(
-    (branch) => branch.id === activeBranchId && branch.status === 'ACTIVE',
-  );
   const source: ApiSource = 'api';
 
   async function handleLogout() {
+    if (!(await stockNavigation.confirmLeave())) return;
     try {
       await logoutSession();
     } finally {
@@ -933,6 +513,37 @@ function AppShell() {
   }
 
   const organization = organizationQuery.data;
+  return (
+    <PlatformProvider
+      key={`${currentUser.organizationId}:${currentUser.userId}`}
+      user={currentUser}
+      branches={branches}
+    >
+      <PlatformRoutes
+        currentUser={currentUser}
+        organization={organization}
+        onLogout={handleLogout}
+        source={source}
+      />
+    </PlatformProvider>
+  );
+}
+
+function PlatformRoutes({
+  currentUser,
+  organization,
+  onLogout,
+  source,
+}: {
+  currentUser: CurrentUser;
+  organization: Organization;
+  onLogout: () => void;
+  source: ApiSource;
+}) {
+  const location = useLocation();
+  const { branchId, branches: authorizedBranches, selectedBranch } = usePlatform();
+  const branches = selectedBranch ? [selectedBranch] : authorizedBranches;
+  const primaryBranch = selectedBranch ?? authorizedBranches[0];
   const defaultRoute = defaultPathForUser(currentUser);
 
   if (location.pathname !== '/' && !canAccessPath(currentUser, location.pathname)) {
@@ -946,10 +557,10 @@ function AppShell() {
           path="/pos"
           element={
             <PosWorkspace
-              activeBranch={activeBranch}
+              activeBranch={primaryBranch}
               branches={branches}
               organization={organization}
-              onLogout={handleLogout}
+              onLogout={onLogout}
               source={source}
               currentUser={currentUser}
             />
@@ -961,219 +572,133 @@ function AppShell() {
   }
 
   return (
-    <div className="app-shell">
-      <Sidebar currentUser={currentUser} />
-
-      <div className="content-shell">
-        <BackOfficeTopbar
-          activeBranchId={activeBranchId}
-          branches={branches}
-          currentUser={currentUser}
-          onBranchChange={setActiveBranchId}
-          onLogout={handleLogout}
-          source={source}
+    <AppLayout user={currentUser} onLogout={onLogout}>
+      <Routes>
+        <Route path="/" element={<Navigate to={defaultRoute} replace />} />
+        <Route
+          path="/shifts"
+          element={<CashierShiftsPage user={currentUser} organization={organization} />}
         />
-
-        <main className="main-content">
-          <Routes>
-            <Route path="/" element={<Navigate to={defaultRoute} replace />} />
-            <Route
-              path="/dashboard"
-              element={
-                <Dashboard
-                  activeBranch={activeBranch}
-                  branches={branches}
-                  currentUser={currentUser}
-                  organization={organization}
-                />
-              }
+        <Route path="/home" element={<AppsHome user={currentUser} organization={organization} />} />
+        <Route path="/apps" element={<AppsHome user={currentUser} organization={organization} />} />
+        <Route
+          path="/favorites"
+          element={
+            <AppsHome
+              key="favorites"
+              view="favorites"
+              user={currentUser}
+              organization={organization}
             />
-            <Route
-              path="/branches"
-              element={<BranchesPage branches={branches} organization={organization} />}
+          }
+        />
+        <Route
+          path="/recent"
+          element={
+            <AppsHome key="recent" view="recent" user={currentUser} organization={organization} />
+          }
+        />
+        <Route path="/apps/inventory/activity" element={<StockActivity user={currentUser} />} />
+        <Route
+          path="/apps/inventory/adjustments"
+          element={<StockActivity user={currentUser} mode="adjustments" />}
+        />
+        <Route
+          path="/apps/warehouse/receipts"
+          element={<StockActivity user={currentUser} mode="receipts" />}
+        />
+        <Route
+          path="/apps/:appId"
+          element={<AppWorkspace user={currentUser} organization={organization} />}
+        />
+        <Route
+          path="/dashboard"
+          element={
+            <Dashboard branches={branches} currentUser={currentUser} organization={organization} />
+          }
+        />
+        <Route path="/branches" element={<Navigate to="/settings" replace />} />
+        <Route path="/roles" element={<RolesPage />} />
+        <Route path="/users" element={<UsersPage />} />
+        <Route path="/product-catalog" element={<ProductsPage organization={organization} />} />
+        <Route
+          path="/product-categories"
+          element={<ProductsPage organization={organization} view="categories" />}
+        />
+        <Route path="/products" element={<Navigate to="/product-catalog" replace />} />
+        <Route path="/suppliers" element={<SuppliersPage organization={organization} />} />
+        <Route
+          path="/customers"
+          element={<CustomersPage key={branchId} branches={branches} organization={organization} />}
+        />
+        <Route
+          path="/crm"
+          element={
+            <CrmPage
+              key={`${organization.id}:${currentUser.userId}:${branchId}`}
+              branches={branches}
+              currentUser={currentUser}
+              organization={organization}
             />
-            <Route path="/roles" element={<RolesPage />} />
-            <Route path="/users" element={<UsersPage branches={branches} />} />
-            <Route path="/product-catalog" element={<ProductsPage organization={organization} />} />
-            <Route path="/products" element={<Navigate to="/product-catalog" replace />} />
-            <Route path="/suppliers" element={<SuppliersPage organization={organization} />} />
-            <Route
-              path="/customers"
-              element={
-                <ErpModulePage
-                  icon="bi-person-lines-fill"
-                  organization={organization}
-                  queryFn={getCustomersSummary}
-                  queryKey="customers-summary"
-                />
-              }
+          }
+        />
+        <Route
+          path="/procurement"
+          element={
+            <ProcurementPage key={branchId} branches={branches} organization={organization} />
+          }
+        />
+        <Route
+          path="/inventory"
+          element={
+            <Inventory key={branchId} currentUser={currentUser} organization={organization} />
+          }
+        />
+        <Route path="/low-stock" element={<LowStockPage organization={organization} />} />
+        <Route
+          path="/add-stock"
+          element={<AddStockPage key={branchId} branches={branches} organization={organization} />}
+        />
+        <Route
+          path="/expenses"
+          element={
+            <ExpensesPage
+              key={branchId}
+              branches={branches}
+              organization={organization}
+              currentUser={currentUser}
             />
-            <Route
-              path="/procurement"
-              element={<ProcurementPage branches={branches} organization={organization} />}
+          }
+        />
+        <Route path="/commercial" element={<CommercialPage organization={organization} />} />
+        <Route
+          path="/reports"
+          element={<ReportsHub branches={branches} organization={organization} />}
+        />
+        <Route
+          path="/accounting"
+          element={
+            <AccountingPage
+              key={branchId}
+              branches={branches}
+              currentUser={currentUser}
+              organization={organization}
             />
-            <Route
-              path="/crm"
-              element={
-                <CrmPage
-                  branches={branches}
-                  currentUser={currentUser}
-                  organization={organization}
-                />
-              }
-            />
-            <Route
-              path="/inventory"
-              element={<Inventory currentUser={currentUser} organization={organization} />}
-            />
-            <Route path="/low-stock" element={<LowStockPage organization={organization} />} />
-            <Route
-              path="/add-stock"
-              element={<AddStockPage branches={branches} organization={organization} />}
-            />
-            <Route
-              path="/transfers"
-              element={<TransfersPage branches={branches} organization={organization} />}
-            />
-            <Route
-              path="/expenses"
-              element={<ExpensesPage branches={branches} organization={organization} />}
-            />
-            <Route
-              path="/commercial"
-              element={<CommercialPage organization={organization} />}
-            />
-            <Route
-              path="/shifts"
-              element={
-                <ShiftsPage
-                  activeBranch={activeBranch}
-                  branches={branches}
-                  currentUser={currentUser}
-                  organization={organization}
-                />
-              }
-            />
-            <Route
-              path="/reports"
-              element={
-                <ReportsHub
-                  branches={branches}
-                  currentUser={currentUser}
-                  organization={organization}
-                />
-              }
-            />
-            <Route
-              path="/accounting"
-              element={
-                <AccountingPage
-                  branches={branches}
-                  currentUser={currentUser}
-                  organization={organization}
-                />
-              }
-            />
-            <Route
-              path="/etims"
-              element={
-                <ErpModulePage
-                  icon="bi-shield-check"
-                  organization={organization}
-                  queryFn={getEtimsSummary}
-                  queryKey="etims-summary"
-                />
-              }
-            />
-            <Route
-              path="/notifications"
-              element={<NotificationsPage organization={organization} />}
-            />
-            <Route path="/audit" element={<AuditLogPage />} />
-            <Route
-              path="/hr"
-              element={<HrDashboardPage branches={branches} currentUser={currentUser} />}
-            />
-            <Route
-              path="/hr/employees"
-              element={<HrEmployeesPage branches={branches} currentUser={currentUser} />}
-            />
-            <Route
-              path="/hr/employees/:employeeId"
-              element={<HrEmployeeProfilePage organization={organization} />}
-            />
-            <Route
-              path="/hr/settings"
-              element={<HrSettingsPage branches={branches} currentUser={currentUser} />}
-            />
-            <Route
-              path="/hr/attendance"
-              element={<HrAttendancePage branches={branches} currentUser={currentUser} />}
-            />
-            <Route
-              path="/hr/leave"
-              element={<HrLeavePage branches={branches} currentUser={currentUser} />}
-            />
-            <Route
-              path="/hr/payroll"
-              element={
-                <HrPayrollPage
-                  branches={branches}
-                  currentUser={currentUser}
-                  organization={organization}
-                />
-              }
-            />
-            <Route
-              path="/hr/recruitment"
-              element={<HrRecruitmentPage branches={branches} currentUser={currentUser} />}
-            />
-            <Route
-              path="/hr/performance"
-              element={
-                <HrPerformancePage
-                  branches={branches}
-                  currentUser={currentUser}
-                  organization={organization}
-                />
-              }
-            />
-            <Route
-              path="/hr/documents"
-              element={<HrDocumentsPage branches={branches} currentUser={currentUser} />}
-            />
-            <Route
-              path="/hr/reports"
-              element={
-                <HrReportsPage
-                  branches={branches}
-                  currentUser={currentUser}
-                  organization={organization}
-                />
-              }
-            />
-            <Route path="/settings" element={<SettingsPage organization={organization} />} />
-            <Route path="/help" element={<HelpPage />} />
-            <Route
-              path="/sales"
-              element={<SalesPage currentUser={currentUser} organization={organization} />}
-            />
-            <Route path="*" element={<BackOffice />} />
-          </Routes>
-        </main>
-        <AiAssistantPanel />
-      </div>
-    </div>
+          }
+        />
+        <Route path="/notifications" element={<NotificationsPage organization={organization} />} />
+        <Route path="/audit" element={<AuditLogPage />} />
+        <Route path="/settings" element={<SettingsPage organization={organization} />} />
+        <Route path="/help" element={<HelpPage />} />
+        <Route path="/sales" element={<SalesPage organization={organization} />} />
+        <Route path="*" element={<Navigate to="/apps" replace />} />
+      </Routes>
+    </AppLayout>
   );
 }
 
 function defaultPathForUser(user: CurrentUser) {
-  const defaultItem = navItems.find((item) => canAccessNavItem(user, item)) ?? null;
-  if (defaultItem?.to === '/hr') {
-    return hrNavItems.find((item) => canAccessNavItem(user, item))?.to ?? '/hr';
-  }
-
-  return defaultItem?.to ?? '/dashboard';
+  return '/apps';
 }
 
 function AuthLoading() {
@@ -1195,7 +720,7 @@ function businessDataErrorMessage(
   }
 
   if (branchesError instanceof Error) {
-    return `Branches: ${branchesError.message}`;
+    return `Shop location: ${branchesError.message}`;
   }
 
   if (!organization) {
@@ -1218,7 +743,7 @@ function DataLoadError({
 }) {
   return (
     <main className="auth-loading" aria-label="Unable to load business data">
-      <img src={keenLogoUrl} alt="KEEN HR and POS" />
+      <img src={keenLogoImageUrl} alt={appName} />
       <span>Unable to load business data.</span>
       {detail ? (
         <p className="auth-error-detail" role="alert">
@@ -1241,124 +766,6 @@ function DataLoadError({
         </button>
       </div>
     </main>
-  );
-}
-
-function AiAssistantPanel() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [reply, setReply] = useState<AiAssistantReply | null>(null);
-  const askMutation = useMutation({
-    mutationFn: askAiAssistant,
-    onSuccess: (response) => {
-      setReply(response);
-    },
-  });
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = message.trim();
-    if (!trimmed) {
-      setError('Enter a question for the assistant');
-      return;
-    }
-    setError('');
-    try {
-      await askMutation.mutateAsync(trimmed);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to reach assistant');
-    }
-  }
-
-  function applySuggestion(suggestion: string) {
-    setMessage(suggestion);
-    setError('');
-  }
-
-  return (
-    <div className={`ai-assistant-shell ${isOpen ? 'open' : ''}`}>
-      <button
-        className="ai-assistant-toggle"
-        type="button"
-        onClick={() => setIsOpen((current) => !current)}
-        aria-expanded={isOpen}
-      >
-        <i className="bi bi-stars" aria-hidden="true" />
-        AI Assistant
-      </button>
-      {isOpen ? (
-        <section className="ai-assistant-panel panel-card">
-          <div className="ai-assistant-header">
-            <div>
-              <strong>ERP Assistant</strong>
-              <span>Read-only business summaries</span>
-            </div>
-            <button
-              className="icon-button"
-              type="button"
-              onClick={() => setIsOpen(false)}
-              aria-label="Close assistant"
-            >
-              <i className="bi bi-x-lg" aria-hidden="true" />
-            </button>
-          </div>
-          <form className="ai-assistant-form" onSubmit={handleSubmit}>
-            <textarea
-              rows={4}
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              placeholder="Ask about sales, stock, expenses, employees, attendance, or leave"
-            />
-            <button
-              className="primary-action compact-action"
-              type="submit"
-              disabled={askMutation.isPending}
-            >
-              <i className="bi bi-send" aria-hidden="true" />
-              {askMutation.isPending ? 'Thinking...' : 'Ask Assistant'}
-            </button>
-          </form>
-          <FormMessages error={error} message="" />
-          {reply ? (
-            <div className="ai-assistant-response">
-              <p>{reply.answer}</p>
-              {reply.citations.length > 0 ? (
-                <div className="ai-assistant-citations">
-                  <strong>Sources</strong>
-                  <ul>
-                    {reply.citations.map((citation) => (
-                      <li key={citation}>{citation}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {reply.suggestions.length > 0 ? (
-                <div className="ai-assistant-suggestions">
-                  {reply.suggestions.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      className="secondary-action compact-action"
-                      onClick={() => applySuggestion(suggestion)}
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div className="ai-assistant-empty">
-              <p>
-                Try: Show today&apos;s sales summary, Show low stock items, or Show attendance
-                summary.
-              </p>
-            </div>
-          )}
-        </section>
-      ) : null}
-    </div>
   );
 }
 
@@ -1386,7 +793,7 @@ function LoginPage() {
       await queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] !== 'me',
       });
-      navigate('/dashboard', { replace: true });
+      navigate('/apps', { replace: true });
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Unable to sign in');
     } finally {
@@ -1399,6 +806,7 @@ function LoginPage() {
       <section className="login-panel" aria-label="Sign in">
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="login-heading">
+            <p className="login-app-name">{appName}</p>
             <h1>User Login</h1>
           </div>
 
@@ -1468,121 +876,20 @@ function LoginPage() {
   );
 }
 
-function Sidebar({ currentUser }: { currentUser: CurrentUser }) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const location = useLocation();
-  const activeNavItems = unifiedSidebarItems().filter((item) =>
-    canAccessNavItem(currentUser, item),
-  );
-
-  useEffect(() => {
-    setIsMenuOpen(false);
-  }, [location.pathname]);
-
-  return (
-    <aside className={`sidebar ${isMenuOpen ? 'menu-open' : ''}`} aria-label="Primary navigation">
-      <div className="sidebar-header">
-        <Brand variant="sidebar" />
-        <button
-          aria-controls="primary-navigation-menu"
-          aria-expanded={isMenuOpen}
-          className="menu-button"
-          type="button"
-          onClick={() => setIsMenuOpen((current) => !current)}
-        >
-          <i className={`bi ${isMenuOpen ? 'bi-x-lg' : 'bi-list'}`} aria-hidden="true" />
-          <span>Menu</span>
-        </button>
-      </div>
-
-      <nav className="nav-stack" id="primary-navigation-menu">
-        {activeNavItems.map((item) => (
-          <NavLink
-            className={({ isActive }) => `nav-item-link ${isActive ? 'active' : ''}`}
-            key={item.to}
-            onClick={() => setIsMenuOpen(false)}
-            to={item.to}
-          >
-            <i className={`bi ${item.icon}`} aria-hidden="true" />
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
-      </nav>
-
-      <div className="sidebar-footer">
-        <i className="bi bi-layers" aria-hidden="true" />
-        <span>Copyright @CRENVIX MORAVA SYSTEMS</span>
-      </div>
-    </aside>
-  );
-}
-
-function unifiedSidebarItems() {
-  const hrChildItems = hrNavItems
-    .filter((item) => item.to !== '/hr')
-    .map((item) => ({
-      ...item,
-      label: item.label.startsWith('HR') ? item.label : `HR ${item.label}`,
-    }));
-
-  return navItems.flatMap((item) => (item.to === '/hr' ? [item, ...hrChildItems] : [item]));
-}
-
-function Brand({ variant = 'default' }: { variant?: 'default' | 'sidebar' }) {
-  const brandLogoSrc = variant === 'sidebar' ? keenLogoWhiteUrl : keenLogoUrl;
+function Brand({
+  alt = appName,
+  variant = 'default',
+}: {
+  alt?: string;
+  variant?: 'default' | 'sidebar';
+}) {
+  const brandLogoSrc = variant === 'sidebar' ? keenLogoWhiteImageUrl : keenLogoImageUrl;
 
   return (
     <div className="brand-block">
-      <img className="brand-logo" src={brandLogoSrc} alt="KEEN HR and POS" />
+      <img className="brand-logo" src={brandLogoSrc} alt={alt} />
+      <span>{appName}</span>
     </div>
-  );
-}
-
-type BackOfficeTopbarProps = {
-  activeBranchId: string;
-  branches: Branch[];
-  currentUser: CurrentUser;
-  onBranchChange: (branchId: string) => void;
-  onLogout: () => void;
-  source: ApiSource;
-};
-
-function BackOfficeTopbar({
-  activeBranchId,
-  branches,
-  currentUser,
-  onBranchChange,
-  onLogout,
-  source,
-}: BackOfficeTopbarProps) {
-  const activeBranches = branches.filter((branch) => branch.status === 'ACTIVE');
-
-  return (
-    <header className="topbar">
-      <div className="topbar-actions">
-        <label className="select-shell branch-switcher">
-          <i className="bi bi-building" aria-hidden="true" />
-          <select
-            aria-label="Active branch"
-            value={activeBranchId}
-            onChange={(event) => onBranchChange(event.target.value)}
-          >
-            <option value="">All Branches</option>
-            {activeBranches.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span className={`data-chip ${source}`}>{source === 'api' ? 'Online' : 'Demo'}</span>
-        <UserChip name={currentUser.displayName} role={primaryRoleLabel(currentUser)} />
-        <button className="logout-action" type="button" onClick={onLogout}>
-          <i className="bi bi-box-arrow-right" aria-hidden="true" />
-          Log Out
-        </button>
-      </div>
-    </header>
   );
 }
 
@@ -1630,6 +937,7 @@ function PosWorkspace({
   const [cart, setCart] = useState<CartLine[]>([]);
   const [customer, setCustomer] = useState('Walk-in Customer');
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const [mpesaLocked, setMpesaLocked] = useState(false);
   const [checkoutIdempotencyKey, setCheckoutIdempotencyKey] = useState(() =>
     newSaleIdempotencyKey(),
   );
@@ -1638,6 +946,7 @@ function PosWorkspace({
   const [saleError, setSaleError] = useState('');
   const activeBranches = branches.filter((branch) => branch.status === 'ACTIVE');
   const registerBranch = activeBranch ?? activeBranches[0];
+  const mpesaStorageKey = `keen:mpesa:${organization.id}:${currentUser.userId}:${registerBranch?.id ?? ''}`;
   const productsQuery = useQuery({
     queryKey: ['products'],
     queryFn: getProducts,
@@ -1674,7 +983,7 @@ function PosWorkspace({
     const matchesCategory = category === 'All' || product.categoryName === category;
     const haystack =
       `${product.name} ${product.sku} ${product.barcode ?? ''} ${product.categoryName} ${product.department ?? ''} ${product.sizes.join(' ')} ${product.colors.join(' ')}`.toLowerCase();
-    return matchesCategory && haystack.includes(search.toLowerCase());
+    return isSellableProduct(product) && matchesCategory && haystack.includes(search.toLowerCase());
   });
 
   const cartProducts = cart
@@ -1692,6 +1001,8 @@ function PosWorkspace({
     mutationFn: ({ payload, idempotencyKey }: { payload: SaleRequest; idempotencyKey: string }) =>
       createSale(payload, idempotencyKey),
     onSuccess: async (sale) => {
+      clearMpesaRecovery(mpesaStorageKey);
+      setMpesaLocked(false);
       updateSalesCache(queryClient, sale);
       decrementInventoryCacheForSale(queryClient, sale);
       decrementProductStockCacheForSale(queryClient, sale);
@@ -1709,12 +1020,16 @@ function PosWorkspace({
   });
 
   useEffect(() => {
-    setCart([]);
-    setPaymentOpen(false);
+    const recovery = readMpesaRecovery(mpesaStorageKey);
+    setCart(recovery?.sale.lines ?? []);
+    setCustomer(recovery?.sale.customerName || 'Walk-in Customer');
+    setCheckoutIdempotencyKey(recovery?.key ?? newSaleIdempotencyKey());
+    setMpesaLocked(Boolean(recovery));
+    setPaymentOpen(Boolean(recovery));
     setSaleMessage('');
     setSaleError('');
     setCompletedSale(null);
-  }, [registerBranch?.id]);
+  }, [mpesaStorageKey]);
 
   useEffect(() => {
     function handleCheckoutShortcut(event: KeyboardEvent) {
@@ -1744,11 +1059,15 @@ function PosWorkspace({
   }, [cartProducts.length, completedSale, paymentOpen, registerBranch]);
 
   function addToCart(product: Product) {
+    if (mpesaLocked) {
+      setSaleError('Finish or reconcile the saved M-Pesa checkout before changing the cart.');
+      return;
+    }
     setSaleMessage('');
     setSaleError('');
 
     if (!registerBranch) {
-      setSaleError('Create or select an active branch before selling.');
+      setSaleError('Set up the shop location before selling.');
       return;
     }
 
@@ -1760,9 +1079,7 @@ function PosWorkspace({
     const currentQuantity = quantityInCart(product.id);
     const availableQuantity = availableForProduct(product);
     if (availableQuantity <= currentQuantity) {
-      setSaleError(
-        `${product.name} has only ${availableQuantity} units available at ${registerBranch.name}.`,
-      );
+      setSaleError(`${product.name} has only ${availableQuantity} units available.`);
       return;
     }
 
@@ -1778,15 +1095,17 @@ function PosWorkspace({
   }
 
   function updateQuantity(productId: string, delta: number) {
+    if (mpesaLocked) {
+      setSaleError('Finish or reconcile the saved M-Pesa checkout before changing the cart.');
+      return;
+    }
     setSaleMessage('');
     setSaleError('');
 
     if (delta > 0) {
       const product = products.find((item) => item.id === productId);
       if (product && availableForProduct(product) <= quantityInCart(productId)) {
-        setSaleError(
-          `${product.name} has only ${availableForProduct(product)} units available at ${registerBranch?.name ?? 'this branch'}.`,
-        );
+        setSaleError(`${product.name} has only ${availableForProduct(product)} units available.`);
         return;
       }
     }
@@ -1817,14 +1136,13 @@ function PosWorkspace({
     setSaleMessage('');
     setSaleError('');
     if (!registerBranch) {
-      setSaleError('Create or select an active branch before completing a sale.');
+      setSaleError('Set up the shop location before completing a sale.');
       return;
     }
     if (cartProducts.length === 0) {
       setSaleError('Add at least one product before completing a sale.');
       return;
     }
-    setCheckoutIdempotencyKey(newSaleIdempotencyKey());
     setPaymentOpen(true);
   }
 
@@ -1832,7 +1150,7 @@ function PosWorkspace({
     setSaleMessage('');
     setSaleError('');
     if (!registerBranch) {
-      setSaleError('Create or select an active branch before completing a sale.');
+      setSaleError('Set up the shop location before completing a sale.');
       setPaymentOpen(false);
       return;
     }
@@ -1870,21 +1188,21 @@ function PosWorkspace({
               <i className="bi bi-geo-alt-fill" aria-hidden="true" />
             </span>
             <div>
-              <strong>{registerBranch?.name ?? 'No branch selected'}</strong>
-              <span>Register 02</span>
+              <strong>{registerBranch?.name ?? 'Shop location unavailable'}</strong>
+              <span>Main Register</span>
             </div>
           </div>
           <div className="pos-session">
             <UserChip name={currentUser.displayName} role={primaryRoleLabel(currentUser)} compact />
             <span className="service-chip success">
               <i className="bi bi-check-circle-fill" aria-hidden="true" />
-              Open Shift
+              Register Ready
             </span>
             <span className="online-dot">
               <span />
               {source === 'api' ? 'Online' : 'Offline'}
             </span>
-            <NavLink className="exit-command" to="/dashboard">
+            <NavLink className="exit-command" to="/apps">
               <i className="bi bi-box-arrow-right" aria-hidden="true" />
               Exit POS
             </NavLink>
@@ -1895,8 +1213,14 @@ function PosWorkspace({
           </div>
         </header>
 
+        <PosAppNavigation user={currentUser} disabled={cart.length > 0} />
         <main className="pos-workspace">
-          <section className="pos-catalog" aria-label="Product catalogue">
+          <section
+            id="pos-products"
+            className="pos-catalog"
+            aria-label="Product catalogue"
+            tabIndex={-1}
+          >
             <div className="barcode-search">
               <i className="bi bi-upc-scan barcode-icon" aria-hidden="true" />
               <input
@@ -2006,13 +1330,18 @@ function PosWorkspace({
             )}
           </section>
 
-          <aside className="cart-surface" aria-label="Current cart">
+          <aside id="pos-cart" className="cart-surface" aria-label="Current cart" tabIndex={-1}>
             <div className="cart-header">
               <div>
                 <h2>Current Sale</h2>
                 <span>({cartProducts.length} items)</span>
               </div>
-              <button className="text-button danger-text" type="button" onClick={() => setCart([])}>
+              <button
+                className="text-button danger-text"
+                type="button"
+                disabled={mpesaLocked}
+                onClick={() => setCart([])}
+              >
                 <i className="bi bi-trash" aria-hidden="true" />
                 Clear
               </button>
@@ -2110,10 +1439,61 @@ function PosWorkspace({
             </div>
           </aside>
         </main>
+        <nav className="pos-mobile-actions" aria-label="Mobile checkout">
+          <button
+            type="button"
+            onClick={() => {
+              const catalog = document.getElementById('pos-products');
+              catalog?.scrollIntoView({ block: 'start' });
+              catalog?.focus({ preventScroll: true });
+            }}
+          >
+            <i className="bi bi-grid" aria-hidden="true" />
+            Products
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const cart = document.getElementById('pos-cart');
+              cart?.scrollIntoView({ block: 'start' });
+              cart?.focus({ preventScroll: true });
+            }}
+          >
+            <i className="bi bi-bag" aria-hidden="true" />
+            <span aria-live="polite">
+              Cart ({cart.reduce((sum, line) => sum + line.quantity, 0)})
+            </span>
+          </button>
+          <button
+            className="primary-action"
+            type="button"
+            disabled={cartProducts.length === 0}
+            onClick={openPayment}
+          >
+            <span>Checkout</span>
+            <strong>{formatMoney(total, organization.currencyCode)}</strong>
+          </button>
+        </nav>
       </div>
 
       {paymentOpen ? (
         <PaymentDialog
+          key={checkoutIdempotencyKey}
+          checkoutKey={checkoutIdempotencyKey}
+          storageKey={mpesaStorageKey}
+          saleDetails={{
+            branchId: registerBranch?.id ?? '',
+            customerName: customer === 'Walk-in Customer' ? '' : customer,
+            discountAmount: discount,
+            lines: cartProducts.map((line) => ({ productId: line.id, quantity: line.quantity })),
+          }}
+          mpesaLocked={mpesaLocked}
+          onMpesaLock={() => setMpesaLocked(true)}
+          onMpesaRetry={() => {
+            clearMpesaRecovery(mpesaStorageKey);
+            setMpesaLocked(false);
+            setCheckoutIdempotencyKey(newSaleIdempotencyKey());
+          }}
           amount={total}
           currencyCode={organization.currencyCode}
           error={saleError}
@@ -2246,6 +1626,12 @@ function CustomerLookupForm({ customer, onCustomerChange }: CustomerLookupFormPr
 }
 
 type PaymentDialogProps = {
+  checkoutKey: string;
+  storageKey: string;
+  saleDetails: Omit<SaleRequest, 'payments'>;
+  mpesaLocked: boolean;
+  onMpesaLock: () => void;
+  onMpesaRetry: () => void;
   amount: number;
   currencyCode: string;
   error: string;
@@ -2255,6 +1641,12 @@ type PaymentDialogProps = {
 };
 
 function PaymentDialog({
+  checkoutKey,
+  storageKey,
+  saleDetails,
+  mpesaLocked,
+  onMpesaLock,
+  onMpesaRetry,
   amount,
   currencyCode,
   error,
@@ -2262,12 +1654,39 @@ function PaymentDialog({
   onClose,
   onFinalize,
 }: PaymentDialogProps) {
-  const [paymentMode, setPaymentMode] = useState<PaymentMode>('single');
-  const [singlePayment, setSinglePayment] = useState<PaymentDraft>(() => newPaymentDraft());
-  const [splitPayments, setSplitPayments] = useState<PaymentDraft[]>(() => [
-    newPaymentDraft('MPESA'),
-    newPaymentDraft('CASH'),
-  ]);
+  const [saved] = useState(() => readMpesaRecovery(storageKey));
+  const restoredTenders = saved?.sale.payments?.map((payment) => ({
+    id: newSaleIdempotencyKey(),
+    method: payment.method,
+    amount: String(payment.amount),
+    paymentReference: payment.paymentReference ?? '',
+    cashReceived: String(payment.cashReceived ?? ''),
+  }));
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>(
+    restoredTenders && restoredTenders.length > 1 ? 'split' : 'single',
+  );
+  const [singlePayment, setSinglePayment] = useState<PaymentDraft>(() =>
+    restoredTenders?.length === 1 ? restoredTenders[0] : newPaymentDraft(),
+  );
+  const [splitPayments, setSplitPayments] = useState<PaymentDraft[]>(() =>
+    restoredTenders && restoredTenders.length > 1
+      ? restoredTenders
+      : [newPaymentDraft('MPESA'), newPaymentDraft('CASH')],
+  );
+  const [verifiedReceipt, setVerifiedReceipt] = useState('');
+  const hasMpesa =
+    paymentMode === 'single'
+      ? singlePayment.method === 'MPESA'
+      : splitPayments.some((payment) => payment.method === 'MPESA');
+  const mpesaConfig = useQuery({
+    queryKey: ['mpesa-config'],
+    queryFn: getMpesaConfig,
+    enabled: hasMpesa,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const requiresStk = hasMpesa && mpesaConfig.data?.enabled === true;
+  const mpesaBlocked = hasMpesa && (!mpesaConfig.isSuccess || (requiresStk && !verifiedReceipt));
   const [localError, setLocalError] = useState('');
   const totalCents = moneyToCents(amount);
   const selectedPaymentOption = paymentMethodOptions.find(
@@ -2287,6 +1706,11 @@ function PaymentDialog({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLocalError('');
+
+    if (mpesaBlocked) {
+      setLocalError('Confirm the M-Pesa payment before completing this sale.');
+      return;
+    }
 
     const paymentResult = buildSalePayments(
       amount,
@@ -2364,244 +1788,302 @@ function PaymentDialog({
           </button>
         </div>
 
-        <div className="payment-mode-tabs" aria-label="Payment type">
-          <button
-            className={paymentMode === 'single' ? 'active' : ''}
-            type="button"
-            onClick={() => {
-              setLocalError('');
-              setPaymentMode('single');
-            }}
-          >
-            <i className="bi bi-credit-card-2-front" aria-hidden="true" />
-            Single
-          </button>
-          <button
-            className={paymentMode === 'split' ? 'active' : ''}
-            type="button"
-            onClick={() => {
-              setLocalError('');
-              setPaymentMode('split');
-            }}
-          >
-            <i className="bi bi-layout-split" aria-hidden="true" />
-            Split Payment
-          </button>
-        </div>
+        <fieldset className="payment-tenders" disabled={mpesaLocked || isSubmitting}>
+          <div className="payment-mode-tabs" aria-label="Payment type">
+            <button
+              className={paymentMode === 'single' ? 'active' : ''}
+              type="button"
+              onClick={() => {
+                setLocalError('');
+                setPaymentMode('single');
+              }}
+            >
+              <i className="bi bi-credit-card-2-front" aria-hidden="true" />
+              Single
+            </button>
+            <button
+              className={paymentMode === 'split' ? 'active' : ''}
+              type="button"
+              onClick={() => {
+                setLocalError('');
+                setPaymentMode('split');
+              }}
+            >
+              <i className="bi bi-layout-split" aria-hidden="true" />
+              Split Payment
+            </button>
+          </div>
 
-        {paymentMode === 'single' ? (
-          <div className="payment-form-grid">
-            <label className="payment-method-field" htmlFor="payment-method">
-              <span>Payment method</span>
-              <span className="select-shell payment-select-control">
-                <i
-                  className={`bi ${selectedPaymentOption?.icon ?? 'bi-credit-card-2-front'}`}
-                  aria-hidden="true"
-                />
-                <select
-                  id="payment-method"
-                  aria-label="Payment method"
-                  value={singlePayment.method}
-                  onChange={(event) => {
-                    setLocalError('');
-                    setSinglePayment((payment) => ({
-                      ...payment,
-                      method: event.target.value as PaymentMethod,
-                    }));
-                  }}
-                >
-                  <option value="" disabled>
-                    Select payment method
-                  </option>
-                  {paymentMethodOptions.map((option) => (
-                    <option key={option.method} value={option.method}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </span>
-            </label>
-
-            {singlePayment.method === 'CASH' ? (
-              <div className="payment-cash-grid">
-                <label className="payment-input-field" htmlFor="single-cash-received">
-                  <span>Cash received</span>
-                  <input
-                    id="single-cash-received"
-                    aria-label="Cash received"
-                    inputMode="decimal"
-                    min="0"
-                    placeholder={centsToInput(totalCents)}
-                    step="0.01"
-                    type="number"
-                    value={singlePayment.cashReceived}
+          {paymentMode === 'single' ? (
+            <div className="payment-form-grid">
+              <label className="payment-method-field" htmlFor="payment-method">
+                <span>Payment method</span>
+                <span className="select-shell payment-select-control">
+                  <i
+                    className={`bi ${selectedPaymentOption?.icon ?? 'bi-credit-card-2-front'}`}
+                    aria-hidden="true"
+                  />
+                  <select
+                    id="payment-method"
+                    aria-label="Payment method"
+                    value={singlePayment.method}
                     onChange={(event) => {
                       setLocalError('');
                       setSinglePayment((payment) => ({
                         ...payment,
-                        cashReceived: event.target.value,
+                        method: event.target.value as PaymentMethod,
+                      }));
+                    }}
+                  >
+                    <option value="" disabled>
+                      Select payment method
+                    </option>
+                    {paymentMethodOptions.map((option) => (
+                      <option key={option.method} value={option.method}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+              </label>
+
+              {singlePayment.method === 'CASH' ? (
+                <div className="payment-cash-grid">
+                  <label className="payment-input-field" htmlFor="single-cash-received">
+                    <span>Cash received</span>
+                    <input
+                      id="single-cash-received"
+                      aria-label="Cash received"
+                      inputMode="decimal"
+                      min="0"
+                      placeholder={centsToInput(totalCents)}
+                      step="0.01"
+                      type="number"
+                      value={singlePayment.cashReceived}
+                      onChange={(event) => {
+                        setLocalError('');
+                        setSinglePayment((payment) => ({
+                          ...payment,
+                          cashReceived: event.target.value,
+                        }));
+                      }}
+                    />
+                  </label>
+                  <div className="payment-change-preview">
+                    <span>Change</span>
+                    <strong>{formatMoney(centsToMoney(singleChangeCents), currencyCode)}</strong>
+                  </div>
+                </div>
+              ) : null}
+
+              {singlePayment.method && singlePayment.method !== 'CASH' ? (
+                <label className="payment-input-field" htmlFor="single-payment-reference">
+                  <span>Reference</span>
+                  <input
+                    id="single-payment-reference"
+                    maxLength={80}
+                    placeholder="Optional"
+                    value={singlePayment.paymentReference}
+                    readOnly={singlePayment.method === 'MPESA' && requiresStk}
+                    aria-label={
+                      singlePayment.method === 'MPESA' && requiresStk
+                        ? 'Verified M-Pesa receipt'
+                        : undefined
+                    }
+                    onChange={(event) => {
+                      setLocalError('');
+                      setSinglePayment((payment) => ({
+                        ...payment,
+                        paymentReference: event.target.value,
                       }));
                     }}
                   />
                 </label>
-                <div className="payment-change-preview">
-                  <span>Change</span>
-                  <strong>{formatMoney(centsToMoney(singleChangeCents), currencyCode)}</strong>
-                </div>
-              </div>
-            ) : null}
-
-            {singlePayment.method && singlePayment.method !== 'CASH' ? (
-              <label className="payment-input-field" htmlFor="single-payment-reference">
-                <span>Reference</span>
-                <input
-                  id="single-payment-reference"
-                  maxLength={80}
-                  placeholder="Optional"
-                  value={singlePayment.paymentReference}
-                  onChange={(event) => {
-                    setLocalError('');
-                    setSinglePayment((payment) => ({
-                      ...payment,
-                      paymentReference: event.target.value,
-                    }));
-                  }}
-                />
-              </label>
-            ) : null}
-          </div>
-        ) : (
-          <div className="split-payment-table">
-            <div className="split-payment-table-head" aria-hidden="true">
-              <span>Tender</span>
-              <span>Method</span>
-              <span>Amount</span>
-              <span>Reference</span>
-              <span />
+              ) : null}
             </div>
+          ) : (
+            <div className="split-payment-table">
+              <div className="split-payment-table-head" aria-hidden="true">
+                <span>Tender</span>
+                <span>Method</span>
+                <span>Amount</span>
+                <span>Reference</span>
+                <span />
+              </div>
 
-            <div className="split-payment-list">
-              {splitPayments.map((payment, index) => {
-                const splitPaymentOption = paymentMethodOptions.find(
-                  (option) => option.method === payment.method,
-                );
+              <div className="split-payment-list">
+                {splitPayments.map((payment, index) => {
+                  const splitPaymentOption = paymentMethodOptions.find(
+                    (option) => option.method === payment.method,
+                  );
 
-                return (
-                  <div className="split-payment-row" key={payment.id}>
-                    <div className="split-payment-row-head">
-                      <strong>Tender {index + 1}</strong>
-                    </div>
+                  return (
+                    <div className="split-payment-row" key={payment.id}>
+                      <div className="split-payment-row-head">
+                        <strong>Tender {index + 1}</strong>
+                      </div>
 
-                    <label className="payment-method-field" htmlFor={`split-method-${payment.id}`}>
-                      <span className="split-field-label">Method</span>
-                      <span className="select-shell payment-select-control">
-                        <i
-                          className={`bi ${splitPaymentOption?.icon ?? 'bi-credit-card-2-front'}`}
-                          aria-hidden="true"
-                        />
-                        <select
-                          id={`split-method-${payment.id}`}
-                          aria-label={`Payment ${index + 1} method`}
-                          value={payment.method}
-                          onChange={(event) =>
-                            updateSplitPayment(payment.id, {
-                              method: event.target.value as PaymentMethod,
-                            })
-                          }
-                        >
-                          <option value="" disabled>
-                            Select method
-                          </option>
-                          {paymentMethodOptions.map((option) => (
-                            <option key={option.method} value={option.method}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </span>
-                    </label>
-
-                    <label className="payment-input-field" htmlFor={`split-amount-${payment.id}`}>
-                      <span className="split-field-label">Amount</span>
-                      <input
-                        id={`split-amount-${payment.id}`}
-                        aria-label={`Payment ${index + 1} amount`}
-                        inputMode="decimal"
-                        min="0"
-                        step="0.01"
-                        type="number"
-                        value={payment.amount}
-                        onChange={(event) =>
-                          updateSplitPaymentAmount(payment.id, event.target.value)
-                        }
-                      />
-                    </label>
-
-                    {payment.method && payment.method !== 'CASH' ? (
                       <label
-                        className="payment-input-field"
-                        htmlFor={`split-reference-${payment.id}`}
+                        className="payment-method-field"
+                        htmlFor={`split-method-${payment.id}`}
                       >
-                        <span className="split-field-label">Reference</span>
+                        <span className="split-field-label">Method</span>
+                        <span className="select-shell payment-select-control">
+                          <i
+                            className={`bi ${splitPaymentOption?.icon ?? 'bi-credit-card-2-front'}`}
+                            aria-hidden="true"
+                          />
+                          <select
+                            id={`split-method-${payment.id}`}
+                            aria-label={`Payment ${index + 1} method`}
+                            value={payment.method}
+                            onChange={(event) =>
+                              updateSplitPayment(payment.id, {
+                                method: event.target.value as PaymentMethod,
+                              })
+                            }
+                          >
+                            <option value="" disabled>
+                              Select method
+                            </option>
+                            {paymentMethodOptions.map((option) => (
+                              <option key={option.method} value={option.method}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </span>
+                      </label>
+
+                      <label className="payment-input-field" htmlFor={`split-amount-${payment.id}`}>
+                        <span className="split-field-label">Amount</span>
                         <input
-                          id={`split-reference-${payment.id}`}
-                          aria-label={`Payment ${index + 1} reference`}
-                          maxLength={80}
-                          placeholder="Optional"
-                          value={payment.paymentReference}
+                          id={`split-amount-${payment.id}`}
+                          aria-label={`Payment ${index + 1} amount`}
+                          inputMode="decimal"
+                          min="0"
+                          step="0.01"
+                          type="number"
+                          value={payment.amount}
                           onChange={(event) =>
-                            updateSplitPayment(payment.id, {
-                              paymentReference: event.target.value,
-                            })
+                            updateSplitPaymentAmount(payment.id, event.target.value)
                           }
                         />
                       </label>
-                    ) : (
-                      <div className="split-reference-placeholder" aria-hidden="true" />
-                    )}
 
-                    <button
-                      className="icon-button split-remove-action"
-                      type="button"
-                      aria-label={`Remove payment ${index + 1}`}
-                      disabled={splitPayments.length <= 2}
-                      onClick={() =>
-                        setSplitPayments((payments) =>
-                          payments.filter((item) => item.id !== payment.id),
-                        )
-                      }
-                    >
-                      <i className="bi bi-trash" aria-hidden="true" />
-                    </button>
-                  </div>
-                );
-              })}
+                      {payment.method && payment.method !== 'CASH' ? (
+                        <label
+                          className="payment-input-field"
+                          htmlFor={`split-reference-${payment.id}`}
+                        >
+                          <span className="split-field-label">Reference</span>
+                          <input
+                            id={`split-reference-${payment.id}`}
+                            aria-label={`Payment ${index + 1} reference`}
+                            maxLength={80}
+                            placeholder="Optional"
+                            value={payment.paymentReference}
+                            readOnly={payment.method === 'MPESA' && requiresStk}
+                            onChange={(event) =>
+                              updateSplitPayment(payment.id, {
+                                paymentReference: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                      ) : (
+                        <div className="split-reference-placeholder" aria-hidden="true" />
+                      )}
+
+                      <button
+                        className="icon-button split-remove-action"
+                        type="button"
+                        aria-label={`Remove payment ${index + 1}`}
+                        disabled={splitPayments.length <= 2}
+                        onClick={() =>
+                          setSplitPayments((payments) =>
+                            payments.filter((item) => item.id !== payment.id),
+                          )
+                        }
+                      >
+                        <i className="bi bi-trash" aria-hidden="true" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                className="secondary-action compact-action split-add-action"
+                type="button"
+                onClick={() => setSplitPayments((payments) => [...payments, newPaymentDraft()])}
+              >
+                <i className="bi bi-plus-circle" aria-hidden="true" />
+                Add Tender
+              </button>
             </div>
+          )}
 
-            <button
-              className="secondary-action compact-action split-add-action"
-              type="button"
-              onClick={() => setSplitPayments((payments) => [...payments, newPaymentDraft()])}
-            >
-              <i className="bi bi-plus-circle" aria-hidden="true" />
-              Add Tender
-            </button>
-          </div>
+          {paymentMode === 'split' ? (
+            <div className="payment-balance-strip">
+              <span>
+                Paid <strong>{formatMoney(centsToMoney(splitPaidCents), currencyCode)}</strong>
+              </span>
+              <span>
+                {splitRemainingCents >= 0 ? 'Remaining' : 'Over by'}{' '}
+                <strong>
+                  {formatMoney(Math.abs(centsToMoney(splitRemainingCents)), currencyCode)}
+                </strong>
+              </span>
+            </div>
+          ) : null}
+        </fieldset>
+
+        {requiresStk &&
+          (() => {
+            const prepared = buildSalePayments(
+              amount,
+              currencyCode,
+              paymentMode,
+              singlePayment,
+              splitPayments,
+            );
+            const oneMpesa =
+              prepared.ok &&
+              prepared.payments.filter((payment) => payment.method === 'MPESA').length === 1;
+            return (
+              <MpesaPaymentPanel
+                checkoutKey={checkoutKey}
+                storageKey={storageKey}
+                sale={
+                  prepared.ok && oneMpesa ? { ...saleDetails, payments: prepared.payments } : null
+                }
+                onLock={onMpesaLock}
+                onRetry={onMpesaRetry}
+                onVerified={(receipt) => {
+                  setVerifiedReceipt(receipt);
+                  setSinglePayment((payment) =>
+                    payment.method === 'MPESA'
+                      ? { ...payment, paymentReference: receipt }
+                      : payment,
+                  );
+                  setSplitPayments((payments) =>
+                    payments.map((payment) =>
+                      payment.method === 'MPESA'
+                        ? { ...payment, paymentReference: receipt }
+                        : payment,
+                    ),
+                  );
+                }}
+              />
+            );
+          })()}
+        {hasMpesa && mpesaConfig.isPending && <p role="status">Checking M-Pesa availability…</p>}
+        {hasMpesa && mpesaConfig.isError && (
+          <p className="message-banner error" role="alert">
+            M-Pesa is unavailable. Check your connection before continuing.
+          </p>
         )}
-
-        {paymentMode === 'split' ? (
-          <div className="payment-balance-strip">
-            <span>
-              Paid <strong>{formatMoney(centsToMoney(splitPaidCents), currencyCode)}</strong>
-            </span>
-            <span>
-              {splitRemainingCents >= 0 ? 'Remaining' : 'Over by'}{' '}
-              <strong>
-                {formatMoney(Math.abs(centsToMoney(splitRemainingCents)), currencyCode)}
-              </strong>
-            </span>
-          </div>
-        ) : null}
 
         {displayError ? (
           <p className="message-banner error" role="alert">
@@ -2612,7 +2094,7 @@ function PaymentDialog({
         <button
           className="primary-action payment-complete-action"
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || mpesaBlocked}
         >
           <i className="bi bi-check2-circle" aria-hidden="true" />
           {isSubmitting ? (
@@ -2941,13 +2423,9 @@ function ReceiptDialog({
   );
 }
 
-function SalesPage({
-  currentUser,
-  organization,
-}: {
-  currentUser: CurrentUser;
-  organization: Organization;
-}) {
+function SalesPage({ organization }: { organization: Organization }) {
+  const { branchId: platformBranchId } = usePlatform();
+  const reversalsQuery = useQuery({ queryKey: ['sale-reversals'], queryFn: getSaleReversals });
   const [dateRange, setDateRange] = useState<ReportDateRange>(() => reportPeriodRange('today'));
   const normalizedDateRange = normalizeReportDateRange(dateRange);
   const salesQuery = useQuery({
@@ -2961,28 +2439,19 @@ function SalesPage({
       ),
   });
   const [selectedReceipt, setSelectedReceipt] = useState<Sale | null>(null);
-  const sales = salesQuery.data ?? [];
+  const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
+  const sales = inBranch(salesQuery.data ?? [], platformBranchId);
   const totalSales = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
   const totalItems = sales.reduce(
     (sum, sale) => sum + sale.lines.reduce((lineSum, line) => lineSum + line.quantity, 0),
     0,
   );
-  const cashierCount = new Set(sales.map((sale) => sale.soldByEmployeeId ?? 'unassigned-cashier'))
-    .size;
-  const viewingAllCashiers = canViewAllCashierSales(currentUser);
 
   return (
     <section className="table-workspace">
-      <PageHeader
-        title="Sales"
-        subtitle={
-          viewingAllCashiers
-            ? 'Completed POS sales from all cashiers for the selected dates.'
-            : 'Completed POS sales recorded by your account for the selected dates.'
-        }
-      />
+      <PageHeader title="Sales" subtitle="Completed POS sales for the selected dates." />
 
-      <div className="catalog-filter-bar hr-filter-bar">
+      <div className="catalog-filter-bar">
         <label className="inventory-filter-field">
           <span>From</span>
           <input
@@ -3024,12 +2493,6 @@ function SalesPage({
           value={String(totalItems)}
           tone="orange"
         />
-        <SummaryMetric
-          icon="bi-person-badge"
-          label={viewingAllCashiers ? 'Cashiers' : 'Account'}
-          value={viewingAllCashiers ? String(cashierCount) : 'Mine'}
-          tone="purple"
-        />
       </div>
 
       {salesQuery.isPending ? (
@@ -3047,13 +2510,11 @@ function SalesPage({
           detail="Completed POS payments for the selected dates will appear here."
         />
       ) : (
-        <div className="responsive-table">
-          <table>
+        <div className="responsive-table mobile-compact-table sales-history-table">
+          <table aria-label="Sales history">
             <thead>
               <tr>
                 <th>Receipt</th>
-                <th>Branch</th>
-                <th>Cashier</th>
                 <th>Customer</th>
                 <th>Items</th>
                 <th>Payment</th>
@@ -3061,48 +2522,81 @@ function SalesPage({
                 <th>Status</th>
                 <th>Sold At</th>
                 <th>Actions</th>
+                <th className="mobile-row-more">Details</th>
               </tr>
             </thead>
             <tbody>
               {sales.map((sale) => (
-                <tr key={sale.id}>
+                <tr
+                  className={expandedSaleId === sale.id ? 'details-expanded' : undefined}
+                  key={sale.id}
+                >
                   <td data-label="Receipt">
                     <span className="table-label">
                       <i className="bi bi-receipt" aria-hidden="true" />
                       {sale.saleNumber}
                     </span>
                   </td>
-                  <td data-label="Branch">{sale.branchName}</td>
-                  <td data-label="Cashier">
-                    {sale.soldByEmployeeName ?? 'Unassigned'}
-                    {sale.soldByEmployeeNumber ? (
-                      <>
-                        <br />
-                        <small>{sale.soldByEmployeeNumber}</small>
-                      </>
-                    ) : null}
-                  </td>
                   <td data-label="Customer">{sale.customerName || 'Walk-in Customer'}</td>
                   <td data-label="Items">
                     {sale.lines.reduce((sum, line) => sum + line.quantity, 0)} item
                     {sale.lines.reduce((sum, line) => sum + line.quantity, 0) === 1 ? '' : 's'}
                   </td>
-                  <td data-label="Payment">{formatSalePayments(sale)}</td>
-                  <td data-label="Total">
+                  <td className="mobile-row-meta" data-label="Payment">
+                    {formatSalePayments(sale)}
+                  </td>
+                  <td className="mobile-row-value" data-label="Total">
                     {formatMoney(sale.totalAmount, organization.currencyCode)}
                   </td>
                   <td data-label="Status">
-                    <StatusPill status="posted" label="Completed" />
+                    <StatusPill
+                      status={
+                        reversalsQuery.data?.some((r) => r.sale_id === sale.id)
+                          ? 'pending'
+                          : 'posted'
+                      }
+                      label={
+                        reversalsQuery.data?.find((r) => r.sale_id === sale.id)?.kind === 'REFUND'
+                          ? 'Refunded'
+                          : reversalsQuery.data?.find((r) => r.sale_id === sale.id)?.kind ===
+                              'CANCELLATION'
+                            ? 'Cancelled'
+                            : reversalsQuery.isError
+                              ? 'Status unavailable'
+                              : 'Completed'
+                      }
+                    />
                   </td>
-                  <td data-label="Sold At">{formatDateTime(sale.soldAt)}</td>
+                  <td className="mobile-row-name" data-label="Sold At">
+                    <time dateTime={sale.soldAt}>
+                      <span className="sales-date-full">{formatDateTime(sale.soldAt)}</span>
+                      <span className="sales-date-compact">{formatDateOnly(sale.soldAt)}</span>
+                    </time>
+                  </td>
                   <td data-label="Actions">
+                    <span className="table-actions">
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => setSelectedReceipt(sale)}
+                      >
+                        <i className="bi bi-printer" aria-hidden="true" />
+                        Receipt
+                      </button>
+                      <SaleReversalActions sale={sale} />
+                    </span>
+                  </td>
+                  <td className="mobile-row-more">
                     <button
-                      className="text-button"
+                      aria-label={`Details and actions for ${sale.saleNumber}`}
+                      aria-expanded={expandedSaleId === sale.id}
+                      className="mobile-row-more-button"
                       type="button"
-                      onClick={() => setSelectedReceipt(sale)}
+                      onClick={() =>
+                        setExpandedSaleId((current) => (current === sale.id ? null : sale.id))
+                      }
                     >
-                      <i className="bi bi-printer" aria-hidden="true" />
-                      Receipt
+                      <i className="bi bi-three-dots-vertical" aria-hidden="true" />
                     </button>
                   </td>
                 </tr>
@@ -3152,6 +2646,15 @@ function ErpModulePage({
 }
 
 type AccountingTab = 'journals' | 'ledger' | 'reports' | 'accounts' | 'periods' | 'tax';
+type AccountingEditorTab = Exclude<AccountingTab, 'ledger' | 'reports'>;
+type AccountingReportTab = 'trial-balance' | 'profit-and-loss' | 'balance-sheet' | 'cash-flow';
+
+const accountingEditorActions = {
+  journals: { label: 'New Journal', back: 'Back to Journals', icon: 'bi-journal-plus' },
+  accounts: { label: 'New Account', back: 'Back to Accounts', icon: 'bi-diagram-3' },
+  periods: { label: 'New Period', back: 'Back to Periods', icon: 'bi-calendar-plus' },
+  tax: { label: 'New Tax Rule', back: 'Back to Tax Rules', icon: 'bi-percent' },
+};
 
 type AccountingJournalLineFormState = Omit<
   AccountingJournalLineRequest,
@@ -3190,6 +2693,7 @@ function AccountingPage({
 }) {
   const queryClient = useQueryClient();
   const canManageAccounting = hasAnyPermission(currentUser, ['admin:manage', 'accounting:manage']);
+  const { branchId: accountingBranchId } = usePlatform();
   const branchOptions = branches
     .filter(
       (branch) =>
@@ -3197,8 +2701,18 @@ function AccountingPage({
         (currentUser.branchIds.length === 0 || currentUser.branchIds.includes(branch.id)),
     )
     .sort((first, second) => first.name.localeCompare(second.name));
-  const defaultBranchId = branchOptions[0]?.id ?? '';
+  const defaultBranchId = branchOptions.some((branch) => branch.id === accountingBranchId)
+    ? accountingBranchId
+    : (branchOptions[0]?.id ?? '');
   const [activeTab, setActiveTab] = useState<AccountingTab>('journals');
+  const [editorTab, setEditorTab] = useState<AccountingEditorTab | null>(null);
+  const [activeReport, setActiveReport] = useState<AccountingReportTab>('trial-balance');
+  const showEditor = canManageAccounting && editorTab === activeTab;
+  const actionTab: AccountingEditorTab =
+    activeTab === 'accounts' || activeTab === 'periods' || activeTab === 'tax'
+      ? activeTab
+      : 'journals';
+  const editorAction = accountingEditorActions[actionTab];
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
@@ -3257,7 +2771,13 @@ function AccountingPage({
     queryFn: () => getAccountingProfitAndLoss(normalizeAccountingReportFilters(reportFilters)),
   });
   const balanceSheetQuery = useQuery({
-    queryKey: ['accounting', 'reports', 'balance-sheet', reportFilters.branchId, reportFilters.asOf],
+    queryKey: [
+      'accounting',
+      'reports',
+      'balance-sheet',
+      reportFilters.branchId,
+      reportFilters.asOf,
+    ],
     queryFn: () =>
       getAccountingBalanceSheet({
         branchId: reportFilters.branchId || undefined,
@@ -3273,7 +2793,6 @@ function AccountingPage({
   const periods = periodsQuery.data ?? [];
   const taxRules = taxRulesQuery.data ?? [];
   const journals = journalsQuery.data ?? [];
-  const openPeriod = periods.find((period) => period.status === 'OPEN') ?? periods[0];
   const recentWorkItems = summaryQuery.data?.workItems ?? [];
   const journalTotals = accountingJournalFormTotals(journalForm);
   const isAccountingLoading =
@@ -3281,12 +2800,6 @@ function AccountingPage({
     periodsQuery.isPending ||
     taxRulesQuery.isPending ||
     journalsQuery.isPending;
-
-  useEffect(() => {
-    if (!journalForm.financialPeriodId && openPeriod?.id) {
-      setJournalForm((current) => ({ ...current, financialPeriodId: openPeriod.id }));
-    }
-  }, [journalForm.financialPeriodId, openPeriod?.id]);
 
   const saveAccountMutation = useMutation({
     mutationFn: (payload: AccountingAccountRequest) =>
@@ -3299,6 +2812,7 @@ function AccountingPage({
       setEditingAccountId(null);
       setError('');
       setMessage(`Account ${account.accountCode} saved.`);
+      setEditorTab((current) => (current === 'accounts' ? null : current));
     },
   });
 
@@ -3313,13 +2827,16 @@ function AccountingPage({
 
   const savePeriodMutation = useMutation({
     mutationFn: (payload: AccountingPeriodRequest) =>
-      editingPeriodId ? updateAccountingPeriod(editingPeriodId, payload) : createAccountingPeriod(payload),
+      editingPeriodId
+        ? updateAccountingPeriod(editingPeriodId, payload)
+        : createAccountingPeriod(payload),
     onSuccess: async (period) => {
       await invalidateAccountingQueries(queryClient);
       setPeriodForm(defaultAccountingPeriodForm());
       setEditingPeriodId(null);
       setError('');
       setMessage(`Period ${period.name} saved.`);
+      setEditorTab((current) => (current === 'periods' ? null : current));
     },
   });
 
@@ -3334,6 +2851,7 @@ function AccountingPage({
       setEditingTaxRuleId(null);
       setError('');
       setMessage(`Tax rule ${rule.taxCode} saved.`);
+      setEditorTab((current) => (current === 'tax' ? null : current));
     },
   });
 
@@ -3344,10 +2862,15 @@ function AccountingPage({
         : createAccountingJournal(payload),
     onSuccess: async (journal) => {
       await invalidateAccountingQueries(queryClient);
-      setJournalForm(defaultAccountingJournalForm(defaultBranchId, openPeriod?.id));
+      setJournalForm(defaultAccountingJournalForm(defaultBranchId));
       setEditingJournalId(null);
       setError('');
-      setMessage(`Journal ${journal.journalNumber} saved.`);
+      setMessage(
+        journal.status === 'POSTED'
+          ? `Journal ${journal.journalNumber} posted to the Ledger and accounting reports.`
+          : `Journal ${journal.journalNumber} saved as a draft. Post it when ready to include it in the Ledger and accounting reports.`,
+      );
+      setEditorTab((current) => (current === 'journals' ? null : current));
     },
   });
 
@@ -3356,7 +2879,7 @@ function AccountingPage({
     onSuccess: async (journal) => {
       await invalidateAccountingQueries(queryClient);
       setError('');
-      setMessage(`Journal ${journal.journalNumber} posted.`);
+      setMessage(`Journal ${journal.journalNumber} posted to the Ledger and accounting reports.`);
     },
   });
 
@@ -3422,7 +2945,12 @@ function AccountingPage({
     }
 
     try {
-      await saveJournalMutation.mutateAsync(accountingJournalFormToRequest(journalForm));
+      const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+      const status = submitter?.value === 'POSTED' ? 'POSTED' : 'DRAFT';
+      await saveJournalMutation.mutateAsync({
+        ...accountingJournalFormToRequest(journalForm),
+        status,
+      });
     } catch (caughtError) {
       setMessage('');
       setError(caughtError instanceof Error ? caughtError.message : 'Unable to save journal');
@@ -3439,6 +2967,7 @@ function AccountingPage({
     });
     setEditingAccountId(account.id);
     setActiveTab('accounts');
+    setEditorTab('accounts');
     setError('');
     setMessage(`Editing account ${account.accountCode}.`);
   }
@@ -3452,6 +2981,7 @@ function AccountingPage({
     });
     setEditingPeriodId(period.id);
     setActiveTab('periods');
+    setEditorTab('periods');
     setError('');
     setMessage(`Editing period ${period.name}.`);
   }
@@ -3469,6 +2999,7 @@ function AccountingPage({
     });
     setEditingTaxRuleId(rule.id);
     setActiveTab('tax');
+    setEditorTab('tax');
     setError('');
     setMessage(`Editing tax rule ${rule.taxCode}.`);
   }
@@ -3477,6 +3008,7 @@ function AccountingPage({
     setJournalForm(accountingJournalToForm(journal));
     setEditingJournalId(journal.id);
     setActiveTab('journals');
+    setEditorTab('journals');
     setError('');
     setMessage(`Editing journal ${journal.journalNumber}.`);
   }
@@ -3541,6 +3073,34 @@ function AccountingPage({
     }));
   }
 
+  function startAccountingEntry(tab: AccountingEditorTab) {
+    if (!canManageAccounting) return;
+    setActiveTab(tab);
+    setEditorTab(tab);
+    setError('');
+    setMessage('');
+    if (tab === 'journals') {
+      setEditingJournalId(null);
+      setJournalForm(defaultAccountingJournalForm(defaultBranchId));
+    } else if (tab === 'accounts') {
+      setEditingAccountId(null);
+      setAccountForm(defaultAccountingAccountForm());
+    } else if (tab === 'periods') {
+      setEditingPeriodId(null);
+      setPeriodForm(defaultAccountingPeriodForm());
+    } else {
+      setEditingTaxRuleId(null);
+      setTaxRuleForm(defaultAccountingTaxRuleForm());
+    }
+  }
+
+  const reportTabs: { key: AccountingReportTab; label: string; icon: string }[] = [
+    { key: 'trial-balance', label: 'Trial Balance', icon: 'bi-scale' },
+    { key: 'profit-and-loss', label: 'Profit & Loss', icon: 'bi-graph-up-arrow' },
+    { key: 'balance-sheet', label: 'Balance Sheet', icon: 'bi-bank' },
+    { key: 'cash-flow', label: 'Cash Flow', icon: 'bi-water' },
+  ];
+
   const tabs: { key: AccountingTab; label: string; icon: string }[] = [
     { key: 'journals', label: 'Journals', icon: 'bi-journal-plus' },
     { key: 'ledger', label: 'Ledger', icon: 'bi-list-columns' },
@@ -3551,7 +3111,7 @@ function AccountingPage({
   ];
 
   return (
-    <section className="table-workspace accounting-workspace">
+    <section className="branch-workspace accounting-workspace">
       <PageHeader
         title={summaryQuery.data?.title ?? 'Accounting'}
         subtitle={
@@ -3559,20 +3119,23 @@ function AccountingPage({
           'Chart of accounts, journals, ledger activity, tax rules, periods, and financial reports.'
         }
         action={
-          canManageAccounting ? (
+          showEditor ? (
+            <button
+              className="secondary-action compact-action"
+              type="button"
+              onClick={() => setEditorTab(null)}
+            >
+              <i className="bi bi-arrow-left" aria-hidden="true" />
+              {editorAction.back}
+            </button>
+          ) : canManageAccounting ? (
             <button
               className="primary-action compact-action"
               type="button"
-              onClick={() => {
-                setActiveTab('journals');
-                setEditingJournalId(null);
-                setJournalForm(defaultAccountingJournalForm(defaultBranchId, openPeriod?.id));
-                setMessage('New journal draft started.');
-                setError('');
-              }}
+              onClick={() => startAccountingEntry(actionTab)}
             >
-              <i className="bi bi-journal-plus" aria-hidden="true" />
-              New Journal
+              <i className={`bi ${editorAction.icon}`} aria-hidden="true" />
+              {editorAction.label}
             </button>
           ) : undefined
         }
@@ -3601,7 +3164,10 @@ function AccountingPage({
             type="button"
             role="tab"
             aria-selected={activeTab === tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => {
+              setActiveTab(tab.key);
+              setEditorTab(null);
+            }}
           >
             <i className={`bi ${tab.icon}`} aria-hidden="true" />
             {tab.label}
@@ -3610,352 +3176,385 @@ function AccountingPage({
       </div>
 
       {activeTab === 'journals' ? (
-        <div className="accounting-two-column">
-          <section className="panel-card accounting-form-panel">
-            <PanelHeader icon="bi-journal-plus" title="Journal Builder" tone="blue" />
-            {!canManageAccounting ? (
-              <EmptyState
-                icon="bi-lock"
-                title="Read-only accounting"
-                detail="Your account can view accounting records but cannot post changes."
+        <div className="accounting-section">
+          {!showEditor && <JournalHelp currencyCode={organization.currencyCode} />}
+          {showEditor ? (
+            <section className="panel-card accounting-form-panel">
+              <PanelHeader
+                icon="bi-journal-plus"
+                title={editingJournalId ? 'Edit Journal Entry' : 'New Journal Entry'}
+                tone="blue"
               />
-            ) : (
-              <form className="record-form accounting-journal-form" onSubmit={handleJournalSubmit}>
-                <label className="field-stack">
-                  <span>Branch</span>
-                  <select
-                    value={journalForm.branchId}
-                    onChange={(event) =>
-                      setJournalForm((current) => ({ ...current, branchId: event.target.value }))
-                    }
-                  >
-                    <option value="">Organization</option>
-                    {branchOptions.map((branch) => (
-                      <option key={branch.id} value={branch.id}>
-                        {branch.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field-stack">
-                  <span>Period</span>
-                  <select
-                    value={journalForm.financialPeriodId}
-                    onChange={(event) =>
-                      setJournalForm((current) => ({
-                        ...current,
-                        financialPeriodId: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Auto-match by date</option>
-                    {periods.map((period) => (
-                      <option key={period.id} value={period.id}>
-                        {period.name} ({labelizeEnum(period.status)})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field-stack">
-                  <span>Journal No.</span>
-                  <input
-                    maxLength={40}
-                    placeholder="Auto"
-                    value={journalForm.journalNumber}
-                    onChange={(event) =>
-                      setJournalForm((current) => ({
-                        ...current,
-                        journalNumber: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Date</span>
-                  <input
-                    required
-                    type="date"
-                    value={journalForm.entryDate}
-                    onChange={(event) =>
-                      setJournalForm((current) => ({ ...current, entryDate: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Status</span>
-                  <select
-                    value={journalForm.status}
-                    onChange={(event) =>
-                      setJournalForm((current) => ({
-                        ...current,
-                        status: event.target.value as AccountingJournalRequest['status'],
-                      }))
-                    }
-                  >
-                    <option value="DRAFT">Draft</option>
-                    <option value="POSTED">Post immediately</option>
-                  </select>
-                </label>
-                <label className="field-stack">
-                  <span>Reference</span>
-                  <input
-                    maxLength={120}
-                    value={journalForm.reference}
-                    onChange={(event) =>
-                      setJournalForm((current) => ({ ...current, reference: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack wide-field">
-                  <span>Description</span>
-                  <input
-                    required
-                    maxLength={255}
-                    value={journalForm.description}
-                    onChange={(event) =>
-                      setJournalForm((current) => ({
-                        ...current,
-                        description: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-stack wide-field">
-                  <span>Source Module</span>
-                  <input
-                    maxLength={80}
-                    placeholder="Manual, POS, Payroll"
-                    value={journalForm.sourceModule}
-                    onChange={(event) =>
-                      setJournalForm((current) => ({
-                        ...current,
-                        sourceModule: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
+              <p>
+                Describe what happened, add at least two different accounts, and enter matching
+                debit and credit totals.
+              </p>
+              {!canManageAccounting ? (
+                <EmptyState
+                  icon="bi-lock"
+                  title="Read-only accounting"
+                  detail="Your account can view accounting records but cannot post changes."
+                />
+              ) : (
+                <form
+                  className="record-form accounting-journal-form"
+                  onSubmit={handleJournalSubmit}
+                >
+                  <label className="field-stack">
+                    <span>Shop</span>
+                    <select
+                      value={journalForm.branchId}
+                      onChange={(event) =>
+                        setJournalForm((current) => ({ ...current, branchId: event.target.value }))
+                      }
+                    >
+                      {currentUser.branchIds.length === 0 && (
+                        <option value="">Business-wide entry</option>
+                      )}
+                      {branchOptions.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field-stack">
+                    <span>Date</span>
+                    <input
+                      required
+                      type="date"
+                      value={journalForm.entryDate}
+                      onChange={(event) =>
+                        setJournalForm((current) => ({ ...current, entryDate: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack">
+                    <span>Reference (optional)</span>
+                    <input
+                      maxLength={120}
+                      value={journalForm.reference}
+                      onChange={(event) =>
+                        setJournalForm((current) => ({ ...current, reference: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack wide-field">
+                    <span>Description</span>
+                    <input
+                      required
+                      maxLength={255}
+                      placeholder="e.g. Money moved from Bank to Shop Cash"
+                      value={journalForm.description}
+                      onChange={(event) =>
+                        setJournalForm((current) => ({
+                          ...current,
+                          description: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <details className="accounting-entry-options wide-field">
+                    <summary>Optional details: period, entry number and source</summary>
+                    <div className="accounting-entry-options-grid">
+                      <label className="field-stack">
+                        <span>Period</span>
+                        <select
+                          value={journalForm.financialPeriodId}
+                          onChange={(event) =>
+                            setJournalForm((current) => ({
+                              ...current,
+                              financialPeriodId: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Auto-match by date</option>
+                          {periods.map((period) => (
+                            <option key={period.id} value={period.id}>
+                              {period.name} ({labelizeEnum(period.status)})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field-stack">
+                        <span>Journal No.</span>
+                        <input
+                          maxLength={40}
+                          placeholder="Assigned automatically"
+                          value={journalForm.journalNumber}
+                          onChange={(event) =>
+                            setJournalForm((current) => ({
+                              ...current,
+                              journalNumber: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="field-stack wide-field">
+                        <span>Source Module</span>
+                        <input
+                          maxLength={80}
+                          placeholder="Manual or POS"
+                          value={journalForm.sourceModule}
+                          onChange={(event) =>
+                            setJournalForm((current) => ({
+                              ...current,
+                              sourceModule: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  </details>
 
-                <div className="wide-field accounting-lines-editor">
-                  <div className="commercial-section-heading">
-                    <h3>Debit and Credit Lines</h3>
-                    <button className="text-button" type="button" onClick={addJournalLine}>
-                      <i className="bi bi-plus-lg" aria-hidden="true" />
-                      Add Line
+                  <div className="wide-field accounting-lines-editor">
+                    <div className="commercial-section-heading">
+                      <h3>Debit and Credit Lines</h3>
+                      <button className="text-button" type="button" onClick={addJournalLine}>
+                        <i className="bi bi-plus-lg" aria-hidden="true" />
+                        Add Line
+                      </button>
+                    </div>
+                    <p className="accounting-line-guidance">
+                      Use one amount per line: either Debit or Credit. The example on the Journals
+                      page shows how to record a cash transfer.
+                    </p>
+                    <div className="accounting-line-grid">
+                      {journalForm.lines.map((line, index) => (
+                        <div className="accounting-line-row" key={`${index}-${line.accountId}`}>
+                          <label className="field-stack accounting-line-account">
+                            <span>Account</span>
+                            <select
+                              required
+                              value={line.accountId}
+                              onChange={(event) =>
+                                updateJournalLine(index, 'accountId', event.target.value)
+                              }
+                            >
+                              <option value="">Select account</option>
+                              {accounts
+                                .filter((account) => account.active)
+                                .map((account) => (
+                                  <option key={account.id} value={account.id}>
+                                    {account.accountCode} - {account.accountName}
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                          <label className="field-stack">
+                            <span>Debit</span>
+                            <input
+                              min="0"
+                              step="0.01"
+                              type="number"
+                              value={line.debitAmount}
+                              onChange={(event) =>
+                                updateJournalLine(index, 'debitAmount', event.target.value)
+                              }
+                            />
+                          </label>
+                          <label className="field-stack">
+                            <span>Credit</span>
+                            <input
+                              min="0"
+                              step="0.01"
+                              type="number"
+                              value={line.creditAmount}
+                              onChange={(event) =>
+                                updateJournalLine(index, 'creditAmount', event.target.value)
+                              }
+                            />
+                          </label>
+                          <label className="field-stack accounting-line-description">
+                            <span>Line Memo</span>
+                            <input
+                              maxLength={255}
+                              value={line.description}
+                              onChange={(event) =>
+                                updateJournalLine(index, 'description', event.target.value)
+                              }
+                            />
+                          </label>
+                          <button
+                            className="icon-button compact-icon"
+                            type="button"
+                            aria-label="Remove journal line"
+                            onClick={() => removeJournalLine(index)}
+                          >
+                            <i className="bi bi-trash" aria-hidden="true" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="commercial-total-strip accounting-total-strip wide-field">
+                    <div>
+                      <span>Debit</span>
+                      <strong>{formatMoney(journalTotals.debit, organization.currencyCode)}</strong>
+                    </div>
+                    <div>
+                      <span>Credit</span>
+                      <strong>
+                        {formatMoney(journalTotals.credit, organization.currencyCode)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Difference</span>
+                      <strong>
+                        {formatMoney(
+                          Math.abs(journalTotals.debit - journalTotals.credit),
+                          organization.currencyCode,
+                        )}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Lines</span>
+                      <strong>{journalForm.lines.length}</strong>
+                    </div>
+                  </div>
+
+                  <div className="form-actions wide-field">
+                    <button
+                      className="primary-action compact-action"
+                      type="submit"
+                      name="journalAction"
+                      value="DRAFT"
+                      disabled={saveJournalMutation.isPending || accounts.length === 0}
+                    >
+                      <i className="bi bi-save" aria-hidden="true" />
+                      {saveJournalMutation.isPending ? 'Saving...' : 'Save Draft'}
+                    </button>
+                    <button
+                      className="secondary-action compact-action"
+                      type="submit"
+                      name="journalAction"
+                      value="POSTED"
+                      disabled={saveJournalMutation.isPending || accounts.length === 0}
+                    >
+                      <i className="bi bi-check2-circle" aria-hidden="true" />
+                      Save &amp; Post to Ledger
+                    </button>
+                    <button
+                      className="secondary-action compact-action"
+                      type="button"
+                      onClick={() => {
+                        setJournalForm(defaultAccountingJournalForm(defaultBranchId));
+                        setEditingJournalId(null);
+                        setError('');
+                        setMessage('Journal form cleared.');
+                      }}
+                    >
+                      <i className="bi bi-x-circle" aria-hidden="true" />
+                      Clear
                     </button>
                   </div>
-                  <div className="accounting-line-grid">
-                    {journalForm.lines.map((line, index) => (
-                      <div className="accounting-line-row" key={`${index}-${line.accountId}`}>
-                        <label className="field-stack accounting-line-account">
-                          <span>Account</span>
-                          <select
-                            required
-                            value={line.accountId}
-                            onChange={(event) =>
-                              updateJournalLine(index, 'accountId', event.target.value)
-                            }
-                          >
-                            <option value="">Select account</option>
-                            {accounts
-                              .filter((account) => account.active)
-                              .map((account) => (
-                                <option key={account.id} value={account.id}>
-                                  {account.accountCode} - {account.accountName}
-                                </option>
-                              ))}
-                          </select>
-                        </label>
-                        <label className="field-stack">
-                          <span>Debit</span>
-                          <input
-                            min="0"
-                            step="0.01"
-                            type="number"
-                            value={line.debitAmount}
-                            onChange={(event) =>
-                              updateJournalLine(index, 'debitAmount', event.target.value)
-                            }
-                          />
-                        </label>
-                        <label className="field-stack">
-                          <span>Credit</span>
-                          <input
-                            min="0"
-                            step="0.01"
-                            type="number"
-                            value={line.creditAmount}
-                            onChange={(event) =>
-                              updateJournalLine(index, 'creditAmount', event.target.value)
-                            }
-                          />
-                        </label>
-                        <label className="field-stack accounting-line-description">
-                          <span>Line Memo</span>
-                          <input
-                            maxLength={255}
-                            value={line.description}
-                            onChange={(event) =>
-                              updateJournalLine(index, 'description', event.target.value)
-                            }
-                          />
-                        </label>
-                        <button
-                          className="icon-button compact-icon"
-                          type="button"
-                          aria-label="Remove journal line"
-                          onClick={() => removeJournalLine(index)}
-                        >
-                          <i className="bi bi-trash" aria-hidden="true" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="commercial-total-strip accounting-total-strip wide-field">
-                  <div>
-                    <span>Debit</span>
-                    <strong>{formatMoney(journalTotals.debit, organization.currencyCode)}</strong>
-                  </div>
-                  <div>
-                    <span>Credit</span>
-                    <strong>{formatMoney(journalTotals.credit, organization.currencyCode)}</strong>
-                  </div>
-                  <div>
-                    <span>Difference</span>
-                    <strong>
-                      {formatMoney(
-                        Math.abs(journalTotals.debit - journalTotals.credit),
-                        organization.currencyCode,
-                      )}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Lines</span>
-                    <strong>{journalForm.lines.length}</strong>
-                  </div>
-                </div>
-
-                <div className="form-actions wide-field">
-                  <button
-                    className="primary-action compact-action"
-                    type="submit"
-                    disabled={saveJournalMutation.isPending || accounts.length === 0}
-                  >
-                    <i className="bi bi-save" aria-hidden="true" />
-                    {saveJournalMutation.isPending ? 'Saving...' : 'Save Journal'}
-                  </button>
-                  <button
-                    className="secondary-action compact-action"
-                    type="button"
-                    onClick={() => {
-                      setJournalForm(defaultAccountingJournalForm(defaultBranchId, openPeriod?.id));
-                      setEditingJournalId(null);
-                      setError('');
-                      setMessage('Journal form cleared.');
-                    }}
-                  >
-                    <i className="bi bi-x-circle" aria-hidden="true" />
-                    Clear
-                  </button>
-                </div>
-              </form>
-            )}
-          </section>
-
-          <section className="panel-card">
-            <PanelHeader icon="bi-journal-text" title="Journal Register" tone="purple" />
-            {journalsQuery.isPending ? (
-              <LoadingPanel label="Loading journals..." />
-            ) : journalsQuery.isError ? (
-              <EmptyState
-                icon="bi-exclamation-circle"
-                title="Journals could not be loaded"
-                detail="Refresh after the API is available."
-              />
-            ) : journals.length === 0 ? (
-              <EmptyState
-                icon="bi-journal-plus"
-                title="No journals"
-                detail="Saved and posted entries will appear here."
-              />
-            ) : (
-              <div className="responsive-table compact-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Journal</th>
-                      <th>Date</th>
-                      <th>Status</th>
-                      <th>Debit</th>
-                      <th>Branch</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {journals.map((journal) => (
-                      <tr key={journal.id}>
-                        <td data-label="Journal">
-                          <span className="table-label">
-                            <i className="bi bi-journal-text" aria-hidden="true" />
-                            <span>
-                              <strong>{journal.journalNumber}</strong>
-                              <small>{journal.description}</small>
-                            </span>
-                          </span>
-                        </td>
-                        <td data-label="Date">{formatDateOnly(journal.entryDate)}</td>
-                        <td data-label="Status">
-                          <StatusPill
-                            status={accountingStatusTone(journal.status)}
-                            label={labelizeEnum(journal.status)}
-                          />
-                        </td>
-                        <td data-label="Debit">
-                          {formatMoney(journal.totalDebit, organization.currencyCode)}
-                        </td>
-                        <td data-label="Branch">{journal.branchName ?? 'Organization'}</td>
-                        <td data-label="Actions">
-                          <span className="table-actions commercial-table-actions">
-                            {canManageAccounting && journal.status === 'DRAFT' ? (
-                              <>
-                                <button
-                                  className="text-button"
-                                  type="button"
-                                  onClick={() => editJournal(journal)}
-                                >
-                                  <i className="bi bi-pencil" aria-hidden="true" />
-                                  Edit
-                                </button>
-                                <button
-                                  className="text-button"
-                                  type="button"
-                                  onClick={() => handlePostJournal(journal.id)}
-                                >
-                                  <i className="bi bi-check2-circle" aria-hidden="true" />
-                                  Post
-                                </button>
-                              </>
-                            ) : null}
-                            {canManageAccounting && journal.status !== 'VOID' ? (
-                              <button
-                                className="text-button danger-text"
-                                type="button"
-                                onClick={() => handleVoidJournal(journal.id)}
-                              >
-                                <i className="bi bi-slash-circle" aria-hidden="true" />
-                                Void
-                              </button>
-                            ) : null}
-                          </span>
-                        </td>
+                </form>
+              )}
+            </section>
+          ) : (
+            <section className="panel-card">
+              <PanelHeader icon="bi-journal-text" title="Journal Register" tone="purple" />
+              {journalsQuery.isPending ? (
+                <LoadingPanel label="Loading journals..." />
+              ) : journalsQuery.isError ? (
+                <EmptyState
+                  icon="bi-exclamation-circle"
+                  title="Journals could not be loaded"
+                  detail="Refresh after the API is available."
+                />
+              ) : journals.length === 0 ? (
+                <EmptyState
+                  icon="bi-journal-plus"
+                  title="No journals"
+                  detail="Saved and posted entries will appear here."
+                />
+              ) : (
+                <div className="responsive-table compact-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Journal</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Amount</th>
+                        <th>Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
+                    </thead>
+                    <tbody>
+                      {journals.map((journal) => (
+                        <tr key={journal.id}>
+                          <td data-label="Journal">
+                            <span className="table-label">
+                              <i className="bi bi-journal-text" aria-hidden="true" />
+                              <span>
+                                <strong>{journal.journalNumber}</strong>
+                                <small>{journal.description}</small>
+                              </span>
+                            </span>
+                          </td>
+                          <td data-label="Date">{formatDateOnly(journal.entryDate)}</td>
+                          <td data-label="Status">
+                            <StatusPill
+                              status={accountingStatusTone(journal.status)}
+                              label={labelizeEnum(journal.status)}
+                            />
+                            <small>
+                              {journal.status === 'DRAFT'
+                                ? 'Not included in the Ledger'
+                                : journal.status === 'POSTED'
+                                  ? 'Included in the Ledger and reports'
+                                  : 'Excluded from the Ledger and reports'}
+                            </small>
+                          </td>
+                          <td data-label="Amount">
+                            {formatMoney(journal.totalDebit, organization.currencyCode)}
+                          </td>
+                          <td data-label="Actions">
+                            <span className="table-actions commercial-table-actions">
+                              {canManageAccounting && journal.status === 'DRAFT' ? (
+                                <>
+                                  <button
+                                    className="text-button"
+                                    type="button"
+                                    onClick={() => editJournal(journal)}
+                                  >
+                                    <i className="bi bi-pencil" aria-hidden="true" />
+                                    Edit Draft
+                                  </button>
+                                  <button
+                                    className="text-button"
+                                    type="button"
+                                    disabled={postJournalMutation.isPending}
+                                    onClick={() => handlePostJournal(journal.id)}
+                                  >
+                                    <i className="bi bi-check2-circle" aria-hidden="true" />
+                                    Post to Ledger
+                                  </button>
+                                </>
+                              ) : null}
+                              {canManageAccounting && journal.status !== 'VOID' ? (
+                                <button
+                                  className="text-button danger-text"
+                                  type="button"
+                                  disabled={voidJournalMutation.isPending}
+                                  title="Exclude this entry from the Ledger and reports. This does not refund a payment."
+                                  onClick={() => handleVoidJournal(journal.id)}
+                                >
+                                  <i className="bi bi-slash-circle" aria-hidden="true" />
+                                  Void Entry
+                                </button>
+                              ) : null}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          )}
         </div>
       ) : null}
 
@@ -3975,22 +3574,6 @@ function AccountingPage({
                 {accounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.accountCode} - {account.accountName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Branch</span>
-              <select
-                value={ledgerFilters.branchId}
-                onChange={(event) =>
-                  setLedgerFilters((current) => ({ ...current, branchId: event.target.value }))
-                }
-              >
-                <option value="">All branches</option>
-                {branchOptions.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
                   </option>
                 ))}
               </select>
@@ -4041,7 +3624,6 @@ function AccountingPage({
                     <th>Debit</th>
                     <th>Credit</th>
                     <th>Running</th>
-                    <th>Branch</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4068,7 +3650,6 @@ function AccountingPage({
                       <td data-label="Running">
                         {formatMoney(entry.runningBalance, organization.currencyCode)}
                       </td>
-                      <td data-label="Branch">{entry.branchName ?? 'Organization'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -4080,25 +3661,27 @@ function AccountingPage({
 
       {activeTab === 'reports' ? (
         <div className="accounting-reports-grid">
+          <div
+            className="accounting-tabs accounting-report-tabs"
+            role="group"
+            aria-label="Financial reports"
+          >
+            {reportTabs.map((report) => (
+              <button
+                className={activeReport === report.key ? 'active' : ''}
+                key={report.key}
+                type="button"
+                aria-pressed={activeReport === report.key}
+                onClick={() => setActiveReport(report.key)}
+              >
+                <i className={`bi ${report.icon}`} aria-hidden="true" />
+                {report.label}
+              </button>
+            ))}
+          </div>
           <section className="panel-card accounting-reports-filter-panel">
             <PanelHeader icon="bi-funnel" title="Report Filters" tone="green" />
             <div className="accounting-filter-grid">
-              <label className="field-stack">
-                <span>Branch</span>
-                <select
-                  value={reportFilters.branchId}
-                  onChange={(event) =>
-                    setReportFilters((current) => ({ ...current, branchId: event.target.value }))
-                  }
-                >
-                  <option value="">All branches</option>
-                  {branchOptions.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <label className="field-stack">
                 <span>From</span>
                 <input
@@ -4132,415 +3715,576 @@ function AccountingPage({
             </div>
           </section>
 
-          <section className="panel-card">
-            <PanelHeader icon="bi-scale" title="Trial Balance" tone="blue" />
-            {trialBalanceQuery.isPending ? (
-              <LoadingPanel label="Loading trial balance..." />
-            ) : trialBalanceQuery.isError ? (
-              <EmptyState
-                icon="bi-exclamation-circle"
-                title="Trial balance could not be loaded"
-                detail="Refresh after ledger entries are available."
-              />
-            ) : (
-              <>
-                <div className="accounting-report-kpis">
-                  <SummaryMetric
-                    icon="bi-arrow-down-circle"
-                    label="Debits"
-                    value={formatMoney(
-                      trialBalanceQuery.data?.totalDebit ?? 0,
-                      organization.currencyCode,
-                    )}
-                    tone="green"
-                  />
-                  <SummaryMetric
-                    icon="bi-arrow-up-circle"
-                    label="Credits"
-                    value={formatMoney(
-                      trialBalanceQuery.data?.totalCredit ?? 0,
-                      organization.currencyCode,
-                    )}
-                    tone="blue"
-                  />
-                  <SummaryMetric
-                    icon="bi-sliders"
-                    label="Difference"
-                    value={formatMoney(
-                      Math.abs(trialBalanceQuery.data?.difference ?? 0),
-                      organization.currencyCode,
-                    )}
-                    tone={(trialBalanceQuery.data?.difference ?? 0) === 0 ? 'purple' : 'orange'}
-                  />
-                </div>
-                <AccountingTrialBalanceTable
-                  currencyCode={organization.currencyCode}
-                  rows={trialBalanceQuery.data?.rows ?? []}
+          {activeReport === 'trial-balance' ? (
+            <section className="panel-card">
+              <PanelHeader icon="bi-scale" title="Trial Balance" tone="blue" />
+              {trialBalanceQuery.isPending ? (
+                <LoadingPanel label="Loading trial balance..." />
+              ) : trialBalanceQuery.isError ? (
+                <EmptyState
+                  icon="bi-exclamation-circle"
+                  title="Trial balance could not be loaded"
+                  detail="Refresh after ledger entries are available."
                 />
-              </>
-            )}
-          </section>
+              ) : (
+                <>
+                  <div className="accounting-report-kpis">
+                    <SummaryMetric
+                      icon="bi-arrow-down-circle"
+                      label="Debits"
+                      value={formatMoney(
+                        trialBalanceQuery.data?.totalDebit ?? 0,
+                        organization.currencyCode,
+                      )}
+                      tone="green"
+                    />
+                    <SummaryMetric
+                      icon="bi-arrow-up-circle"
+                      label="Credits"
+                      value={formatMoney(
+                        trialBalanceQuery.data?.totalCredit ?? 0,
+                        organization.currencyCode,
+                      )}
+                      tone="blue"
+                    />
+                    <SummaryMetric
+                      icon="bi-sliders"
+                      label="Difference"
+                      value={formatMoney(
+                        Math.abs(trialBalanceQuery.data?.difference ?? 0),
+                        organization.currencyCode,
+                      )}
+                      tone={(trialBalanceQuery.data?.difference ?? 0) === 0 ? 'purple' : 'orange'}
+                    />
+                  </div>
+                  <AccountingTrialBalanceTable
+                    currencyCode={organization.currencyCode}
+                    rows={trialBalanceQuery.data?.rows ?? []}
+                  />
+                </>
+              )}
+            </section>
+          ) : null}
 
-          <section className="panel-card">
-            <PanelHeader icon="bi-graph-up-arrow" title="Profit & Loss" tone="purple" />
-            {profitAndLossQuery.isPending ? (
-              <LoadingPanel label="Loading profit and loss..." />
-            ) : profitAndLossQuery.isError ? (
-              <EmptyState
-                icon="bi-exclamation-circle"
-                title="Profit and loss could not be loaded"
-                detail="Refresh after posted revenue and expense journals are available."
-              />
-            ) : (
-              <>
-                <div className="accounting-report-kpis">
-                  <SummaryMetric
-                    icon="bi-cash-stack"
-                    label="Revenue"
-                    value={formatMoney(profitAndLossQuery.data?.revenue ?? 0, organization.currencyCode)}
-                    tone="green"
-                  />
-                  <SummaryMetric
-                    icon="bi-wallet2"
-                    label="Expenses"
-                    value={formatMoney(
-                      (profitAndLossQuery.data?.costOfGoodsSold ?? 0) +
-                        (profitAndLossQuery.data?.expenses ?? 0),
-                      organization.currencyCode,
-                    )}
-                    tone="orange"
-                  />
-                  <SummaryMetric
-                    icon="bi-bank"
-                    label="Net Income"
-                    value={formatMoney(
-                      profitAndLossQuery.data?.netIncome ?? 0,
-                      organization.currencyCode,
-                    )}
-                    tone="blue"
-                  />
-                </div>
-                <AccountingStatementRowsTable
-                  currencyCode={organization.currencyCode}
-                  rows={[
-                    ...(profitAndLossQuery.data?.revenueRows ?? []),
-                    ...(profitAndLossQuery.data?.costOfGoodsSoldRows ?? []),
-                    ...(profitAndLossQuery.data?.expenseRows ?? []),
-                  ]}
+          {activeReport === 'profit-and-loss' ? (
+            <section className="panel-card">
+              <PanelHeader icon="bi-graph-up-arrow" title="Profit & Loss" tone="purple" />
+              {profitAndLossQuery.isPending ? (
+                <LoadingPanel label="Loading profit and loss..." />
+              ) : profitAndLossQuery.isError ? (
+                <EmptyState
+                  icon="bi-exclamation-circle"
+                  title="Profit and loss could not be loaded"
+                  detail="Refresh after posted revenue and expense journals are available."
                 />
-              </>
-            )}
-          </section>
+              ) : (
+                <>
+                  <div className="accounting-report-kpis">
+                    <SummaryMetric
+                      icon="bi-cash-stack"
+                      label="Revenue"
+                      value={formatMoney(
+                        profitAndLossQuery.data?.revenue ?? 0,
+                        organization.currencyCode,
+                      )}
+                      tone="green"
+                    />
+                    <SummaryMetric
+                      icon="bi-wallet2"
+                      label="Expenses"
+                      value={formatMoney(
+                        (profitAndLossQuery.data?.costOfGoodsSold ?? 0) +
+                          (profitAndLossQuery.data?.expenses ?? 0),
+                        organization.currencyCode,
+                      )}
+                      tone="orange"
+                    />
+                    <SummaryMetric
+                      icon="bi-bank"
+                      label="Net Income"
+                      value={formatMoney(
+                        profitAndLossQuery.data?.netIncome ?? 0,
+                        organization.currencyCode,
+                      )}
+                      tone="blue"
+                    />
+                  </div>
+                  <AccountingStatementRowsTable
+                    currencyCode={organization.currencyCode}
+                    rows={[
+                      ...(profitAndLossQuery.data?.revenueRows ?? []),
+                      ...(profitAndLossQuery.data?.costOfGoodsSoldRows ?? []),
+                      ...(profitAndLossQuery.data?.expenseRows ?? []),
+                    ]}
+                  />
+                </>
+              )}
+            </section>
+          ) : null}
 
-          <section className="panel-card">
-            <PanelHeader icon="bi-bank" title="Balance Sheet" tone="green" />
-            {balanceSheetQuery.isPending ? (
-              <LoadingPanel label="Loading balance sheet..." />
-            ) : balanceSheetQuery.isError ? (
-              <EmptyState
-                icon="bi-exclamation-circle"
-                title="Balance sheet could not be loaded"
-                detail="Refresh after posted asset, liability, and equity journals are available."
-              />
-            ) : (
-              <>
-                <div className="accounting-report-kpis">
-                  <SummaryMetric
-                    icon="bi-box-seam"
-                    label="Assets"
-                    value={formatMoney(balanceSheetQuery.data?.assets ?? 0, organization.currencyCode)}
-                    tone="green"
-                  />
-                  <SummaryMetric
-                    icon="bi-receipt"
-                    label="Liabilities + Equity"
-                    value={formatMoney(
-                      balanceSheetQuery.data?.totalLiabilitiesAndEquity ?? 0,
-                      organization.currencyCode,
-                    )}
-                    tone="blue"
-                  />
-                  <SummaryMetric
-                    icon="bi-sliders"
-                    label="Difference"
-                    value={formatMoney(
-                      Math.abs(balanceSheetQuery.data?.difference ?? 0),
-                      organization.currencyCode,
-                    )}
-                    tone={(balanceSheetQuery.data?.difference ?? 0) === 0 ? 'purple' : 'orange'}
-                  />
-                </div>
-                <AccountingStatementRowsTable
-                  currencyCode={organization.currencyCode}
-                  rows={[
-                    ...(balanceSheetQuery.data?.assetRows ?? []),
-                    ...(balanceSheetQuery.data?.liabilityRows ?? []),
-                    ...(balanceSheetQuery.data?.equityRows ?? []),
-                    {
-                      accountId: 'retained-earnings',
-                      accountCode: 'RE',
-                      accountName: 'Retained Earnings',
-                      accountType: 'EQUITY',
-                      amount: balanceSheetQuery.data?.retainedEarnings ?? 0,
-                    },
-                  ]}
+          {activeReport === 'balance-sheet' ? (
+            <section className="panel-card">
+              <PanelHeader icon="bi-bank" title="Balance Sheet" tone="green" />
+              {balanceSheetQuery.isPending ? (
+                <LoadingPanel label="Loading balance sheet..." />
+              ) : balanceSheetQuery.isError ? (
+                <EmptyState
+                  icon="bi-exclamation-circle"
+                  title="Balance sheet could not be loaded"
+                  detail="Refresh after posted asset, liability, and equity journals are available."
                 />
-              </>
-            )}
-          </section>
+              ) : (
+                <>
+                  <div className="accounting-report-kpis">
+                    <SummaryMetric
+                      icon="bi-box-seam"
+                      label="Assets"
+                      value={formatMoney(
+                        balanceSheetQuery.data?.assets ?? 0,
+                        organization.currencyCode,
+                      )}
+                      tone="green"
+                    />
+                    <SummaryMetric
+                      icon="bi-receipt"
+                      label="Liabilities + Equity"
+                      value={formatMoney(
+                        balanceSheetQuery.data?.totalLiabilitiesAndEquity ?? 0,
+                        organization.currencyCode,
+                      )}
+                      tone="blue"
+                    />
+                    <SummaryMetric
+                      icon="bi-sliders"
+                      label="Difference"
+                      value={formatMoney(
+                        Math.abs(balanceSheetQuery.data?.difference ?? 0),
+                        organization.currencyCode,
+                      )}
+                      tone={(balanceSheetQuery.data?.difference ?? 0) === 0 ? 'purple' : 'orange'}
+                    />
+                  </div>
+                  <AccountingStatementRowsTable
+                    currencyCode={organization.currencyCode}
+                    rows={[
+                      ...(balanceSheetQuery.data?.assetRows ?? []),
+                      ...(balanceSheetQuery.data?.liabilityRows ?? []),
+                      ...(balanceSheetQuery.data?.equityRows ?? []),
+                      {
+                        accountId: 'retained-earnings',
+                        accountCode: 'RE',
+                        accountName: 'Retained Earnings',
+                        accountType: 'EQUITY',
+                        amount: balanceSheetQuery.data?.retainedEarnings ?? 0,
+                      },
+                    ]}
+                  />
+                </>
+              )}
+            </section>
+          ) : null}
 
-          <section className="panel-card">
-            <PanelHeader icon="bi-water" title="Cash Flow" tone="blue" />
-            {cashFlowQuery.isPending ? (
-              <LoadingPanel label="Loading cash flow..." />
-            ) : cashFlowQuery.isError ? (
-              <EmptyState
-                icon="bi-exclamation-circle"
-                title="Cash flow could not be loaded"
-                detail="Refresh after cash, bank, M-Pesa, or petty cash journals are posted."
-              />
-            ) : (
-              <>
-                <div className="accounting-report-kpis">
-                  <SummaryMetric
-                    icon="bi-box-arrow-in-down"
-                    label="Cash In"
-                    value={formatMoney(cashFlowQuery.data?.cashIn ?? 0, organization.currencyCode)}
-                    tone="green"
-                  />
-                  <SummaryMetric
-                    icon="bi-box-arrow-up"
-                    label="Cash Out"
-                    value={formatMoney(cashFlowQuery.data?.cashOut ?? 0, organization.currencyCode)}
-                    tone="orange"
-                  />
-                  <SummaryMetric
-                    icon="bi-cash"
-                    label="Closing Cash"
-                    value={formatMoney(
-                      cashFlowQuery.data?.closingCash ?? 0,
-                      organization.currencyCode,
-                    )}
-                    tone="blue"
-                  />
-                </div>
+          {activeReport === 'cash-flow' ? (
+            <section className="panel-card">
+              <PanelHeader icon="bi-water" title="Cash Flow" tone="blue" />
+              {cashFlowQuery.isPending ? (
+                <LoadingPanel label="Loading cash flow..." />
+              ) : cashFlowQuery.isError ? (
+                <EmptyState
+                  icon="bi-exclamation-circle"
+                  title="Cash flow could not be loaded"
+                  detail="Refresh after cash, bank, M-Pesa, or petty cash journals are posted."
+                />
+              ) : (
+                <>
+                  <div className="accounting-report-kpis">
+                    <SummaryMetric
+                      icon="bi-box-arrow-in-down"
+                      label="Cash In"
+                      value={formatMoney(
+                        cashFlowQuery.data?.cashIn ?? 0,
+                        organization.currencyCode,
+                      )}
+                      tone="green"
+                    />
+                    <SummaryMetric
+                      icon="bi-box-arrow-up"
+                      label="Cash Out"
+                      value={formatMoney(
+                        cashFlowQuery.data?.cashOut ?? 0,
+                        organization.currencyCode,
+                      )}
+                      tone="orange"
+                    />
+                    <SummaryMetric
+                      icon="bi-cash"
+                      label="Closing Cash"
+                      value={formatMoney(
+                        cashFlowQuery.data?.closingCash ?? 0,
+                        organization.currencyCode,
+                      )}
+                      tone="blue"
+                    />
+                  </div>
+                  <div className="responsive-table compact-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Account</th>
+                          <th>Opening</th>
+                          <th>In</th>
+                          <th>Out</th>
+                          <th>Closing</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(cashFlowQuery.data?.rows ?? []).map((row) => (
+                          <tr key={row.accountId}>
+                            <td data-label="Account">
+                              {row.accountCode} - {row.accountName}
+                            </td>
+                            <td data-label="Opening">
+                              {formatMoney(row.openingBalance, organization.currencyCode)}
+                            </td>
+                            <td data-label="In">
+                              {formatMoney(row.cashIn, organization.currencyCode)}
+                            </td>
+                            <td data-label="Out">
+                              {formatMoney(row.cashOut, organization.currencyCode)}
+                            </td>
+                            <td data-label="Closing">
+                              {formatMoney(row.closingBalance, organization.currencyCode)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+
+      {activeTab === 'accounts' ? (
+        <div className="accounting-section">
+          {showEditor ? (
+            <section className="panel-card accounting-form-panel">
+              <PanelHeader icon="bi-diagram-3" title="Chart Account" tone="green" />
+              {!canManageAccounting ? (
+                <EmptyState
+                  icon="bi-lock"
+                  title="Read-only chart"
+                  detail="Accounting management permission is required to change accounts."
+                />
+              ) : (
+                <form className="record-form" onSubmit={handleAccountSubmit}>
+                  <label className="field-stack">
+                    <span>Code</span>
+                    <input
+                      required
+                      maxLength={40}
+                      value={accountForm.accountCode}
+                      onChange={(event) =>
+                        setAccountForm((current) => ({
+                          ...current,
+                          accountCode: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack">
+                    <span>Type</span>
+                    <select
+                      value={accountForm.accountType}
+                      onChange={(event) =>
+                        setAccountForm((current) => ({
+                          ...current,
+                          accountType: event.target.value as AccountingAccountType,
+                        }))
+                      }
+                    >
+                      {accountingAccountTypeOptions.map((type) => (
+                        <option key={type} value={type}>
+                          {labelizeEnum(type)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field-stack wide-field">
+                    <span>Name</span>
+                    <input
+                      required
+                      maxLength={160}
+                      value={accountForm.accountName}
+                      onChange={(event) =>
+                        setAccountForm((current) => ({
+                          ...current,
+                          accountName: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack wide-field">
+                    <span>Parent Account</span>
+                    <select
+                      value={accountForm.parentAccountId}
+                      onChange={(event) =>
+                        setAccountForm((current) => ({
+                          ...current,
+                          parentAccountId: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">No parent</option>
+                      {accounts
+                        .filter((account) => account.id !== editingAccountId)
+                        .map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.accountCode} - {account.accountName}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label className="toggle-row wide-field">
+                    <input
+                      type="checkbox"
+                      checked={accountForm.active}
+                      onChange={(event) =>
+                        setAccountForm((current) => ({ ...current, active: event.target.checked }))
+                      }
+                    />
+                    <span>Active account</span>
+                  </label>
+                  <div className="form-actions wide-field">
+                    <button
+                      className="primary-action compact-action"
+                      type="submit"
+                      disabled={saveAccountMutation.isPending}
+                    >
+                      <i className="bi bi-save" aria-hidden="true" />
+                      {saveAccountMutation.isPending ? 'Saving...' : 'Save Account'}
+                    </button>
+                    <button
+                      className="secondary-action compact-action"
+                      type="button"
+                      onClick={() => {
+                        setAccountForm(defaultAccountingAccountForm());
+                        setEditingAccountId(null);
+                      }}
+                    >
+                      <i className="bi bi-x-circle" aria-hidden="true" />
+                      Clear
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
+          ) : (
+            <section className="panel-card">
+              <PanelHeader icon="bi-list-check" title="Chart of Accounts" tone="blue" />
+              {accountsQuery.isPending ? (
+                <LoadingPanel label="Loading accounts..." />
+              ) : accounts.length === 0 ? (
+                <EmptyState
+                  icon="bi-diagram-3"
+                  title="No accounts"
+                  detail="Create chart accounts before posting journals."
+                />
+              ) : (
                 <div className="responsive-table compact-table">
                   <table>
                     <thead>
                       <tr>
-                        <th>Account</th>
-                        <th>Opening</th>
-                        <th>In</th>
-                        <th>Out</th>
-                        <th>Closing</th>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(cashFlowQuery.data?.rows ?? []).map((row) => (
-                        <tr key={row.accountId}>
-                          <td data-label="Account">
-                            {row.accountCode} - {row.accountName}
+                      {accounts.map((account) => (
+                        <tr key={account.id}>
+                          <td data-label="Code">{account.accountCode}</td>
+                          <td data-label="Name">
+                            <strong>{account.accountName}</strong>
+                            <small>
+                              {account.parentAccountCode
+                                ? `Parent ${account.parentAccountCode}`
+                                : 'Top level'}
+                            </small>
                           </td>
-                          <td data-label="Opening">
-                            {formatMoney(row.openingBalance, organization.currencyCode)}
+                          <td data-label="Type">{labelizeEnum(account.accountType)}</td>
+                          <td data-label="Status">
+                            <StatusPill
+                              status={account.active ? 'posted' : 'pending'}
+                              label={account.active ? 'Active' : 'Inactive'}
+                            />
                           </td>
-                          <td data-label="In">
-                            {formatMoney(row.cashIn, organization.currencyCode)}
-                          </td>
-                          <td data-label="Out">
-                            {formatMoney(row.cashOut, organization.currencyCode)}
-                          </td>
-                          <td data-label="Closing">
-                            {formatMoney(row.closingBalance, organization.currencyCode)}
+                          <td data-label="Actions">
+                            {canManageAccounting ? (
+                              <span className="table-actions commercial-table-actions">
+                                <button
+                                  className="text-button"
+                                  type="button"
+                                  onClick={() => editAccount(account)}
+                                >
+                                  <i className="bi bi-pencil" aria-hidden="true" />
+                                  Edit
+                                </button>
+                                {account.active ? (
+                                  <button
+                                    className="text-button danger-text"
+                                    type="button"
+                                    onClick={() => handleDeactivateAccount(account.id)}
+                                  >
+                                    <i className="bi bi-pause-circle" aria-hidden="true" />
+                                    Deactivate
+                                  </button>
+                                ) : null}
+                              </span>
+                            ) : (
+                              'Read only'
+                            )}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              </>
-            )}
-          </section>
+              )}
+            </section>
+          )}
         </div>
       ) : null}
 
-      {activeTab === 'accounts' ? (
-        <div className="accounting-two-column">
-          <section className="panel-card accounting-form-panel">
-            <PanelHeader icon="bi-diagram-3" title="Chart Account" tone="green" />
-            {!canManageAccounting ? (
-              <EmptyState
-                icon="bi-lock"
-                title="Read-only chart"
-                detail="Accounting management permission is required to change accounts."
-              />
-            ) : (
-              <form className="record-form" onSubmit={handleAccountSubmit}>
-                <label className="field-stack">
-                  <span>Code</span>
-                  <input
-                    required
-                    maxLength={40}
-                    value={accountForm.accountCode}
-                    onChange={(event) =>
-                      setAccountForm((current) => ({
-                        ...current,
-                        accountCode: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Type</span>
-                  <select
-                    value={accountForm.accountType}
-                    onChange={(event) =>
-                      setAccountForm((current) => ({
-                        ...current,
-                        accountType: event.target.value as AccountingAccountType,
-                      }))
-                    }
-                  >
-                    {accountingAccountTypeOptions.map((type) => (
-                      <option key={type} value={type}>
-                        {labelizeEnum(type)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field-stack wide-field">
-                  <span>Name</span>
-                  <input
-                    required
-                    maxLength={160}
-                    value={accountForm.accountName}
-                    onChange={(event) =>
-                      setAccountForm((current) => ({
-                        ...current,
-                        accountName: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-stack wide-field">
-                  <span>Parent Account</span>
-                  <select
-                    value={accountForm.parentAccountId}
-                    onChange={(event) =>
-                      setAccountForm((current) => ({
-                        ...current,
-                        parentAccountId: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">No parent</option>
-                    {accounts
-                      .filter((account) => account.id !== editingAccountId)
-                      .map((account) => (
-                        <option key={account.id} value={account.id}>
-                          {account.accountCode} - {account.accountName}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <label className="toggle-row wide-field">
-                  <input
-                    type="checkbox"
-                    checked={accountForm.active}
-                    onChange={(event) =>
-                      setAccountForm((current) => ({ ...current, active: event.target.checked }))
-                    }
-                  />
-                  <span>Active account</span>
-                </label>
-                <div className="form-actions wide-field">
-                  <button
-                    className="primary-action compact-action"
-                    type="submit"
-                    disabled={saveAccountMutation.isPending}
-                  >
-                    <i className="bi bi-save" aria-hidden="true" />
-                    {saveAccountMutation.isPending ? 'Saving...' : 'Save Account'}
-                  </button>
-                  <button
-                    className="secondary-action compact-action"
-                    type="button"
-                    onClick={() => {
-                      setAccountForm(defaultAccountingAccountForm());
-                      setEditingAccountId(null);
-                    }}
-                  >
-                    <i className="bi bi-x-circle" aria-hidden="true" />
-                    Clear
-                  </button>
-                </div>
-              </form>
-            )}
-          </section>
-
-          <section className="panel-card">
-            <PanelHeader icon="bi-list-check" title="Chart of Accounts" tone="blue" />
-            {accountsQuery.isPending ? (
-              <LoadingPanel label="Loading accounts..." />
-            ) : accounts.length === 0 ? (
-              <EmptyState
-                icon="bi-diagram-3"
-                title="No accounts"
-                detail="Create chart accounts before posting journals."
-              />
-            ) : (
+      {activeTab === 'periods' ? (
+        <div className="accounting-section">
+          {showEditor ? (
+            <section className="panel-card accounting-form-panel">
+              <PanelHeader icon="bi-calendar-range" title="Financial Period" tone="purple" />
+              {!canManageAccounting ? (
+                <EmptyState
+                  icon="bi-lock"
+                  title="Read-only periods"
+                  detail="Accounting management permission is required to change periods."
+                />
+              ) : (
+                <form className="record-form" onSubmit={handlePeriodSubmit}>
+                  <label className="field-stack wide-field">
+                    <span>Name</span>
+                    <input
+                      required
+                      maxLength={120}
+                      value={periodForm.name}
+                      onChange={(event) =>
+                        setPeriodForm((current) => ({ ...current, name: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack">
+                    <span>Start</span>
+                    <input
+                      required
+                      type="date"
+                      value={periodForm.periodStart}
+                      onChange={(event) =>
+                        setPeriodForm((current) => ({
+                          ...current,
+                          periodStart: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack">
+                    <span>End</span>
+                    <input
+                      required
+                      type="date"
+                      value={periodForm.periodEnd}
+                      onChange={(event) =>
+                        setPeriodForm((current) => ({ ...current, periodEnd: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack wide-field">
+                    <span>Status</span>
+                    <select
+                      value={periodForm.status}
+                      onChange={(event) =>
+                        setPeriodForm((current) => ({
+                          ...current,
+                          status: event.target.value as AccountingPeriodStatus,
+                        }))
+                      }
+                    >
+                      <option value="OPEN">Open</option>
+                      <option value="CLOSED">Closed</option>
+                      <option value="LOCKED">Locked</option>
+                    </select>
+                  </label>
+                  <div className="form-actions wide-field">
+                    <button
+                      className="primary-action compact-action"
+                      type="submit"
+                      disabled={savePeriodMutation.isPending}
+                    >
+                      <i className="bi bi-save" aria-hidden="true" />
+                      {savePeriodMutation.isPending ? 'Saving...' : 'Save Period'}
+                    </button>
+                    <button
+                      className="secondary-action compact-action"
+                      type="button"
+                      onClick={() => {
+                        setPeriodForm(defaultAccountingPeriodForm());
+                        setEditingPeriodId(null);
+                      }}
+                    >
+                      <i className="bi bi-x-circle" aria-hidden="true" />
+                      Clear
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
+          ) : (
+            <section className="panel-card">
+              <PanelHeader icon="bi-calendar-check" title="Periods" tone="blue" />
               <div className="responsive-table compact-table">
                 <table>
                   <thead>
                     <tr>
-                      <th>Code</th>
                       <th>Name</th>
-                      <th>Type</th>
+                      <th>Range</th>
                       <th>Status</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {accounts.map((account) => (
-                      <tr key={account.id}>
-                        <td data-label="Code">{account.accountCode}</td>
-                        <td data-label="Name">
-                          <strong>{account.accountName}</strong>
-                          <small>
-                            {account.parentAccountCode
-                              ? `Parent ${account.parentAccountCode}`
-                              : 'Top level'}
-                          </small>
+                    {periods.map((period) => (
+                      <tr key={period.id}>
+                        <td data-label="Name">{period.name}</td>
+                        <td data-label="Range">
+                          {formatDateOnly(period.periodStart)} - {formatDateOnly(period.periodEnd)}
                         </td>
-                        <td data-label="Type">{labelizeEnum(account.accountType)}</td>
                         <td data-label="Status">
                           <StatusPill
-                            status={account.active ? 'posted' : 'pending'}
-                            label={account.active ? 'Active' : 'Inactive'}
+                            status={accountingStatusTone(period.status)}
+                            label={labelizeEnum(period.status)}
                           />
                         </td>
                         <td data-label="Actions">
                           {canManageAccounting ? (
-                            <span className="table-actions commercial-table-actions">
-                              <button
-                                className="text-button"
-                                type="button"
-                                onClick={() => editAccount(account)}
-                              >
-                                <i className="bi bi-pencil" aria-hidden="true" />
-                                Edit
-                              </button>
-                              {account.active ? (
-                                <button
-                                  className="text-button danger-text"
-                                  type="button"
-                                  onClick={() => handleDeactivateAccount(account.id)}
-                                >
-                                  <i className="bi bi-pause-circle" aria-hidden="true" />
-                                  Deactivate
-                                </button>
-                              ) : null}
-                            </span>
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => editPeriod(period)}
+                            >
+                              <i className="bi bi-pencil" aria-hidden="true" />
+                              Edit
+                            </button>
                           ) : (
                             'Read only'
                           )}
@@ -4550,343 +4294,208 @@ function AccountingPage({
                   </tbody>
                 </table>
               </div>
-            )}
-          </section>
-        </div>
-      ) : null}
-
-      {activeTab === 'periods' ? (
-        <div className="accounting-two-column">
-          <section className="panel-card accounting-form-panel">
-            <PanelHeader icon="bi-calendar-range" title="Financial Period" tone="purple" />
-            {!canManageAccounting ? (
-              <EmptyState
-                icon="bi-lock"
-                title="Read-only periods"
-                detail="Accounting management permission is required to change periods."
-              />
-            ) : (
-              <form className="record-form" onSubmit={handlePeriodSubmit}>
-                <label className="field-stack wide-field">
-                  <span>Name</span>
-                  <input
-                    required
-                    maxLength={120}
-                    value={periodForm.name}
-                    onChange={(event) =>
-                      setPeriodForm((current) => ({ ...current, name: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Start</span>
-                  <input
-                    required
-                    type="date"
-                    value={periodForm.periodStart}
-                    onChange={(event) =>
-                      setPeriodForm((current) => ({
-                        ...current,
-                        periodStart: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>End</span>
-                  <input
-                    required
-                    type="date"
-                    value={periodForm.periodEnd}
-                    onChange={(event) =>
-                      setPeriodForm((current) => ({ ...current, periodEnd: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack wide-field">
-                  <span>Status</span>
-                  <select
-                    value={periodForm.status}
-                    onChange={(event) =>
-                      setPeriodForm((current) => ({
-                        ...current,
-                        status: event.target.value as AccountingPeriodStatus,
-                      }))
-                    }
-                  >
-                    <option value="OPEN">Open</option>
-                    <option value="CLOSED">Closed</option>
-                    <option value="LOCKED">Locked</option>
-                  </select>
-                </label>
-                <div className="form-actions wide-field">
-                  <button
-                    className="primary-action compact-action"
-                    type="submit"
-                    disabled={savePeriodMutation.isPending}
-                  >
-                    <i className="bi bi-save" aria-hidden="true" />
-                    {savePeriodMutation.isPending ? 'Saving...' : 'Save Period'}
-                  </button>
-                  <button
-                    className="secondary-action compact-action"
-                    type="button"
-                    onClick={() => {
-                      setPeriodForm(defaultAccountingPeriodForm());
-                      setEditingPeriodId(null);
-                    }}
-                  >
-                    <i className="bi bi-x-circle" aria-hidden="true" />
-                    Clear
-                  </button>
-                </div>
-              </form>
-            )}
-          </section>
-
-          <section className="panel-card">
-            <PanelHeader icon="bi-calendar-check" title="Periods" tone="blue" />
-            <div className="responsive-table compact-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Range</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {periods.map((period) => (
-                    <tr key={period.id}>
-                      <td data-label="Name">{period.name}</td>
-                      <td data-label="Range">
-                        {formatDateOnly(period.periodStart)} - {formatDateOnly(period.periodEnd)}
-                      </td>
-                      <td data-label="Status">
-                        <StatusPill
-                          status={accountingStatusTone(period.status)}
-                          label={labelizeEnum(period.status)}
-                        />
-                      </td>
-                      <td data-label="Actions">
-                        {canManageAccounting ? (
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => editPeriod(period)}
-                          >
-                            <i className="bi bi-pencil" aria-hidden="true" />
-                            Edit
-                          </button>
-                        ) : (
-                          'Read only'
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+            </section>
+          )}
         </div>
       ) : null}
 
       {activeTab === 'tax' ? (
-        <div className="accounting-two-column">
-          <section className="panel-card accounting-form-panel">
-            <PanelHeader icon="bi-percent" title="Tax Rule" tone="orange" />
-            {!canManageAccounting ? (
-              <EmptyState
-                icon="bi-lock"
-                title="Read-only tax rules"
-                detail="Accounting management permission is required to change tax rules."
-              />
-            ) : (
-              <form className="record-form" onSubmit={handleTaxRuleSubmit}>
-                <label className="field-stack">
-                  <span>Tax Code</span>
-                  <input
-                    required
-                    maxLength={40}
-                    value={taxRuleForm.taxCode}
-                    onChange={(event) =>
-                      setTaxRuleForm((current) => ({ ...current, taxCode: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Category</span>
-                  <input
-                    required
-                    maxLength={40}
-                    value={taxRuleForm.taxCategory}
-                    onChange={(event) =>
-                      setTaxRuleForm((current) => ({
-                        ...current,
-                        taxCategory: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-stack wide-field">
-                  <span>Name</span>
-                  <input
-                    required
-                    maxLength={120}
-                    value={taxRuleForm.name}
-                    onChange={(event) =>
-                      setTaxRuleForm((current) => ({ ...current, name: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Rate %</span>
-                  <input
-                    required
-                    min="0"
-                    step="0.01"
-                    type="number"
-                    value={taxRuleForm.rate}
-                    onChange={(event) =>
-                      setTaxRuleForm((current) => ({
-                        ...current,
-                        rate: Number(event.target.value),
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Effective From</span>
-                  <input
-                    required
-                    type="date"
-                    value={taxRuleForm.effectiveFrom}
-                    onChange={(event) =>
-                      setTaxRuleForm((current) => ({
-                        ...current,
-                        effectiveFrom: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Effective To</span>
-                  <input
-                    type="date"
-                    value={taxRuleForm.effectiveTo}
-                    onChange={(event) =>
-                      setTaxRuleForm((current) => ({
-                        ...current,
-                        effectiveTo: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="toggle-row">
-                  <input
-                    type="checkbox"
-                    checked={taxRuleForm.inclusive}
-                    onChange={(event) =>
-                      setTaxRuleForm((current) => ({
-                        ...current,
-                        inclusive: event.target.checked,
-                      }))
-                    }
-                  />
-                  <span>Inclusive tax</span>
-                </label>
-                <label className="toggle-row wide-field">
-                  <input
-                    type="checkbox"
-                    checked={taxRuleForm.active}
-                    onChange={(event) =>
-                      setTaxRuleForm((current) => ({
-                        ...current,
-                        active: event.target.checked,
-                      }))
-                    }
-                  />
-                  <span>Active rule</span>
-                </label>
-                <div className="form-actions wide-field">
-                  <button
-                    className="primary-action compact-action"
-                    type="submit"
-                    disabled={saveTaxRuleMutation.isPending}
-                  >
-                    <i className="bi bi-save" aria-hidden="true" />
-                    {saveTaxRuleMutation.isPending ? 'Saving...' : 'Save Tax Rule'}
-                  </button>
-                  <button
-                    className="secondary-action compact-action"
-                    type="button"
-                    onClick={() => {
-                      setTaxRuleForm(defaultAccountingTaxRuleForm());
-                      setEditingTaxRuleId(null);
-                    }}
-                  >
-                    <i className="bi bi-x-circle" aria-hidden="true" />
-                    Clear
-                  </button>
-                </div>
-              </form>
-            )}
-          </section>
-
-          <section className="panel-card">
-            <PanelHeader icon="bi-receipt-cutoff" title="Tax Rules" tone="blue" />
-            <div className="responsive-table compact-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Code</th>
-                    <th>Name</th>
-                    <th>Rate</th>
-                    <th>Effective</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {taxRules.map((rule) => (
-                    <tr key={rule.id}>
-                      <td data-label="Code">{rule.taxCode}</td>
-                      <td data-label="Name">
-                        <strong>{rule.name}</strong>
-                        <small>{rule.taxCategory}</small>
-                      </td>
-                      <td data-label="Rate">{formatPercentValue(rule.rate)}</td>
-                      <td data-label="Effective">
-                        {formatDateOnly(rule.effectiveFrom)}
-                        {rule.effectiveTo ? ` - ${formatDateOnly(rule.effectiveTo)}` : ''}
-                      </td>
-                      <td data-label="Status">
-                        <StatusPill
-                          status={rule.active ? 'posted' : 'pending'}
-                          label={rule.active ? 'Active' : 'Inactive'}
-                        />
-                      </td>
-                      <td data-label="Actions">
-                        {canManageAccounting ? (
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => editTaxRule(rule)}
-                          >
-                            <i className="bi bi-pencil" aria-hidden="true" />
-                            Edit
-                          </button>
-                        ) : (
-                          'Read only'
-                        )}
-                      </td>
+        <div className="accounting-section">
+          {showEditor ? (
+            <section className="panel-card accounting-form-panel">
+              <PanelHeader icon="bi-percent" title="Tax Rule" tone="orange" />
+              {!canManageAccounting ? (
+                <EmptyState
+                  icon="bi-lock"
+                  title="Read-only tax rules"
+                  detail="Accounting management permission is required to change tax rules."
+                />
+              ) : (
+                <form className="record-form" onSubmit={handleTaxRuleSubmit}>
+                  <label className="field-stack">
+                    <span>Tax Code</span>
+                    <input
+                      required
+                      maxLength={40}
+                      value={taxRuleForm.taxCode}
+                      onChange={(event) =>
+                        setTaxRuleForm((current) => ({ ...current, taxCode: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack">
+                    <span>Category</span>
+                    <input
+                      required
+                      maxLength={40}
+                      value={taxRuleForm.taxCategory}
+                      onChange={(event) =>
+                        setTaxRuleForm((current) => ({
+                          ...current,
+                          taxCategory: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack wide-field">
+                    <span>Name</span>
+                    <input
+                      required
+                      maxLength={120}
+                      value={taxRuleForm.name}
+                      onChange={(event) =>
+                        setTaxRuleForm((current) => ({ ...current, name: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack">
+                    <span>Rate %</span>
+                    <input
+                      required
+                      min="0"
+                      step="0.01"
+                      type="number"
+                      value={taxRuleForm.rate}
+                      onChange={(event) =>
+                        setTaxRuleForm((current) => ({
+                          ...current,
+                          rate: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack">
+                    <span>Effective From</span>
+                    <input
+                      required
+                      type="date"
+                      value={taxRuleForm.effectiveFrom}
+                      onChange={(event) =>
+                        setTaxRuleForm((current) => ({
+                          ...current,
+                          effectiveFrom: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="field-stack">
+                    <span>Effective To</span>
+                    <input
+                      type="date"
+                      value={taxRuleForm.effectiveTo}
+                      onChange={(event) =>
+                        setTaxRuleForm((current) => ({
+                          ...current,
+                          effectiveTo: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="toggle-row">
+                    <input
+                      type="checkbox"
+                      checked={taxRuleForm.inclusive}
+                      onChange={(event) =>
+                        setTaxRuleForm((current) => ({
+                          ...current,
+                          inclusive: event.target.checked,
+                        }))
+                      }
+                    />
+                    <span>Inclusive tax</span>
+                  </label>
+                  <label className="toggle-row wide-field">
+                    <input
+                      type="checkbox"
+                      checked={taxRuleForm.active}
+                      onChange={(event) =>
+                        setTaxRuleForm((current) => ({
+                          ...current,
+                          active: event.target.checked,
+                        }))
+                      }
+                    />
+                    <span>Active rule</span>
+                  </label>
+                  <div className="form-actions wide-field">
+                    <button
+                      className="primary-action compact-action"
+                      type="submit"
+                      disabled={saveTaxRuleMutation.isPending}
+                    >
+                      <i className="bi bi-save" aria-hidden="true" />
+                      {saveTaxRuleMutation.isPending ? 'Saving...' : 'Save Tax Rule'}
+                    </button>
+                    <button
+                      className="secondary-action compact-action"
+                      type="button"
+                      onClick={() => {
+                        setTaxRuleForm(defaultAccountingTaxRuleForm());
+                        setEditingTaxRuleId(null);
+                      }}
+                    >
+                      <i className="bi bi-x-circle" aria-hidden="true" />
+                      Clear
+                    </button>
+                  </div>
+                </form>
+              )}
+            </section>
+          ) : (
+            <section className="panel-card">
+              <PanelHeader icon="bi-receipt-cutoff" title="Tax Rules" tone="blue" />
+              <div className="responsive-table compact-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Code</th>
+                      <th>Name</th>
+                      <th>Rate</th>
+                      <th>Effective</th>
+                      <th>Status</th>
+                      <th>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                  </thead>
+                  <tbody>
+                    {taxRules.map((rule) => (
+                      <tr key={rule.id}>
+                        <td data-label="Code">{rule.taxCode}</td>
+                        <td data-label="Name">
+                          <strong>{rule.name}</strong>
+                          <small>{rule.taxCategory}</small>
+                        </td>
+                        <td data-label="Rate">{formatPercentValue(rule.rate)}</td>
+                        <td data-label="Effective">
+                          {formatDateOnly(rule.effectiveFrom)}
+                          {rule.effectiveTo ? ` - ${formatDateOnly(rule.effectiveTo)}` : ''}
+                        </td>
+                        <td data-label="Status">
+                          <StatusPill
+                            status={rule.active ? 'posted' : 'pending'}
+                            label={rule.active ? 'Active' : 'Inactive'}
+                          />
+                        </td>
+                        <td data-label="Actions">
+                          {canManageAccounting ? (
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => editTaxRule(rule)}
+                            >
+                              <i className="bi bi-pencil" aria-hidden="true" />
+                              Edit
+                            </button>
+                          ) : (
+                            'Read only'
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
         </div>
       ) : null}
 
@@ -5089,7 +4698,10 @@ function monthStartInputValue() {
 }
 
 function accountingJournalFormTotals(form: AccountingJournalFormState) {
-  const debit = form.lines.reduce((total, line) => total + Math.max(0, toNumber(line.debitAmount)), 0);
+  const debit = form.lines.reduce(
+    (total, line) => total + Math.max(0, toNumber(line.debitAmount)),
+    0,
+  );
   const credit = form.lines.reduce(
     (total, line) => total + Math.max(0, toNumber(line.creditAmount)),
     0,
@@ -5104,6 +4716,9 @@ function validateAccountingJournalForm(form: AccountingJournalFormState) {
   const meaningfulLines = form.lines.filter((line) => line.accountId);
   if (meaningfulLines.length < 2) {
     return 'Select at least two journal accounts.';
+  }
+  if (new Set(meaningfulLines.map((line) => line.accountId)).size < 2) {
+    return 'Choose at least two different accounts for the journal entry.';
   }
   const invalidLine = meaningfulLines.find((line) => {
     const debit = Math.max(0, toNumber(line.debitAmount));
@@ -5254,7 +4869,7 @@ function ProcurementPage({
   const suppliersQuery = useQuery({ queryKey: ['suppliers'], queryFn: getSuppliers });
   const products = productsQuery.data ?? [];
   const suppliers = suppliersQuery.data ?? [];
-  const activeProducts = products.filter((product) => product.status === 'ACTIVE');
+  const activeProducts = products.filter(isSellableProduct);
   const activeSuppliers = suppliers.filter((supplier) => supplier.status === 'ACTIVE');
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderDocument[]>(() =>
     loadPurchaseOrders(),
@@ -5262,13 +4877,10 @@ function ProcurementPage({
   const [initialSharedPurchaseOrder] = useState<PurchaseOrderDocument | null>(() =>
     parsePurchaseOrderFromUrl(organization, branches),
   );
-  const [draft, setDraft] = useState<PurchaseOrderDocument>(() =>
-    initialSharedPurchaseOrder ??
-    createPurchaseOrderDocument(
-      organization,
-      branches,
-      nextPurchaseOrderNumber(purchaseOrders),
-    ),
+  const [draft, setDraft] = useState<PurchaseOrderDocument>(
+    () =>
+      initialSharedPurchaseOrder ??
+      createPurchaseOrderDocument(organization, branches, nextPurchaseOrderNumber(purchaseOrders)),
   );
   const [selectedPurchaseOrderId, setSelectedPurchaseOrderId] = useState<string | null>(
     initialSharedPurchaseOrder?.id ?? null,
@@ -5278,16 +4890,56 @@ function ProcurementPage({
   );
   const [error, setError] = useState('');
   const [shareLink, setShareLink] = useState('');
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [purchaseAddQuantity, setPurchaseAddQuantity] = useState('1');
+  const purchasePreviewPanel = useRef<HTMLElement>(null);
 
   useEffect(() => {
     savePurchaseOrders(purchaseOrders);
   }, [purchaseOrders]);
+
+  useEffect(() => {
+    if (!isPreviewOpen) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusable = () =>
+      [
+        ...(purchasePreviewPanel.current?.querySelectorAll<HTMLElement>('button, a[href]') ?? []),
+      ].filter((element) => element.getClientRects().length > 0);
+    purchasePreviewPanel.current
+      ?.querySelector<HTMLButtonElement>('[aria-label="Close purchase order preview"]')
+      ?.focus({ preventScroll: true });
+    function handlePreviewKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setIsPreviewOpen(false);
+      }
+      if (event.key !== 'Tab') return;
+      const targets = focusable();
+      if (!targets.length) return;
+      if (event.shiftKey && document.activeElement === targets[0]) {
+        event.preventDefault();
+        targets[targets.length - 1].focus();
+      } else if (!event.shiftKey && document.activeElement === targets[targets.length - 1]) {
+        event.preventDefault();
+        targets[0].focus();
+      }
+    }
+    window.addEventListener('keydown', handlePreviewKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handlePreviewKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus({ preventScroll: true });
+    };
+  }, [isPreviewOpen]);
 
   const title = summaryQuery.data?.title ?? 'Procurement';
   const description =
     summaryQuery.data?.description ??
     'Generate purchase orders for supplier restocking and share them for fulfillment.';
   const totals = purchaseOrderTotals(draft);
+  const purchaseItemLines = draft.lines.filter((line) => !isBlankPurchaseOrderLine(line));
   const savedPurchaseOrder = purchaseOrders.find((order) => order.id === selectedPurchaseOrderId);
   const recentWorkItems = summaryQuery.data?.workItems ?? [];
   const metrics = procurementMetricsFromPurchaseOrders(
@@ -5338,50 +4990,34 @@ function ProcurementPage({
   ) {
     setDraft((current) => ({
       ...current,
-      lines: current.lines.map((line) =>
-        line.id === lineId ? { ...line, [field]: value } : line,
-      ),
+      lines: current.lines.map((line) => (line.id === lineId ? { ...line, [field]: value } : line)),
       updatedAt: new Date().toISOString(),
     }));
     setError('');
   }
 
-  function selectLineProduct(lineId: string, productId: string, product?: Product) {
+  function addProductLine(product?: Product) {
+    if (product == null) {
+      return;
+    }
+
+    const requestedQuantity = toNumber(purchaseAddQuantity);
+    if (requestedQuantity <= 0) {
+      setError('Enter a quantity greater than zero before adding a product.');
+      return;
+    }
+
+    const nextLine = {
+      ...createPurchaseOrderLineFromProduct(product),
+      quantity: String(requestedQuantity),
+    };
     setDraft((current) => ({
       ...current,
-      lines: current.lines.map((line) => {
-        if (line.id !== lineId) {
-          return line;
-        }
-
-        return {
-          ...line,
-          productId,
-          description: product?.name ?? '',
-          sku: product?.sku ?? '',
-          unitPrice:
-            product == null
-              ? line.unitPrice
-              : String(product.costPrice ?? product.unitPrice ?? toNumber(line.unitPrice)),
-          taxRate:
-            product == null
-              ? line.taxRate
-              : product.vatCategory === 'A'
-                ? '16'
-                : '0',
-        };
-      }),
+      lines: addProductToPurchaseOrderLines(current.lines, nextLine),
       updatedAt: new Date().toISOString(),
     }));
+    setPurchaseAddQuantity('1');
     setError('');
-  }
-
-  function addLineItem() {
-    setDraft((current) => ({
-      ...current,
-      lines: [...current.lines, createPurchaseOrderLine()],
-      updatedAt: new Date().toISOString(),
-    }));
   }
 
   function removeLineItem(lineId: string) {
@@ -5443,7 +5079,7 @@ function ProcurementPage({
     }
   }
 
-  function emailPurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
+  async function emailPurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
     const normalizedPurchaseOrder = normalizePurchaseOrder(purchaseOrder);
     const validationError = validatePurchaseOrder(normalizedPurchaseOrder);
     if (validationError) {
@@ -5451,13 +5087,34 @@ function ProcurementPage({
       setMessage('');
       return;
     }
+    if (!normalizedPurchaseOrder.supplierEmail.trim()) {
+      setError('Enter a supplier email before sending this purchase order.');
+      setMessage('');
+      return;
+    }
 
-    const link = purchaseOrderShareUrl(normalizedPurchaseOrder);
-    setShareLink(link);
-    window.location.href = purchaseOrderEmailUrl(normalizedPurchaseOrder, link, organization);
+    setError('');
+    setMessage('Sending purchase order PDF by email...');
+    try {
+      const pdfFile = createPurchaseOrderPdfFile(normalizedPurchaseOrder, organization);
+      await sendDocumentEmail({
+        to: normalizedPurchaseOrder.supplierEmail.trim(),
+        from: normalizedPurchaseOrder.orderedByEmail.trim() || undefined,
+        subject: purchaseOrderEmailSubject(normalizedPurchaseOrder, organization),
+        message: purchaseOrderEmailMessage(normalizedPurchaseOrder, organization),
+        attachmentFileName: pdfFile.name,
+        attachmentContentBase64: await blobToBase64(pdfFile),
+      });
+      setMessage(`Purchase order ${normalizedPurchaseOrder.purchaseOrderNumber} emailed as PDF.`);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error ? caughtError.message : 'Unable to email purchase order',
+      );
+      setMessage('');
+    }
   }
 
-  function whatsappPurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
+  async function whatsappPurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
     const normalizedPurchaseOrder = normalizePurchaseOrder(purchaseOrder);
     const validationError = validatePurchaseOrder(normalizedPurchaseOrder);
     if (validationError) {
@@ -5473,18 +5130,38 @@ function ProcurementPage({
       return;
     }
 
-    const link = purchaseOrderShareUrl(normalizedPurchaseOrder);
-    setShareLink(link);
     setError('');
-    setMessage('Opening WhatsApp with the purchase order message.');
-    window.open(purchaseOrderWhatsAppUrl(normalizedPurchaseOrder, link, organization), '_blank', 'noopener,noreferrer');
+    setMessage('Preparing purchase order PDF for WhatsApp.');
+    const pdfFile = createPurchaseOrderPdfFile(normalizedPurchaseOrder, organization);
+    const shared = await sharePdfFile(
+      pdfFile,
+      purchaseOrderWhatsAppText(normalizedPurchaseOrder, organization),
+      `Purchase Order ${normalizedPurchaseOrder.purchaseOrderNumber}`,
+    );
+    if (shared) {
+      setMessage('Purchase order PDF opened in your share sheet.');
+      return;
+    }
+
+    downloadBlob(pdfFile.name, pdfFile);
+    setMessage('PDF downloaded. Attach it in the WhatsApp chat that opens.');
+    window.open(
+      purchaseOrderWhatsAppUrl(normalizedPurchaseOrder, organization),
+      '_blank',
+      'noopener,noreferrer',
+    );
   }
 
   function printPurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
     setDraft(purchaseOrder);
     setSelectedPurchaseOrderId(purchaseOrder.id);
     setShareLink('');
-    window.setTimeout(() => window.print(), 80);
+    setIsPreviewOpen(true);
+    window.setTimeout(() => window.print(), 120);
+  }
+
+  function openPurchaseOrderPreview() {
+    setIsPreviewOpen(true);
   }
 
   return (
@@ -5493,7 +5170,11 @@ function ProcurementPage({
         title={title}
         subtitle={description}
         action={
-          <button className="primary-action compact-action" type="button" onClick={startPurchaseOrder}>
+          <button
+            className="primary-action compact-action"
+            type="button"
+            onClick={startPurchaseOrder}
+          >
             <i className="bi bi-file-earmark-plus" aria-hidden="true" />
             New Purchase Order
           </button>
@@ -5514,9 +5195,42 @@ function ProcurementPage({
         ))}
       </div>
 
+      <div className="procurement-mobile-toolbar" aria-label="Purchase order shortcuts">
+        <button type="button" className="active" onClick={openPurchaseOrderPreview}>
+          <i className="bi bi-eye" aria-hidden="true" />
+          Preview
+        </button>
+        <button type="button" onClick={() => sharePurchaseOrder(draft)}>
+          <i className="bi bi-link-45deg" aria-hidden="true" />
+          Link
+        </button>
+        <button type="button" onClick={() => whatsappPurchaseOrder(draft)}>
+          <i className="bi bi-whatsapp" aria-hidden="true" />
+          WhatsApp
+        </button>
+        <button type="button" onClick={() => printPurchaseOrder(draft)}>
+          <i className="bi bi-printer" aria-hidden="true" />
+          Print
+        </button>
+      </div>
+
       <div className="commercial-layout procurement-layout">
         <section className="panel-card commercial-builder-panel procurement-builder-panel">
-          <PanelHeader icon="bi-pencil-square" title="Purchase Order Builder" tone="blue" />
+          <PanelHeader
+            icon="bi-pencil-square"
+            title="Purchase Order Builder"
+            tone="blue"
+            action={
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                onClick={openPurchaseOrderPreview}
+              >
+                <i className="bi bi-eye" aria-hidden="true" />
+                Preview
+              </button>
+            }
+          />
           <form
             className="record-form commercial-form procurement-form"
             onSubmit={(event) => {
@@ -5524,257 +5238,299 @@ function ProcurementPage({
               savePurchaseOrder();
             }}
           >
-            <label className="field-stack">
-              <span>P.O Number</span>
-              <input
-                required
-                maxLength={24}
-                value={draft.purchaseOrderNumber}
-                onChange={(event) => updateDraftField('purchaseOrderNumber', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>Status</span>
-              <select
-                value={draft.status}
-                onChange={(event) => updateDraftField('status', event.target.value)}
-              >
-                {purchaseOrderStatusOptions().map((status) => (
-                  <option key={status} value={status}>
-                    {labelizeEnum(status)}
+            <div className="procurement-meta-grid wide-field">
+              <label className="field-stack">
+                <span>P.O Number</span>
+                <input
+                  required
+                  maxLength={24}
+                  value={draft.purchaseOrderNumber}
+                  onChange={(event) => updateDraftField('purchaseOrderNumber', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Status</span>
+                <select
+                  value={draft.status}
+                  onChange={(event) => updateDraftField('status', event.target.value)}
+                >
+                  {purchaseOrderStatusOptions().map((status) => (
+                    <option key={status} value={status}>
+                      {labelizeEnum(status)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack procurement-supplier-field procurement-meta-span-2">
+                <span>Supplier</span>
+                <select
+                  required
+                  disabled={suppliersQuery.isPending || activeSuppliers.length === 0}
+                  value={draft.supplierId}
+                  onChange={(event) => selectSupplier(event.target.value)}
+                >
+                  <option value="">
+                    {suppliersQuery.isPending
+                      ? 'Loading suppliers...'
+                      : activeSuppliers.length === 0
+                        ? 'Add an active supplier first'
+                        : 'Select supplier'}
                   </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Supplier</span>
-              <select
-                required
-                disabled={suppliersQuery.isPending || activeSuppliers.length === 0}
-                value={draft.supplierId}
-                onChange={(event) => selectSupplier(event.target.value)}
-              >
-                <option value="">
-                  {suppliersQuery.isPending
-                    ? 'Loading suppliers...'
-                    : activeSuppliers.length === 0
-                      ? 'Add an active supplier first'
-                      : 'Select supplier'}
-                </option>
-                {activeSuppliers.map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>
-                    {supplier.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Supplier Email</span>
-              <input
-                type="email"
-                maxLength={120}
-                value={draft.supplierEmail}
-                onChange={(event) => updateDraftField('supplierEmail', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>Supplier WhatsApp</span>
-              <input
-                inputMode="tel"
-                maxLength={32}
-                placeholder="+254..."
-                value={draft.supplierPhone}
-                onChange={(event) => updateDraftField('supplierPhone', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>Issue Date</span>
-              <input
-                required
-                type="date"
-                value={draft.issueDate}
-                onChange={(event) => updateDraftField('issueDate', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>Delivery Date</span>
-              <input
-                required
-                type="date"
-                value={draft.deliveryDate}
-                onChange={(event) => updateDraftField('deliveryDate', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>Delivery Fee</span>
-              <input
-                min="0"
-                step="0.01"
-                type="number"
-                value={draft.deliveryFee}
-                onChange={(event) => updateDraftField('deliveryFee', event.target.value)}
-              />
-            </label>
-            <label className="field-stack wide-field">
-              <span>Supplier Address</span>
-              <textarea
-                maxLength={220}
-                value={draft.supplierAddress}
-                onChange={(event) => updateDraftField('supplierAddress', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>Ordered By</span>
-              <input
-                required
-                maxLength={90}
-                value={draft.orderedByName}
-                onChange={(event) => updateDraftField('orderedByName', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>Procurement Email</span>
-              <input
-                type="email"
-                maxLength={120}
-                value={draft.orderedByEmail}
-                onChange={(event) => updateDraftField('orderedByEmail', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>Delivery Location</span>
-              <input
-                maxLength={90}
-                value={draft.deliveryLocationName}
-                onChange={(event) => updateDraftField('deliveryLocationName', event.target.value)}
-              />
-            </label>
-            <label className="field-stack wide-field">
-              <span>Delivery Address</span>
-              <textarea
-                maxLength={240}
-                value={draft.deliveryAddress}
-                onChange={(event) => updateDraftField('deliveryAddress', event.target.value)}
-              />
-            </label>
-            <label className="field-stack wide-field">
-              <span>Summary</span>
-              <textarea
-                maxLength={240}
-                value={draft.summary}
-                onChange={(event) => updateDraftField('summary', event.target.value)}
-              />
-            </label>
+                  {activeSuppliers.map((supplier) => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack">
+                <span>Issue Date</span>
+                <input
+                  required
+                  type="date"
+                  value={draft.issueDate}
+                  onChange={(event) => updateDraftField('issueDate', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Delivery Date</span>
+                <input
+                  required
+                  type="date"
+                  value={draft.deliveryDate}
+                  onChange={(event) => updateDraftField('deliveryDate', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Delivery Fee</span>
+                <input
+                  min="0"
+                  step="0.01"
+                  type="number"
+                  value={draft.deliveryFee}
+                  onChange={(event) => updateDraftField('deliveryFee', event.target.value)}
+                />
+              </label>
+            </div>
 
             <div className="procurement-lines-editor wide-field">
-              <div className="commercial-section-heading">
-                <h3>Purchase Items</h3>
-                <button className="text-button" type="button" onClick={addLineItem}>
-                  <i className="bi bi-plus-lg" aria-hidden="true" />
-                  Add Line
-                </button>
+              <div className="commercial-section-heading procurement-line-heading">
+                <div>
+                  <h3>Purchase Items</h3>
+                  <p>
+                    {purchaseItemLines.length} {purchaseItemLines.length === 1 ? 'line' : 'lines'} -{' '}
+                    {formatMoney(totals.subtotal, organization.currencyCode)} subtotal
+                  </p>
+                </div>
+              </div>
+              <div className="field-stack procurement-product-add-field">
+                <span>Add product</span>
+                <div className="procurement-product-add-controls">
+                  <label className="procurement-add-quantity">
+                    <span>Qty</span>
+                    <input
+                      aria-label="Quantity before adding product"
+                      min="0.01"
+                      step="0.01"
+                      type="number"
+                      value={purchaseAddQuantity}
+                      onChange={(event) => setPurchaseAddQuantity(event.target.value)}
+                    />
+                  </label>
+                  <ProductSearchSelect
+                    disabled={productsQuery.isPending}
+                    emptyLabel={
+                      productsQuery.isPending
+                        ? 'Loading products...'
+                        : 'No active products available'
+                    }
+                    placeholder="Search product name, SKU, category, size, or color"
+                    products={activeProducts}
+                    selectLabel="Search products to add"
+                    value=""
+                    onChange={(_, product) => addProductLine(product)}
+                  />
+                </div>
               </div>
               <div className="procurement-line-grid">
-                {draft.lines.map((line, index) => {
-                  const lineTotals = purchaseOrderLineTotals(line);
-                  return (
-                    <div className="procurement-line-row" key={line.id}>
-                      <div className="field-stack procurement-product-field">
-                        <span>Product</span>
-                        <ProductSearchSelect
-                          disabled={productsQuery.isPending}
-                          emptyLabel={
-                            productsQuery.isPending
-                              ? 'Loading products...'
-                              : 'No active products available'
-                          }
-                          products={activeProducts}
-                          selectLabel={`Product ${index + 1}`}
-                          value={line.productId}
-                          onChange={(productId, product) =>
-                            selectLineProduct(line.id, productId, product)
-                          }
-                        />
+                <div className="procurement-line-header" aria-hidden="true">
+                  <span>No.</span>
+                  <span>Product</span>
+                  <span>QTY</span>
+                  <span>Unit Price</span>
+                  <span>Total</span>
+                  <span />
+                </div>
+                {purchaseItemLines.length === 0 ? (
+                  <div className="procurement-line-empty">
+                    Search for a product above to add it to this purchase order.
+                  </div>
+                ) : (
+                  purchaseItemLines.map((line, index) => {
+                    const lineTotals = purchaseOrderLineTotals(line);
+                    const lineLabel = line.description || `item ${index + 1}`;
+                    return (
+                      <div className="procurement-line-row" key={line.id}>
+                        <div
+                          className="procurement-line-index"
+                          aria-label={`Purchase item ${index + 1}`}
+                        >
+                          <span>No.</span>
+                          <strong>{index + 1}</strong>
+                        </div>
+                        <div className="procurement-line-product-summary">
+                          <span className="visually-hidden">Product</span>
+                          <strong>{line.description}</strong>
+                        </div>
+                        <label className="procurement-line-input procurement-line-qty">
+                          <span className="visually-hidden">Quantity for {lineLabel}</span>
+                          <span className="procurement-mobile-field-label" aria-hidden="true">
+                            Quantity
+                          </span>
+                          <input
+                            min="0"
+                            step="0.01"
+                            type="number"
+                            value={line.quantity}
+                            onChange={(event) =>
+                              updateLineItem(line.id, 'quantity', event.target.value)
+                            }
+                          />
+                        </label>
+                        <label className="procurement-line-input procurement-line-unit">
+                          <span className="visually-hidden">Unit price for {lineLabel}</span>
+                          <span className="procurement-mobile-field-label" aria-hidden="true">
+                            Unit price
+                          </span>
+                          <input
+                            min="0"
+                            step="0.01"
+                            type="number"
+                            value={line.unitPrice}
+                            onChange={(event) =>
+                              updateLineItem(line.id, 'unitPrice', event.target.value)
+                            }
+                          />
+                        </label>
+                        <div className="commercial-line-total procurement-line-total">
+                          <span className="visually-hidden">Total for {lineLabel}</span>
+                          <span className="procurement-mobile-field-label" aria-hidden="true">
+                            Total
+                          </span>
+                          <strong>
+                            {formatMoney(lineTotals.total, organization.currencyCode)}
+                          </strong>
+                        </div>
+                        <button
+                          className="icon-button compact-icon procurement-line-remove"
+                          type="button"
+                          aria-label={`Remove ${lineLabel}`}
+                          onClick={() => removeLineItem(line.id)}
+                        >
+                          <i className="bi bi-trash" aria-hidden="true" />
+                        </button>
                       </div>
-                      <label className="field-stack">
-                        <span>Qty</span>
-                        <input
-                          min="0"
-                          step="0.01"
-                          type="number"
-                          value={line.quantity}
-                          onChange={(event) =>
-                            updateLineItem(line.id, 'quantity', event.target.value)
-                          }
-                        />
-                      </label>
-                      <label className="field-stack">
-                        <span>Unit Price</span>
-                        <input
-                          min="0"
-                          step="0.01"
-                          type="number"
-                          value={line.unitPrice}
-                          onChange={(event) =>
-                            updateLineItem(line.id, 'unitPrice', event.target.value)
-                          }
-                        />
-                      </label>
-                      <label className="field-stack">
-                        <span>Tax %</span>
-                        <input
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          type="number"
-                          value={line.taxRate}
-                          onChange={(event) =>
-                            updateLineItem(line.id, 'taxRate', event.target.value)
-                          }
-                        />
-                      </label>
-                      <div className="commercial-line-total">
-                        <span>Total</span>
-                        <strong>{formatMoney(lineTotals.total, organization.currencyCode)}</strong>
-                      </div>
-                      <button
-                        className="icon-button compact-icon"
-                        type="button"
-                        aria-label="Remove purchase item"
-                        onClick={() => removeLineItem(line.id)}
-                      >
-                        <i className="bi bi-trash" aria-hidden="true" />
-                      </button>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
 
-            <label className="field-stack wide-field">
-              <span>WhatsApp Message</span>
-              <textarea
-                maxLength={420}
-                value={draft.whatsappMessage}
-                onChange={(event) => updateDraftField('whatsappMessage', event.target.value)}
-              />
-            </label>
-            <label className="field-stack wide-field">
-              <span>Terms & Delivery Notes</span>
-              <textarea
-                maxLength={420}
-                value={draft.terms}
-                onChange={(event) => updateDraftField('terms', event.target.value)}
-              />
-            </label>
-            <label className="field-stack wide-field">
-              <span>Internal Notes</span>
-              <textarea
-                maxLength={360}
-                value={draft.notes}
-                onChange={(event) => updateDraftField('notes', event.target.value)}
-              />
-            </label>
+            <div className="procurement-detail-grid wide-field">
+              <label className="field-stack">
+                <span>Supplier Email</span>
+                <input
+                  type="email"
+                  maxLength={120}
+                  value={draft.supplierEmail}
+                  onChange={(event) => updateDraftField('supplierEmail', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Supplier WhatsApp</span>
+                <input
+                  inputMode="tel"
+                  maxLength={32}
+                  placeholder="+254..."
+                  value={draft.supplierPhone}
+                  onChange={(event) => updateDraftField('supplierPhone', event.target.value)}
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Supplier Address</span>
+                <textarea
+                  maxLength={220}
+                  value={draft.supplierAddress}
+                  onChange={(event) => updateDraftField('supplierAddress', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Requester</span>
+                <input
+                  required
+                  maxLength={90}
+                  value={draft.orderedByName}
+                  onChange={(event) => updateDraftField('orderedByName', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Procurement Email</span>
+                <input
+                  type="email"
+                  maxLength={120}
+                  value={draft.orderedByEmail}
+                  onChange={(event) => updateDraftField('orderedByEmail', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Delivery Location</span>
+                <input
+                  maxLength={90}
+                  value={draft.deliveryLocationName}
+                  onChange={(event) => updateDraftField('deliveryLocationName', event.target.value)}
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Delivery Address</span>
+                <textarea
+                  maxLength={240}
+                  value={draft.deliveryAddress}
+                  onChange={(event) => updateDraftField('deliveryAddress', event.target.value)}
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Summary</span>
+                <textarea
+                  maxLength={240}
+                  value={draft.summary}
+                  onChange={(event) => updateDraftField('summary', event.target.value)}
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>WhatsApp Message</span>
+                <textarea
+                  maxLength={420}
+                  value={draft.whatsappMessage}
+                  onChange={(event) => updateDraftField('whatsappMessage', event.target.value)}
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Terms & Delivery Notes</span>
+                <textarea
+                  maxLength={420}
+                  value={draft.terms}
+                  onChange={(event) => updateDraftField('terms', event.target.value)}
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Internal Notes</span>
+                <textarea
+                  maxLength={360}
+                  value={draft.notes}
+                  onChange={(event) => updateDraftField('notes', event.target.value)}
+                />
+              </label>
+            </div>
 
             <div className="commercial-total-strip wide-field">
               <div>
@@ -5842,22 +5598,28 @@ function ProcurementPage({
             ) : null}
           </form>
         </section>
+      </div>
 
-        <section className="panel-card commercial-preview-panel procurement-preview-panel">
-          <PanelHeader
-            icon="bi-eye"
-            title="P.O Preview"
-            tone="purple"
-            action={
+      {isPreviewOpen ? (
+        <div
+          className="dialog-backdrop procurement-preview-dialog-backdrop"
+          role="presentation"
+          onMouseDown={() => setIsPreviewOpen(false)}
+        >
+          <section
+            aria-labelledby="procurement-preview-title"
+            aria-modal="true"
+            className="procurement-preview-dialog"
+            role="dialog"
+            ref={purchasePreviewPanel}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="dialog-header procurement-preview-dialog-header">
+              <div>
+                <span className="eyebrow">Purchase order preview</span>
+                <h2 id="procurement-preview-title">P.O Preview</h2>
+              </div>
               <div className="header-actions">
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  onClick={() => whatsappPurchaseOrder(draft)}
-                >
-                  <i className="bi bi-whatsapp" aria-hidden="true" />
-                  WhatsApp
-                </button>
                 <button
                   className="secondary-action compact-action"
                   type="button"
@@ -5875,13 +5637,21 @@ function ProcurementPage({
                   Print
                 </button>
               </div>
-            }
-          />
-          <div className="procurement-document-print-root">
-            <PurchaseOrderPreview purchaseOrder={draft} organization={organization} />
-          </div>
-        </section>
-      </div>
+              <button
+                className="icon-button compact-icon"
+                type="button"
+                aria-label="Close purchase order preview"
+                onClick={() => setIsPreviewOpen(false)}
+              >
+                <i className="bi bi-x-lg" aria-hidden="true" />
+              </button>
+            </header>
+            <div className="procurement-document-print-root">
+              <PurchaseOrderPreview purchaseOrder={draft} organization={organization} />
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       <section className="panel-card commercial-documents-panel">
         <PanelHeader
@@ -5903,95 +5673,161 @@ function ProcurementPage({
             detail="Saved purchase orders will appear here."
           />
         ) : (
-          <div className="responsive-table compact-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>P.O</th>
-                  <th>Supplier</th>
-                  <th>Status</th>
-                  <th>Total</th>
-                  <th>Delivery</th>
-                  <th>Updated</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {purchaseOrders.map((purchaseOrder) => {
-                  const orderTotals = purchaseOrderTotals(purchaseOrder);
-                  return (
-                    <tr key={purchaseOrder.id}>
-                      <td data-label="P.O">
-                        <span className="table-label">
-                          <i className="bi bi-clipboard-check" aria-hidden="true" />
-                          <span>
-                            <strong>{purchaseOrder.purchaseOrderNumber}</strong>
-                            <small>Purchase Order</small>
+          <>
+            <div className="commercial-document-card-list">
+              {purchaseOrders.map((purchaseOrder) => {
+                const orderTotals = purchaseOrderTotals(purchaseOrder);
+                return (
+                  <article className="commercial-document-card" key={`po-card-${purchaseOrder.id}`}>
+                    <header>
+                      <span className="commercial-document-card-icon">
+                        <i className="bi bi-clipboard-check" aria-hidden="true" />
+                      </span>
+                      <div>
+                        <strong>{purchaseOrder.purchaseOrderNumber}</strong>
+                        <small>Purchase Order</small>
+                      </div>
+                      <StatusPill
+                        label={labelizeEnum(purchaseOrder.status)}
+                        status={moduleStatusTone(purchaseOrder.status)}
+                      />
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>Supplier</dt>
+                        <dd>{purchaseOrder.supplierName || 'Supplier'}</dd>
+                      </div>
+                      <div>
+                        <dt>Total</dt>
+                        <dd>{formatMoney(orderTotals.total, organization.currencyCode)}</dd>
+                      </div>
+                      <div>
+                        <dt>Delivery</dt>
+                        <dd>{commercialFormatDate(purchaseOrder.deliveryDate)}</dd>
+                      </div>
+                      <div>
+                        <dt>Updated</dt>
+                        <dd>{formatDateTime(purchaseOrder.updatedAt)}</dd>
+                      </div>
+                    </dl>
+                    <div className="commercial-card-actions">
+                      <button type="button" onClick={() => loadPurchaseOrder(purchaseOrder)}>
+                        <i className="bi bi-pencil" aria-hidden="true" />
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => sharePurchaseOrder(purchaseOrder)}>
+                        <i className="bi bi-link-45deg" aria-hidden="true" />
+                        Link
+                      </button>
+                      <button type="button" onClick={() => emailPurchaseOrder(purchaseOrder)}>
+                        <i className="bi bi-envelope" aria-hidden="true" />
+                        Email
+                      </button>
+                      <button type="button" onClick={() => whatsappPurchaseOrder(purchaseOrder)}>
+                        <i className="bi bi-whatsapp" aria-hidden="true" />
+                        WhatsApp
+                      </button>
+                      <button type="button" onClick={() => printPurchaseOrder(purchaseOrder)}>
+                        <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
+                        PDF
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="responsive-table compact-table generated-documents-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>P.O</th>
+                    <th>Supplier</th>
+                    <th>Status</th>
+                    <th>Total</th>
+                    <th>Delivery</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {purchaseOrders.map((purchaseOrder) => {
+                    const orderTotals = purchaseOrderTotals(purchaseOrder);
+                    return (
+                      <tr key={purchaseOrder.id}>
+                        <td data-label="P.O">
+                          <span className="table-label">
+                            <i className="bi bi-clipboard-check" aria-hidden="true" />
+                            <span>
+                              <strong>{purchaseOrder.purchaseOrderNumber}</strong>
+                              <small>Purchase Order</small>
+                            </span>
                           </span>
-                        </span>
-                      </td>
-                      <td data-label="Supplier">{purchaseOrder.supplierName || 'Supplier'}</td>
-                      <td data-label="Status">
-                        <StatusPill
-                          label={labelizeEnum(purchaseOrder.status)}
-                          status={moduleStatusTone(purchaseOrder.status)}
-                        />
-                      </td>
-                      <td data-label="Total">
-                        {formatMoney(orderTotals.total, organization.currencyCode)}
-                      </td>
-                      <td data-label="Delivery">{commercialFormatDate(purchaseOrder.deliveryDate)}</td>
-                      <td data-label="Updated">{formatDateTime(purchaseOrder.updatedAt)}</td>
-                      <td data-label="Actions">
-                        <div className="table-actions commercial-table-actions">
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => loadPurchaseOrder(purchaseOrder)}
-                          >
-                            <i className="bi bi-pencil" aria-hidden="true" />
-                            Edit
-                          </button>
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => sharePurchaseOrder(purchaseOrder)}
-                          >
-                            <i className="bi bi-link-45deg" aria-hidden="true" />
-                            Link
-                          </button>
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => emailPurchaseOrder(purchaseOrder)}
-                          >
-                            <i className="bi bi-envelope" aria-hidden="true" />
-                            Email
-                          </button>
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => whatsappPurchaseOrder(purchaseOrder)}
-                          >
-                            <i className="bi bi-whatsapp" aria-hidden="true" />
-                            WhatsApp
-                          </button>
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => printPurchaseOrder(purchaseOrder)}
-                          >
-                            <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
-                            PDF
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </td>
+                        <td data-label="Supplier">{purchaseOrder.supplierName || 'Supplier'}</td>
+                        <td data-label="Status">
+                          <StatusPill
+                            label={labelizeEnum(purchaseOrder.status)}
+                            status={moduleStatusTone(purchaseOrder.status)}
+                          />
+                        </td>
+                        <td data-label="Total">
+                          {formatMoney(orderTotals.total, organization.currencyCode)}
+                        </td>
+                        <td data-label="Delivery">
+                          {commercialFormatDate(purchaseOrder.deliveryDate)}
+                        </td>
+                        <td data-label="Updated">{formatDateTime(purchaseOrder.updatedAt)}</td>
+                        <td data-label="Actions">
+                          <div className="table-actions commercial-table-actions">
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => loadPurchaseOrder(purchaseOrder)}
+                            >
+                              <i className="bi bi-pencil" aria-hidden="true" />
+                              Edit
+                            </button>
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => sharePurchaseOrder(purchaseOrder)}
+                            >
+                              <i className="bi bi-link-45deg" aria-hidden="true" />
+                              Link
+                            </button>
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => emailPurchaseOrder(purchaseOrder)}
+                            >
+                              <i className="bi bi-envelope" aria-hidden="true" />
+                              Email
+                            </button>
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => whatsappPurchaseOrder(purchaseOrder)}
+                            >
+                              <i className="bi bi-whatsapp" aria-hidden="true" />
+                              WhatsApp
+                            </button>
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => printPurchaseOrder(purchaseOrder)}
+                            >
+                              <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
+                              PDF
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 
@@ -6028,7 +5864,11 @@ function PurchaseOrderPreview({
       <div className="commercial-document-brandbar">
         <div className="commercial-document-brand">
           <strong>{organization.name}</strong>
-          <span>{organization.taxRegistrationNumber ? `PIN ${organization.taxRegistrationNumber}` : 'Procurement Desk'}</span>
+          <span>
+            {organization.taxRegistrationNumber
+              ? `PIN ${organization.taxRegistrationNumber}`
+              : 'Procurement Desk'}
+          </span>
         </div>
         <div>
           <strong>PURCHASE ORDER</strong>
@@ -6050,7 +5890,9 @@ function PurchaseOrderPreview({
           <span>Supplier</span>
           <strong>{purchaseOrder.supplierName || 'Supplier name'}</strong>
           {purchaseOrder.supplierAddress ? <p>{purchaseOrder.supplierAddress}</p> : null}
-          {purchaseOrder.supplierEmail ? <a href={`mailto:${purchaseOrder.supplierEmail}`}>{purchaseOrder.supplierEmail}</a> : null}
+          {purchaseOrder.supplierEmail ? (
+            <a href={`mailto:${purchaseOrder.supplierEmail}`}>{purchaseOrder.supplierEmail}</a>
+          ) : null}
           <span>Delivery Date</span>
           <strong>{commercialFormatDate(purchaseOrder.deliveryDate)}</strong>
         </div>
@@ -6058,7 +5900,9 @@ function PurchaseOrderPreview({
           <span>Ordered By</span>
           <strong>{purchaseOrder.orderedByName || organization.name}</strong>
           <p>{purchaseOrder.purchaseOrderNumber}</p>
-          {purchaseOrder.orderedByEmail ? <a href={`mailto:${purchaseOrder.orderedByEmail}`}>{purchaseOrder.orderedByEmail}</a> : null}
+          {purchaseOrder.orderedByEmail ? (
+            <a href={`mailto:${purchaseOrder.orderedByEmail}`}>{purchaseOrder.orderedByEmail}</a>
+          ) : null}
           <span>Delivery Location</span>
           <strong>{purchaseOrder.deliveryLocationName || `${organization.name} Warehouse`}</strong>
           {purchaseOrder.deliveryAddress ? <p>{purchaseOrder.deliveryAddress}</p> : null}
@@ -6067,34 +5911,29 @@ function PurchaseOrderPreview({
 
       <section className="commercial-document-items">
         <h3>Purchase Items</h3>
-        <table>
+        <table className="purchase-order-preview-items" aria-label="Purchase order items">
           <thead>
             <tr>
-              <th>Item Description</th>
+              <th>Product</th>
               <th>Qty</th>
-              <th>Unit Price ({organization.currencyCode})</th>
-              <th>Tax</th>
-              <th>Total ({organization.currencyCode})</th>
+              <th>Unit Price</th>
+              <th>Total</th>
             </tr>
           </thead>
           <tbody>
             {meaningfulLines.length === 0 ? (
               <tr>
-                <td colSpan={5}>Add products to complete this purchase order.</td>
+                <td colSpan={4}>Add products to complete this purchase order.</td>
               </tr>
             ) : (
               meaningfulLines.map((line) => {
                 const lineTotals = purchaseOrderLineTotals(line);
                 return (
                   <tr key={line.id}>
-                    <td>
-                      {line.description}
-                      {line.sku ? <small className="po-line-sku">SKU {line.sku}</small> : null}
-                    </td>
-                    <td>{formatQuantity(toNumber(line.quantity))}</td>
-                    <td>{formatWholeNumber(toNumber(line.unitPrice))}</td>
-                    <td>{commercialPercentLabel(line.taxRate)}</td>
-                    <td>{formatWholeNumber(lineTotals.total)}</td>
+                    <td data-label="Product">{line.description}</td>
+                    <td data-label="Quantity">{formatQuantity(toNumber(line.quantity))}</td>
+                    <td data-label="Unit price">{formatWholeNumber(toNumber(line.unitPrice))}</td>
+                    <td data-label="Total">{formatWholeNumber(lineTotals.total)}</td>
                   </tr>
                 );
               })
@@ -6124,7 +5963,10 @@ function PurchaseOrderPreview({
 
       <section className="commercial-document-notes purchase-order-terms">
         <h3>Terms & Delivery Notes</h3>
-        <p>{purchaseOrder.terms || 'Delivery should match the quantities, pricing, and product specifications listed in this purchase order.'}</p>
+        <p>
+          {purchaseOrder.terms ||
+            'Delivery should match the quantities, pricing, and product specifications listed in this purchase order.'}
+        </p>
       </section>
     </article>
   );
@@ -6150,14 +5992,15 @@ function createPurchaseOrderDocument(
     supplierAddress: '',
     issueDate: today,
     deliveryDate: addDaysInputValue(today, 7),
-    deliveryLocationName: locationName ? `${locationName} Warehouse` : `${organization.name} Warehouse`,
+    deliveryLocationName: locationName
+      ? `${locationName} Warehouse`
+      : `${organization.name} Warehouse`,
     deliveryAddress: '',
     orderedByName: organization.name,
     orderedByEmail: defaultProcurementEmail(organization),
     summary: `Authorised purchase order for goods and services, issued by ${organization.name}.`,
     deliveryFee: '0',
-    terms:
-      'Please confirm availability, delivery date, and final invoice details before dispatch.',
+    terms: 'Please confirm availability, delivery date, and final invoice details before dispatch.',
     whatsappMessage: defaultPurchaseOrderWhatsAppMessage(purchaseOrderNumber, organization),
     notes: '',
     lines: [createPurchaseOrderLine()],
@@ -6176,6 +6019,32 @@ function createPurchaseOrderLine(): PurchaseOrderLine {
     unitPrice: '0',
     taxRate: '16',
   };
+}
+
+function createPurchaseOrderLineFromProduct(product: Product): PurchaseOrderLine {
+  return {
+    ...createPurchaseOrderLine(),
+    productId: product.id,
+    description: product.name,
+    sku: product.sku ?? '',
+    unitPrice: String(product.costPrice ?? product.unitPrice ?? 0),
+    taxRate: product.vatCategory === 'A' ? '16' : '0',
+  };
+}
+
+function isBlankPurchaseOrderLine(line: PurchaseOrderLine) {
+  return !line.productId && !line.description.trim();
+}
+
+function addProductToPurchaseOrderLines(lines: PurchaseOrderLine[], nextLine: PurchaseOrderLine) {
+  const blankLineIndex = lines.findIndex(isBlankPurchaseOrderLine);
+  if (blankLineIndex < 0) {
+    return [...lines, nextLine];
+  }
+
+  return lines.map((line, index) =>
+    index === blankLineIndex ? { ...nextLine, id: line.id } : line,
+  );
 }
 
 function purchaseOrderStatusOptions() {
@@ -6225,9 +6094,11 @@ function procurementMetricsFromPurchaseOrders(
   draft: PurchaseOrderDocument,
   currencyCode: string,
 ) {
-  const draftTotals = purchaseOrderTotals(draft);
   const approvedCount = purchaseOrders.filter((order) =>
     ['APPROVED', 'SENT', 'PARTIALLY_RECEIVED'].includes(order.status),
+  ).length;
+  const receivedCount = purchaseOrders.filter((order) =>
+    ['PARTIALLY_RECEIVED', 'RECEIVED'].includes(order.status),
   ).length;
   const totalValue = purchaseOrders.reduce(
     (total, order) => total + purchaseOrderTotals(order).total,
@@ -6244,12 +6115,12 @@ function procurementMetricsFromPurchaseOrders(
       value: String(approvedCount),
     },
     {
-      label: 'Saved Value',
+      label: 'Spend To Date',
       value: formatMoney(totalValue, currencyCode),
     },
     {
-      label: 'Current P.O',
-      value: formatMoney(draftTotals.total, currencyCode),
+      label: 'Received',
+      value: String(receivedCount),
     },
   ];
 }
@@ -6437,11 +6308,7 @@ function encodePurchaseOrder(purchaseOrder: PurchaseOrderDocument) {
   bytes.forEach((byte) => {
     binary += String.fromCharCode(byte);
   });
-  return window
-    .btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
+  return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
 function decodePurchaseOrder(encodedPurchaseOrder: string) {
@@ -6456,49 +6323,46 @@ function decodePurchaseOrder(encodedPurchaseOrder: string) {
   }
 }
 
-function purchaseOrderEmailUrl(
+function purchaseOrderEmailSubject(
   purchaseOrder: PurchaseOrderDocument,
-  shareUrl: string,
+  organization: Organization,
+) {
+  return `Purchase Order ${purchaseOrder.purchaseOrderNumber} from ${organization.name}`;
+}
+
+function purchaseOrderEmailMessage(
+  purchaseOrder: PurchaseOrderDocument,
   organization: Organization,
 ) {
   const totals = purchaseOrderTotals(purchaseOrder);
-  const body = [
+  return [
     `Hello ${purchaseOrder.supplierName || 'there'},`,
     '',
     `${organization.name} has issued purchase order ${purchaseOrder.purchaseOrderNumber}.`,
     `Grand total: ${formatMoney(totals.total, organization.currencyCode)}`,
     `Delivery date: ${commercialFormatDate(purchaseOrder.deliveryDate)}`,
-    `Link: ${shareUrl}`,
     '',
     'Regards,',
     purchaseOrder.orderedByName || organization.name,
   ].join('\n');
-
-  return `mailto:${encodeURIComponent(
-    purchaseOrder.supplierEmail.trim(),
-  )}?subject=${encodeURIComponent(
-    `Purchase Order ${purchaseOrder.purchaseOrderNumber} from ${organization.name}`,
-  )}&body=${encodeURIComponent(body)}`;
 }
 
 function purchaseOrderWhatsAppUrl(
   purchaseOrder: PurchaseOrderDocument,
-  shareUrl: string,
   organization: Organization,
 ) {
   const phoneNumber = normalizeWhatsAppNumber(purchaseOrder.supplierPhone);
-  const text = purchaseOrderWhatsAppText(purchaseOrder, shareUrl, organization);
+  const text = purchaseOrderWhatsAppText(purchaseOrder, organization);
   return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(text)}`;
 }
 
 function purchaseOrderWhatsAppText(
   purchaseOrder: PurchaseOrderDocument,
-  shareUrl: string,
   organization: Organization,
 ) {
   const message = purchaseOrder.whatsappMessage.trim();
   if (message) {
-    return `${message}\n\n${shareUrl}`;
+    return message;
   }
 
   const totals = purchaseOrderTotals(purchaseOrder);
@@ -6507,7 +6371,7 @@ function purchaseOrderWhatsAppText(
     `${organization.name} has shared purchase order ${purchaseOrder.purchaseOrderNumber}.`,
     `Grand total: ${formatMoney(totals.total, organization.currencyCode)}`,
     `Delivery date: ${commercialFormatDate(purchaseOrder.deliveryDate)}`,
-    shareUrl,
+    'The PDF document is attached.',
   ].join('\n');
 }
 
@@ -6582,19 +6446,18 @@ function CommercialPage({ organization }: { organization: Organization }) {
     queryKey: ['commercial-summary'],
     queryFn: getCommercialSummary,
   });
-  const [documents, setDocuments] = useState<CommercialDocument[]>(() =>
-    loadCommercialDocuments(),
-  );
+  const [documents, setDocuments] = useState<CommercialDocument[]>(() => loadCommercialDocuments());
   const [initialSharedDocument] = useState<CommercialDocument | null>(() =>
     parseCommercialDocumentFromUrl(organization),
   );
-  const [draft, setDraft] = useState<CommercialDocument>(() =>
-    initialSharedDocument ??
-    createCommercialDocument(
-      organization,
-      'quotation',
-      nextCommercialDocumentNumber(documents, 'quotation'),
-    ),
+  const [draft, setDraft] = useState<CommercialDocument>(
+    () =>
+      initialSharedDocument ??
+      createCommercialDocument(
+        organization,
+        'invoice',
+        nextCommercialDocumentNumber(documents, 'invoice'),
+      ),
   );
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
     initialSharedDocument?.id ?? null,
@@ -6602,15 +6465,56 @@ function CommercialPage({ organization }: { organization: Organization }) {
   const [message, setMessage] = useState(initialSharedDocument ? 'Shared document loaded.' : '');
   const [error, setError] = useState('');
   const [shareLink, setShareLink] = useState('');
+  const [showMobilePreview, setShowMobilePreview] = useState(false);
+  const previewPanel = useRef<HTMLElement>(null);
+  const commercialFormId = useId();
+
+  useEffect(() => {
+    if (!showMobilePreview) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusable = () =>
+      [
+        ...(previewPanel.current?.querySelectorAll<HTMLElement>(
+          'button, a[href], input, select, textarea, [tabindex="0"]',
+        ) ?? []),
+      ].filter((element) => element.getClientRects().length > 0);
+    focusable()[0]?.focus({ preventScroll: true });
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setShowMobilePreview(false);
+      }
+      if (event.key !== 'Tab') return;
+      const targets = focusable();
+      if (!targets.length) return;
+      const first = targets[0];
+      const last = targets[targets.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+      previousFocus?.focus({ preventScroll: true });
+    };
+  }, [showMobilePreview]);
 
   useEffect(() => {
     saveCommercialDocuments(documents);
   }, [documents]);
 
-  const title = summaryQuery.data?.title ?? 'Quotations & Invoicing';
+  const title = summaryQuery.data?.title ?? 'Invoicing';
   const description =
     summaryQuery.data?.description ??
-    'Generate commercial documents, share them with customers, and save printable PDF copies.';
+    'Generate and share invoice documents with customers and save printable PDF copies.';
   const draftTotals = commercialDocumentTotals(draft);
   const metrics = commercialMetricsFromDocuments(documents, draft, organization.currencyCode);
   const savedDocument = documents.find((document) => document.id === selectedDocumentId);
@@ -6624,18 +6528,18 @@ function CommercialPage({ organization }: { organization: Organization }) {
     setError('');
   }
 
-  function handleDocumentTypeChange(type: CommercialDocumentType) {
+  function handleDocumentTypeChange() {
     setDraft((current) => {
-      if (current.type === type) {
+      if (current.type === 'invoice') {
         return current;
       }
 
       return {
         ...current,
-        type,
-        documentNumber: nextCommercialDocumentNumber(documents, type),
-        status: type === 'quotation' ? 'DRAFT' : 'UNPAID',
-        title: type === 'quotation' ? 'Service Quotation' : 'Customer Invoice',
+        type: 'invoice',
+        documentNumber: nextCommercialDocumentNumber(documents, 'invoice'),
+        status: 'UNPAID',
+        title: 'Customer Invoice',
         dueDate: addDaysInputValue(todayInputValue(), 14),
         validUntil: addDaysInputValue(todayInputValue(), 30),
         updatedAt: new Date().toISOString(),
@@ -6646,17 +6550,17 @@ function CommercialPage({ organization }: { organization: Organization }) {
     setError('');
   }
 
-  function startCommercialDocument(type: CommercialDocumentType) {
+  function startCommercialDocument() {
     const nextDocument = createCommercialDocument(
       organization,
-      type,
-      nextCommercialDocumentNumber(documents, type),
+      'invoice',
+      nextCommercialDocumentNumber(documents, 'invoice'),
     );
     setDraft(nextDocument);
     setSelectedDocumentId(null);
     setShareLink('');
     setError('');
-    setMessage(`New ${commercialDocumentLabel(type).toLowerCase()} draft started.`);
+    setMessage('New invoice draft started.');
   }
 
   function updateLineItem<K extends keyof CommercialLineItem>(
@@ -6666,9 +6570,7 @@ function CommercialPage({ organization }: { organization: Organization }) {
   ) {
     setDraft((current) => ({
       ...current,
-      lines: current.lines.map((line) =>
-        line.id === lineId ? { ...line, [field]: value } : line,
-      ),
+      lines: current.lines.map((line) => (line.id === lineId ? { ...line, [field]: value } : line)),
       updatedAt: new Date().toISOString(),
     }));
     setError('');
@@ -6710,7 +6612,9 @@ function CommercialPage({ organization }: { organization: Organization }) {
     setSelectedDocumentId(normalizedDocument.id);
     setShareLink('');
     setError('');
-    setMessage(`${commercialDocumentLabel(normalizedDocument.type)} ${normalizedDocument.documentNumber} saved.`);
+    setMessage(
+      `${commercialDocumentLabel(normalizedDocument.type)} ${normalizedDocument.documentNumber} saved.`,
+    );
   }
 
   function loadDocument(document: CommercialDocument) {
@@ -6741,14 +6645,42 @@ function CommercialPage({ organization }: { organization: Organization }) {
     }
   }
 
-  function emailDocument(document: CommercialDocument) {
+  async function emailDocument(document: CommercialDocument) {
     const normalizedDocument = normalizeCommercialDocument(document);
-    const link = commercialDocumentShareUrl(normalizedDocument);
-    setShareLink(link);
-    window.location.href = commercialDocumentEmailUrl(normalizedDocument, link, organization);
+    const validationError = validateCommercialDocument(normalizedDocument);
+    if (validationError) {
+      setError(validationError);
+      setMessage('');
+      return;
+    }
+    if (!normalizedDocument.customerEmail.trim()) {
+      setError('Enter a customer email before sending this invoice.');
+      setMessage('');
+      return;
+    }
+
+    setError('');
+    setMessage('Sending invoice PDF by email...');
+    try {
+      const pdfFile = createCommercialDocumentPdfFile(normalizedDocument, organization);
+      await sendDocumentEmail({
+        to: normalizedDocument.customerEmail.trim(),
+        from: normalizedDocument.preparedEmail.trim() || undefined,
+        subject: commercialDocumentEmailSubject(normalizedDocument, organization),
+        message: commercialDocumentEmailMessage(normalizedDocument, organization),
+        attachmentFileName: pdfFile.name,
+        attachmentContentBase64: await blobToBase64(pdfFile),
+      });
+      setMessage(
+        `${commercialDocumentLabel(normalizedDocument.type)} ${normalizedDocument.documentNumber} emailed as PDF.`,
+      );
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to email document');
+      setMessage('');
+    }
   }
 
-  function whatsappDocument(document: CommercialDocument) {
+  async function whatsappDocument(document: CommercialDocument) {
     const normalizedDocument = normalizeCommercialDocument(document);
     const validationError = validateCommercialDocument(normalizedDocument);
     if (validationError) {
@@ -6764,11 +6696,26 @@ function CommercialPage({ organization }: { organization: Organization }) {
       return;
     }
 
-    const link = commercialDocumentShareUrl(normalizedDocument);
-    setShareLink(link);
     setError('');
-    setMessage('Opening WhatsApp with the document message.');
-    window.open(commercialDocumentWhatsAppUrl(normalizedDocument, link, organization), '_blank', 'noopener,noreferrer');
+    setMessage('Preparing invoice PDF for WhatsApp.');
+    const pdfFile = createCommercialDocumentPdfFile(normalizedDocument, organization);
+    const shared = await sharePdfFile(
+      pdfFile,
+      commercialDocumentWhatsAppText(normalizedDocument, organization),
+      `${commercialDocumentLabel(normalizedDocument.type)} ${normalizedDocument.documentNumber}`,
+    );
+    if (shared) {
+      setMessage('Invoice PDF opened in your share sheet.');
+      return;
+    }
+
+    downloadBlob(pdfFile.name, pdfFile);
+    setMessage('PDF downloaded. Attach it in the WhatsApp chat that opens.');
+    window.open(
+      commercialDocumentWhatsAppUrl(normalizedDocument, organization),
+      '_blank',
+      'noopener,noreferrer',
+    );
   }
 
   function printDocument(document: CommercialDocument) {
@@ -6786,17 +6733,9 @@ function CommercialPage({ organization }: { organization: Organization }) {
         action={
           <div className="header-actions">
             <button
-              className="secondary-action compact-action"
-              type="button"
-              onClick={() => startCommercialDocument('quotation')}
-            >
-              <i className="bi bi-file-earmark-text" aria-hidden="true" />
-              New Quotation
-            </button>
-            <button
               className="primary-action compact-action"
               type="button"
-              onClick={() => startCommercialDocument('invoice')}
+              onClick={startCommercialDocument}
             >
               <i className="bi bi-receipt-cutoff" aria-hidden="true" />
               New Invoice
@@ -6821,74 +6760,45 @@ function CommercialPage({ organization }: { organization: Organization }) {
 
       <div className="commercial-layout">
         <section className="panel-card commercial-builder-panel">
-          <PanelHeader icon="bi-pencil-square" title="Document Builder" tone="blue" />
+          <PanelHeader
+            icon="bi-pencil-square"
+            title="Document Builder"
+            tone="blue"
+            action={
+              <button
+                className="secondary-action compact-action commercial-preview-toggle"
+                type="button"
+                onClick={() => setShowMobilePreview(true)}
+              >
+                <i className="bi bi-eye" aria-hidden="true" />
+                Preview
+              </button>
+            }
+          />
           <form
             className="record-form commercial-form"
+            id={commercialFormId}
             onSubmit={(event) => {
               event.preventDefault();
               saveDocument();
             }}
           >
-            <div className="commercial-type-toggle wide-field" role="group" aria-label="Document type">
-              <button
-                className={draft.type === 'quotation' ? 'active' : ''}
-                type="button"
-                onClick={() => handleDocumentTypeChange('quotation')}
-              >
-                <i className="bi bi-file-earmark-text" aria-hidden="true" />
-                Quotation
-              </button>
+            <div
+              className="commercial-type-toggle wide-field"
+              role="group"
+              aria-label="Document type"
+            >
               <button
                 className={draft.type === 'invoice' ? 'active' : ''}
                 type="button"
-                onClick={() => handleDocumentTypeChange('invoice')}
+                onClick={handleDocumentTypeChange}
               >
                 <i className="bi bi-receipt-cutoff" aria-hidden="true" />
                 Invoice
               </button>
             </div>
 
-            <label className="field-stack">
-              <span>Document No.</span>
-              <input
-                required
-                maxLength={24}
-                value={draft.documentNumber}
-                onChange={(event) => updateDraftField('documentNumber', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>Status</span>
-              <select
-                value={draft.status}
-                onChange={(event) => updateDraftField('status', event.target.value)}
-              >
-                {commercialStatusOptions(draft.type).map((status) => (
-                  <option key={status} value={status}>
-                    {labelizeEnum(status)}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className="field-stack wide-field">
-              <span>Title</span>
-              <input
-                required
-                maxLength={90}
-                value={draft.title}
-                onChange={(event) => updateDraftField('title', event.target.value)}
-              />
-            </label>
-            <label className="field-stack wide-field">
-              <span>Summary</span>
-              <textarea
-                maxLength={240}
-                value={draft.projectSummary}
-                onChange={(event) => updateDraftField('projectSummary', event.target.value)}
-              />
-            </label>
-
-            <label className="field-stack">
               <span>Customer Name</span>
               <input
                 required
@@ -6897,72 +6807,6 @@ function CommercialPage({ organization }: { organization: Organization }) {
                 onChange={(event) => updateDraftField('customerName', event.target.value)}
               />
             </label>
-            <label className="field-stack">
-              <span>Company</span>
-              <input
-                maxLength={90}
-                value={draft.customerCompany}
-                onChange={(event) => updateDraftField('customerCompany', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>Email</span>
-              <input
-                type="email"
-                maxLength={120}
-                value={draft.customerEmail}
-                onChange={(event) => updateDraftField('customerEmail', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>WhatsApp Number</span>
-              <input
-                inputMode="tel"
-                maxLength={32}
-                placeholder="+254..."
-                value={draft.customerPhone}
-                onChange={(event) => updateDraftField('customerPhone', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>Issue Date</span>
-              <input
-                required
-                type="date"
-                value={draft.issueDate}
-                onChange={(event) => updateDraftField('issueDate', event.target.value)}
-              />
-            </label>
-            <label className="field-stack">
-              <span>{draft.type === 'quotation' ? 'Valid Until' : 'Due Date'}</span>
-              <input
-                required
-                type="date"
-                value={draft.type === 'quotation' ? draft.validUntil : draft.dueDate}
-                onChange={(event) =>
-                  draft.type === 'quotation'
-                    ? updateDraftField('validUntil', event.target.value)
-                    : updateDraftField('dueDate', event.target.value)
-                }
-              />
-            </label>
-            <label className="field-stack">
-              <span>Payment Terms</span>
-              <input
-                maxLength={80}
-                value={draft.paymentTerms}
-                onChange={(event) => updateDraftField('paymentTerms', event.target.value)}
-              />
-            </label>
-            <label className="field-stack wide-field">
-              <span>Customer Address</span>
-              <textarea
-                maxLength={220}
-                value={draft.customerAddress}
-                onChange={(event) => updateDraftField('customerAddress', event.target.value)}
-              />
-            </label>
-
             <div className="commercial-lines-editor wide-field">
               <div className="commercial-section-heading">
                 <h3>Line Items</h3>
@@ -6972,10 +6816,22 @@ function CommercialPage({ organization }: { organization: Organization }) {
                 </button>
               </div>
               <div className="commercial-line-grid">
-                {draft.lines.map((line) => {
+                {draft.lines.map((line, index) => {
                   const lineTotals = commercialLineTotals(line);
+                  const lineNumber = index + 1;
                   return (
                     <div className="commercial-line-row" key={line.id}>
+                      <div className="commercial-line-row-header">
+                        <span>Line {lineNumber}</span>
+                        <button
+                          className="icon-button compact-icon"
+                          type="button"
+                          aria-label={`Remove line item ${lineNumber}`}
+                          onClick={() => removeLineItem(line.id)}
+                        >
+                          <i className="bi bi-trash" aria-hidden="true" />
+                        </button>
+                      </div>
                       <label className="field-stack commercial-line-description">
                         <span>Description</span>
                         <input
@@ -7010,38 +6866,43 @@ function CommercialPage({ organization }: { organization: Organization }) {
                           }
                         />
                       </label>
-                      <label className="field-stack commercial-line-discount">
-                        <span>Disc. %</span>
-                        <input
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          type="number"
-                          value={line.discountRate}
-                          onChange={(event) =>
-                            updateLineItem(line.id, 'discountRate', event.target.value)
-                          }
-                        />
-                      </label>
-                      <label className="field-stack commercial-line-tax">
-                        <span>Tax %</span>
-                        <input
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          type="number"
-                          value={line.taxRate}
-                          onChange={(event) =>
-                            updateLineItem(line.id, 'taxRate', event.target.value)
-                          }
-                        />
-                      </label>
+                      <CommercialFormSection
+                        title="Discount & tax"
+                        summary={`${line.discountRate || '0'}% discount · ${line.taxRate || '0'}% tax`}
+                      >
+                        <label className="field-stack commercial-line-discount">
+                          <span>Disc. %</span>
+                          <input
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            type="number"
+                            value={line.discountRate}
+                            onChange={(event) =>
+                              updateLineItem(line.id, 'discountRate', event.target.value)
+                            }
+                          />
+                        </label>
+                        <label className="field-stack commercial-line-tax">
+                          <span>Tax %</span>
+                          <input
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            type="number"
+                            value={line.taxRate}
+                            onChange={(event) =>
+                              updateLineItem(line.id, 'taxRate', event.target.value)
+                            }
+                          />
+                        </label>
+                      </CommercialFormSection>
                       <div className="commercial-line-total">
                         <span>Total</span>
                         <strong>{formatMoney(lineTotals.total, organization.currencyCode)}</strong>
                       </div>
                       <button
-                        className="icon-button compact-icon"
+                        className="icon-button compact-icon commercial-line-delete-button"
                         type="button"
                         aria-label="Remove line item"
                         onClick={() => removeLineItem(line.id)}
@@ -7054,79 +6915,205 @@ function CommercialPage({ organization }: { organization: Organization }) {
               </div>
             </div>
 
-            <div className="commercial-payment-grid wide-field">
+            <CommercialFormSection
+              title="Invoice details"
+              summary={`${draft.documentNumber} · ${labelizeEnum(draft.status)}`}
+            >
               <label className="field-stack">
-                <span>Deposit %</span>
+                <span>Document No.</span>
                 <input
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  type="number"
-                  value={draft.depositRate}
-                  onChange={(event) => updateDraftField('depositRate', event.target.value)}
+                  required
+                  maxLength={24}
+                  value={draft.documentNumber}
+                  onChange={(event) => updateDraftField('documentNumber', event.target.value)}
                 />
               </label>
               <label className="field-stack">
-                <span>Amount Paid</span>
+                <span>Status</span>
+                <select
+                  value={draft.status}
+                  onChange={(event) => updateDraftField('status', event.target.value)}
+                >
+                  {commercialStatusOptions(draft.type).map((status) => (
+                    <option key={status} value={status}>
+                      {labelizeEnum(status)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-stack wide-field">
+                <span>Title</span>
                 <input
-                  min="0"
-                  step="0.01"
-                  type="number"
-                  value={draft.amountPaid}
-                  onChange={(event) => updateDraftField('amountPaid', event.target.value)}
+                  required
+                  maxLength={90}
+                  value={draft.title}
+                  onChange={(event) => updateDraftField('title', event.target.value)}
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Summary</span>
+                <textarea
+                  maxLength={240}
+                  value={draft.projectSummary}
+                  onChange={(event) => updateDraftField('projectSummary', event.target.value)}
                 />
               </label>
               <label className="field-stack">
-                <span>Bank Name</span>
+                <span>Issue Date</span>
+                <input
+                  required
+                  type="date"
+                  value={draft.issueDate}
+                  onChange={(event) => updateDraftField('issueDate', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>{draft.type === 'quotation' ? 'Valid Until' : 'Due Date'}</span>
+                <input
+                  required
+                  type="date"
+                  value={draft.type === 'quotation' ? draft.validUntil : draft.dueDate}
+                  onChange={(event) =>
+                    draft.type === 'quotation'
+                      ? updateDraftField('validUntil', event.target.value)
+                      : updateDraftField('dueDate', event.target.value)
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Payment Terms</span>
                 <input
                   maxLength={80}
-                  value={draft.bankName}
-                  onChange={(event) => updateDraftField('bankName', event.target.value)}
+                  value={draft.paymentTerms}
+                  onChange={(event) => updateDraftField('paymentTerms', event.target.value)}
                 />
               </label>
-              <label className="field-stack">
-                <span>Account Name</span>
-                <input
-                  maxLength={80}
-                  value={draft.bankAccountName}
-                  onChange={(event) => updateDraftField('bankAccountName', event.target.value)}
-                />
-              </label>
-              <label className="field-stack">
-                <span>Account Number</span>
-                <input
-                  maxLength={60}
-                  value={draft.bankAccountNumber}
-                  onChange={(event) => updateDraftField('bankAccountNumber', event.target.value)}
-                />
-              </label>
-              <label className="field-stack">
-                <span>M-Pesa Paybill</span>
-                <input
-                  maxLength={40}
-                  value={draft.mpesaPaybill}
-                  onChange={(event) => updateDraftField('mpesaPaybill', event.target.value)}
-                />
-              </label>
-            </div>
+            </CommercialFormSection>
 
-            <label className="field-stack wide-field">
-              <span>WhatsApp Message</span>
-              <textarea
-                maxLength={420}
-                value={draft.whatsappMessage}
-                onChange={(event) => updateDraftField('whatsappMessage', event.target.value)}
-              />
-            </label>
+            <CommercialFormSection
+              title="Customer contact"
+              summary="Company, email, phone and address"
+            >
+              <label className="field-stack">
+                <span>Company</span>
+                <input
+                  maxLength={90}
+                  value={draft.customerCompany}
+                  onChange={(event) => updateDraftField('customerCompany', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Email</span>
+                <input
+                  type="email"
+                  maxLength={120}
+                  value={draft.customerEmail}
+                  onChange={(event) => updateDraftField('customerEmail', event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>WhatsApp Number</span>
+                <input
+                  inputMode="tel"
+                  maxLength={32}
+                  placeholder="+254..."
+                  value={draft.customerPhone}
+                  onChange={(event) => updateDraftField('customerPhone', event.target.value)}
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Customer Address</span>
+                <textarea
+                  maxLength={220}
+                  value={draft.customerAddress}
+                  onChange={(event) => updateDraftField('customerAddress', event.target.value)}
+                />
+              </label>
+            </CommercialFormSection>
 
-            <label className="field-stack wide-field">
-              <span>Notes</span>
-              <textarea
-                maxLength={360}
-                value={draft.notes}
-                onChange={(event) => updateDraftField('notes', event.target.value)}
-              />
-            </label>
+            <CommercialFormSection
+              title="Payment details"
+              summary="Deposit, amount paid, bank and M-Pesa"
+            >
+              <div className="commercial-payment-grid wide-field">
+                <label className="field-stack">
+                  <span>Deposit %</span>
+                  <input
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    type="number"
+                    value={draft.depositRate}
+                    onChange={(event) => updateDraftField('depositRate', event.target.value)}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Amount Paid</span>
+                  <input
+                    min="0"
+                    step="0.01"
+                    type="number"
+                    value={draft.amountPaid}
+                    onChange={(event) => updateDraftField('amountPaid', event.target.value)}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Bank Name</span>
+                  <input
+                    maxLength={80}
+                    value={draft.bankName}
+                    onChange={(event) => updateDraftField('bankName', event.target.value)}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Account Name</span>
+                  <input
+                    maxLength={80}
+                    value={draft.bankAccountName}
+                    onChange={(event) => updateDraftField('bankAccountName', event.target.value)}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Account Number</span>
+                  <input
+                    maxLength={60}
+                    value={draft.bankAccountNumber}
+                    onChange={(event) => updateDraftField('bankAccountNumber', event.target.value)}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>M-Pesa Paybill</span>
+                  <input
+                    maxLength={40}
+                    value={draft.mpesaPaybill}
+                    onChange={(event) => updateDraftField('mpesaPaybill', event.target.value)}
+                  />
+                </label>
+              </div>
+            </CommercialFormSection>
+
+            <CommercialFormSection
+              title="Notes & messages"
+              summary="Invoice notes and WhatsApp message"
+            >
+              <label className="field-stack wide-field">
+                <span>WhatsApp Message</span>
+                <textarea
+                  maxLength={420}
+                  value={draft.whatsappMessage}
+                  onChange={(event) => updateDraftField('whatsappMessage', event.target.value)}
+                />
+              </label>
+
+              <label className="field-stack wide-field">
+                <span>Notes</span>
+                <textarea
+                  maxLength={360}
+                  value={draft.notes}
+                  onChange={(event) => updateDraftField('notes', event.target.value)}
+                />
+              </label>
+            </CommercialFormSection>
 
             <div className="commercial-total-strip wide-field">
               <div>
@@ -7147,43 +7134,66 @@ function CommercialPage({ organization }: { organization: Organization }) {
               </div>
             </div>
 
-            <div className="form-actions wide-field">
-              <button className="primary-action compact-action" type="submit">
-                <i className="bi bi-save" aria-hidden="true" />
-                Save {commercialDocumentLabel(draft.type)}
-              </button>
-              <button
-                className="secondary-action compact-action"
-                type="button"
-                onClick={() => shareDocument(draft)}
-              >
-                <i className="bi bi-link-45deg" aria-hidden="true" />
-                Share Link
-              </button>
-              <button
-                className="secondary-action compact-action"
-                type="button"
-                onClick={() => emailDocument(draft)}
-              >
-                <i className="bi bi-envelope" aria-hidden="true" />
-                Email
-              </button>
-              <button
-                className="secondary-action compact-action"
-                type="button"
-                onClick={() => whatsappDocument(draft)}
-              >
-                <i className="bi bi-whatsapp" aria-hidden="true" />
-                WhatsApp
-              </button>
-              <button
-                className="secondary-action compact-action"
-                type="button"
-                onClick={() => printDocument(draft)}
-              >
-                <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
-                Save PDF
-              </button>
+            <div className="form-actions wide-field commercial-invoice-actions">
+              <div className="commercial-invoice-primary-actions">
+                <div className="commercial-mobile-total">
+                  <span>Total Due</span>
+                  <strong>{formatMoney(draftTotals.balanceDue, organization.currencyCode)}</strong>
+                </div>
+                <button
+                  className="secondary-action compact-action commercial-mobile-preview"
+                  type="button"
+                  aria-label="Preview invoice"
+                  onClick={() => setShowMobilePreview(true)}
+                >
+                  Preview
+                </button>
+                <button
+                  className="primary-action compact-action"
+                  type="submit"
+                  aria-label={`Save ${commercialDocumentLabel(draft.type)}`}
+                >
+                  <i className="bi bi-save" aria-hidden="true" />
+                  <span className="commercial-desktop-save-label">
+                    Save {commercialDocumentLabel(draft.type)}
+                  </span>
+                  <span className="commercial-mobile-save-label">Save</span>
+                </button>
+              </div>
+              <CommercialFormSection title="Share & export" summary="Link, email, WhatsApp and PDF">
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => shareDocument(draft)}
+                >
+                  <i className="bi bi-link-45deg" aria-hidden="true" />
+                  Share Link
+                </button>
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => emailDocument(draft)}
+                >
+                  <i className="bi bi-envelope" aria-hidden="true" />
+                  Email
+                </button>
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => whatsappDocument(draft)}
+                >
+                  <i className="bi bi-whatsapp" aria-hidden="true" />
+                  WhatsApp
+                </button>
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => printDocument(draft)}
+                >
+                  <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
+                  Save PDF
+                </button>
+              </CommercialFormSection>
             </div>
 
             {shareLink ? (
@@ -7235,6 +7245,39 @@ function CommercialPage({ organization }: { organization: Organization }) {
         </section>
       </div>
 
+      {showMobilePreview ? (
+        <div
+          className="commercial-preview-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setShowMobilePreview(false);
+          }}
+        >
+          <section
+            className="panel-card commercial-preview-modal-panel"
+            ref={previewPanel}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Document preview"
+          >
+            <header className="commercial-preview-modal-header">
+              <button
+                className="secondary-action compact-action"
+                type="button"
+                aria-label="Close preview"
+                onClick={() => setShowMobilePreview(false)}
+              >
+                <i className="bi bi-arrow-left" aria-hidden="true" />
+                Back to editor
+              </button>
+              <h2>Preview</h2>
+            </header>
+            <div className="commercial-document-print-root">
+              <CommercialDocumentPreview document={draft} organization={organization} />
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       <section className="panel-card commercial-documents-panel">
         <PanelHeader
           icon="bi-folder2-open"
@@ -7242,9 +7285,7 @@ function CommercialPage({ organization }: { organization: Organization }) {
           tone="green"
           action={
             savedDocument ? (
-              <span className="invoice-total-pill">
-                Loaded {savedDocument.documentNumber}
-              </span>
+              <span className="invoice-total-pill">Loaded {savedDocument.documentNumber}</span>
             ) : undefined
           }
         />
@@ -7255,102 +7296,170 @@ function CommercialPage({ organization }: { organization: Organization }) {
             detail="Saved quotations and invoices will appear here."
           />
         ) : (
-          <div className="responsive-table compact-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Document</th>
-                  <th>Customer</th>
-                  <th>Status</th>
-                  <th>Total</th>
-                  <th>Updated</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {documents.map((document) => {
-                  const totals = commercialDocumentTotals(document);
-                  return (
-                    <tr key={document.id}>
-                      <td data-label="Document">
-                        <span className="table-label">
-                          <i
-                            className={`bi ${
-                              document.type === 'quotation'
-                                ? 'bi-file-earmark-text'
-                                : 'bi-receipt-cutoff'
-                            }`}
-                            aria-hidden="true"
-                          />
-                          <span>
-                            <strong>{document.documentNumber}</strong>
-                            <small>{commercialDocumentLabel(document.type)}</small>
-                          </span>
-                        </span>
-                      </td>
-                      <td data-label="Customer">
-                        {document.customerName || document.customerCompany || 'Customer'}
-                      </td>
-                      <td data-label="Status">
-                        <StatusPill
-                          label={labelizeEnum(document.status)}
-                          status={moduleStatusTone(document.status)}
+          <>
+            <div className="commercial-document-card-list">
+              {documents.map((document) => {
+                const totals = commercialDocumentTotals(document);
+                const customer = document.customerName || document.customerCompany || 'Customer';
+                return (
+                  <article className="commercial-document-card" key={`card-${document.id}`}>
+                    <header>
+                      <span className="commercial-document-card-icon">
+                        <i
+                          className={`bi ${
+                            document.type === 'quotation'
+                              ? 'bi-file-earmark-text'
+                              : 'bi-receipt-cutoff'
+                          }`}
+                          aria-hidden="true"
                         />
-                      </td>
-                      <td data-label="Total">
-                        {formatMoney(totals.balanceDue, organization.currencyCode)}
-                      </td>
-                      <td data-label="Updated">{formatDateTime(document.updatedAt)}</td>
-                      <td data-label="Actions">
-                        <div className="table-actions commercial-table-actions">
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => loadDocument(document)}
-                          >
-                            <i className="bi bi-pencil" aria-hidden="true" />
-                            Edit
-                          </button>
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => shareDocument(document)}
-                          >
-                            <i className="bi bi-link-45deg" aria-hidden="true" />
-                            Link
-                          </button>
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => emailDocument(document)}
-                          >
-                            <i className="bi bi-envelope" aria-hidden="true" />
-                            Email
-                          </button>
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => whatsappDocument(document)}
-                          >
-                            <i className="bi bi-whatsapp" aria-hidden="true" />
-                            WhatsApp
-                          </button>
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => printDocument(document)}
-                          >
-                            <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
-                            PDF
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </span>
+                      <div>
+                        <strong>{document.documentNumber}</strong>
+                        <small>{commercialDocumentLabel(document.type)}</small>
+                      </div>
+                      <StatusPill
+                        label={labelizeEnum(document.status)}
+                        status={moduleStatusTone(document.status)}
+                      />
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>Customer</dt>
+                        <dd>{customer}</dd>
+                      </div>
+                      <div>
+                        <dt>Total</dt>
+                        <dd>{formatMoney(totals.balanceDue, organization.currencyCode)}</dd>
+                      </div>
+                      <div>
+                        <dt>Updated</dt>
+                        <dd>{formatDateTime(document.updatedAt)}</dd>
+                      </div>
+                    </dl>
+                    <div className="commercial-card-actions">
+                      <button type="button" onClick={() => loadDocument(document)}>
+                        <i className="bi bi-pencil" aria-hidden="true" />
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => shareDocument(document)}>
+                        <i className="bi bi-link-45deg" aria-hidden="true" />
+                        Link
+                      </button>
+                      <button type="button" onClick={() => emailDocument(document)}>
+                        <i className="bi bi-envelope" aria-hidden="true" />
+                        Email
+                      </button>
+                      <button type="button" onClick={() => whatsappDocument(document)}>
+                        <i className="bi bi-whatsapp" aria-hidden="true" />
+                        WhatsApp
+                      </button>
+                      <button type="button" onClick={() => printDocument(document)}>
+                        <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
+                        PDF
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="responsive-table compact-table generated-documents-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Document</th>
+                    <th>Customer</th>
+                    <th>Status</th>
+                    <th>Total</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {documents.map((document) => {
+                    const totals = commercialDocumentTotals(document);
+                    return (
+                      <tr key={document.id}>
+                        <td data-label="Document">
+                          <span className="table-label">
+                            <i
+                              className={`bi ${
+                                document.type === 'quotation'
+                                  ? 'bi-file-earmark-text'
+                                  : 'bi-receipt-cutoff'
+                              }`}
+                              aria-hidden="true"
+                            />
+                            <span>
+                              <strong>{document.documentNumber}</strong>
+                              <small>{commercialDocumentLabel(document.type)}</small>
+                            </span>
+                          </span>
+                        </td>
+                        <td data-label="Customer">
+                          {document.customerName || document.customerCompany || 'Customer'}
+                        </td>
+                        <td data-label="Status">
+                          <StatusPill
+                            label={labelizeEnum(document.status)}
+                            status={moduleStatusTone(document.status)}
+                          />
+                        </td>
+                        <td data-label="Total">
+                          {formatMoney(totals.balanceDue, organization.currencyCode)}
+                        </td>
+                        <td data-label="Updated">{formatDateTime(document.updatedAt)}</td>
+                        <td data-label="Actions">
+                          <div className="table-actions commercial-table-actions">
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => loadDocument(document)}
+                            >
+                              <i className="bi bi-pencil" aria-hidden="true" />
+                              Edit
+                            </button>
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => shareDocument(document)}
+                            >
+                              <i className="bi bi-link-45deg" aria-hidden="true" />
+                              Link
+                            </button>
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => emailDocument(document)}
+                            >
+                              <i className="bi bi-envelope" aria-hidden="true" />
+                              Email
+                            </button>
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => whatsappDocument(document)}
+                            >
+                              <i className="bi bi-whatsapp" aria-hidden="true" />
+                              WhatsApp
+                            </button>
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => printDocument(document)}
+                            >
+                              <i className="bi bi-file-earmark-pdf" aria-hidden="true" />
+                              PDF
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 
@@ -7385,13 +7494,19 @@ function CommercialDocumentPreview({
         <h2>
           {documentLabel} {document.documentNumber || commercialDocumentPrefix(document.type)}
         </h2>
-        <p>{isInvoice ? 'Sales Invoice' : `${labelizeEnum(document.status)} - Service Quotation`}</p>
+        <p>
+          {isInvoice ? 'Sales Invoice' : `${labelizeEnum(document.status)} - Service Quotation`}
+        </p>
       </header>
 
       <div className="commercial-document-brandbar">
         <div className="commercial-document-brand">
           <strong>{organization.name}</strong>
-          <span>{organization.taxRegistrationNumber ? `PIN ${organization.taxRegistrationNumber}` : 'Commercial Desk'}</span>
+          <span>
+            {organization.taxRegistrationNumber
+              ? `PIN ${organization.taxRegistrationNumber}`
+              : 'Commercial Desk'}
+          </span>
         </div>
         <div>
           <strong>{isInvoice ? 'INVOICE' : `QUOTATION (${labelizeEnum(document.status)})`}</strong>
@@ -7432,7 +7547,9 @@ function CommercialDocumentPreview({
           <span>{isInvoice ? 'Issued By' : 'Prepared By'}</span>
           <strong>{document.preparedBy || organization.name}</strong>
           {document.senderAddress ? <p>{document.senderAddress}</p> : null}
-          {document.preparedEmail ? <a href={`mailto:${document.preparedEmail}`}>{document.preparedEmail}</a> : null}
+          {document.preparedEmail ? (
+            <a href={`mailto:${document.preparedEmail}`}>{document.preparedEmail}</a>
+          ) : null}
           <span>Payment Terms</span>
           <strong>{document.paymentTerms || (isInvoice ? 'Due on receipt' : 'As agreed')}</strong>
         </div>
@@ -7746,7 +7863,9 @@ function validateCommercialDocument(document: CommercialDocument) {
   if (!document.customerName.trim() && !document.customerCompany.trim()) {
     return 'Enter a customer name or company before saving or sharing.';
   }
-  if (!document.lines.some((line) => line.description.trim() && commercialLineTotals(line).total > 0)) {
+  if (
+    !document.lines.some((line) => line.description.trim() && commercialLineTotals(line).total > 0)
+  ) {
     return 'Add at least one line item with a description and amount.';
   }
   return '';
@@ -7912,7 +8031,11 @@ function parseCommercialDocumentFromUrl(organization: Organization) {
       return null;
     }
     return {
-      ...createCommercialDocument(organization, decodedDocument.type, decodedDocument.documentNumber),
+      ...createCommercialDocument(
+        organization,
+        decodedDocument.type,
+        decodedDocument.documentNumber,
+      ),
       ...decodedDocument,
       id: createCommercialId(),
       updatedAt: new Date().toISOString(),
@@ -7937,11 +8060,7 @@ function encodeCommercialDocument(document: CommercialDocument) {
   bytes.forEach((byte) => {
     binary += String.fromCharCode(byte);
   });
-  return window
-    .btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
+  return window.btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
 function decodeCommercialDocument(encodedDocument: string) {
@@ -7976,59 +8095,229 @@ async function copyTextToClipboard(text: string) {
   }
 }
 
-function commercialDocumentEmailUrl(
-  document: CommercialDocument,
-  shareUrl: string,
+function createPurchaseOrderPdfFile(
+  purchaseOrder: PurchaseOrderDocument,
   organization: Organization,
 ) {
+  const totals = purchaseOrderTotals(purchaseOrder);
+  const lines = [
+    `${organization.name} - PURCHASE ORDER`,
+    `P.O Number: ${purchaseOrder.purchaseOrderNumber}`,
+    `Issue Date: ${commercialFormatDate(purchaseOrder.issueDate)}`,
+    `Delivery Date: ${commercialFormatDate(purchaseOrder.deliveryDate)}`,
+    '',
+    `Supplier: ${purchaseOrder.supplierName || 'Supplier name'}`,
+    `Supplier Email: ${purchaseOrder.supplierEmail || 'N/A'}`,
+    `Supplier Phone: ${purchaseOrder.supplierPhone || 'N/A'}`,
+    `Delivery Location: ${purchaseOrder.deliveryLocationName || 'N/A'}`,
+    '',
+    'Items',
+    ...purchaseOrder.lines
+      .filter((line) => line.description.trim())
+      .map((line, index) => {
+        const lineTotals = purchaseOrderLineTotals(line);
+        return `${index + 1}. ${line.description} | Qty ${formatQuantity(
+          toNumber(line.quantity),
+        )} | Unit ${formatWholeNumber(toNumber(line.unitPrice))} | Total ${formatWholeNumber(
+          lineTotals.total,
+        )}`;
+      }),
+    '',
+    `Subtotal: ${formatMoney(totals.subtotal, organization.currencyCode)}`,
+    `VAT: ${formatMoney(totals.tax, organization.currencyCode)}`,
+    `Delivery: ${formatMoney(totals.deliveryFee, organization.currencyCode)}`,
+    `Grand Total: ${formatMoney(totals.total, organization.currencyCode)}`,
+    '',
+    `Terms: ${purchaseOrder.terms || 'N/A'}`,
+  ];
+  return createPdfFile(
+    lines,
+    safeDocumentFileName(`Purchase-Order-${purchaseOrder.purchaseOrderNumber}`),
+  );
+}
+
+function createCommercialDocumentPdfFile(document: CommercialDocument, organization: Organization) {
+  const totals = commercialDocumentTotals(document);
+  const label = commercialDocumentLabel(document.type);
+  const lines = [
+    `${organization.name} - ${label.toUpperCase()}`,
+    `${label} Number: ${document.documentNumber}`,
+    `Issue Date: ${commercialFormatDate(document.issueDate)}`,
+    `Due Date: ${commercialFormatDate(document.dueDate)}`,
+    '',
+    `Customer: ${document.customerName || document.customerCompany || 'Customer'}`,
+    `Company: ${document.customerCompany || 'N/A'}`,
+    `Email: ${document.customerEmail || 'N/A'}`,
+    `Phone: ${document.customerPhone || 'N/A'}`,
+    '',
+    'Items',
+    ...document.lines
+      .filter((line) => line.description.trim())
+      .map((line, index) => {
+        const lineTotals = commercialLineTotals(line);
+        return `${index + 1}. ${line.description} | Qty ${formatQuantity(
+          toNumber(line.quantity),
+        )} | Rate ${formatWholeNumber(toNumber(line.unitPrice))} | Total ${formatWholeNumber(
+          lineTotals.total,
+        )}`;
+      }),
+    '',
+    `Subtotal: ${formatMoney(totals.subtotal, organization.currencyCode)}`,
+    `Discount: ${formatMoney(totals.discount, organization.currencyCode)}`,
+    `VAT: ${formatMoney(totals.tax, organization.currencyCode)}`,
+    `Total: ${formatMoney(totals.total, organization.currencyCode)}`,
+    `Paid: ${formatMoney(totals.amountPaid, organization.currencyCode)}`,
+    `Balance Due: ${formatMoney(totals.balanceDue, organization.currencyCode)}`,
+    '',
+    `Payment Terms: ${document.paymentTerms || 'N/A'}`,
+    `M-Pesa Paybill: ${document.mpesaPaybill || 'N/A'}`,
+    `M-Pesa Account: ${document.mpesaAccountNumber || document.documentNumber}`,
+    `Bank: ${document.bankName || 'N/A'}`,
+    `Account: ${document.bankAccountNumber || 'N/A'}`,
+  ];
+  return createPdfFile(lines, safeDocumentFileName(`${label}-${document.documentNumber}`));
+}
+
+async function sharePdfFile(file: File, text: string, title: string) {
+  const shareNavigator = navigator as Navigator & {
+    canShare?: (data: ShareData) => boolean;
+    share?: (data: ShareData) => Promise<void>;
+  };
+  const shareData: ShareData = { files: [file], text, title };
+  if (!shareNavigator.share || !shareNavigator.canShare?.(shareData)) {
+    return false;
+  }
+  await shareNavigator.share(shareData);
+  return true;
+}
+
+async function blobToBase64(blob: Blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.slice(index, index + chunkSize));
+  }
+  return window.btoa(binary);
+}
+
+function createPdfFile(lines: string[], baseFileName: string) {
+  const pdfBlob = new Blob([buildSimplePdf(lines)], { type: 'application/pdf' });
+  return new File([pdfBlob], `${baseFileName}.pdf`, { type: 'application/pdf' });
+}
+
+function buildSimplePdf(lines: string[]) {
+  const pageHeight = 842;
+  const marginLeft = 48;
+  const marginTop = 790;
+  const lineHeight = 14;
+  const linesPerPage = 48;
+  const pages = chunkArray(lines.map(sanitizePdfText), linesPerPage);
+  const objects: string[] = [];
+  const pageObjectNumbers: number[] = [];
+  objects.push('<< /Type /Catalog /Pages 2 0 R >>');
+  objects.push('PAGES_PLACEHOLDER');
+
+  pages.forEach((pageLines) => {
+    const pageObjectNumber = objects.length + 1;
+    const contentObjectNumber = pageObjectNumber + 1;
+    pageObjectNumbers.push(pageObjectNumber);
+    const stream = [
+      'BT',
+      '/F1 10 Tf',
+      `${marginLeft} ${marginTop} Td`,
+      ...pageLines.flatMap((line, index) => [
+        index === 0 ? '' : `0 -${lineHeight} Td`,
+        `(${escapePdfString(line)}) Tj`,
+      ]),
+      'ET',
+    ]
+      .filter(Boolean)
+      .join('\n');
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 ${pageHeight}] /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> /Contents ${contentObjectNumber} 0 R >>`,
+    );
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+  });
+
+  objects[1] = `<< /Type /Pages /Kids [${pageObjectNumbers
+    .map((objectNumber) => `${objectNumber} 0 R`)
+    .join(' ')}] /Count ${pageObjectNumbers.length} >>`;
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return pdf;
+}
+
+function chunkArray<T>(values: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks.length > 0 ? chunks : [[]];
+}
+
+function sanitizePdfText(value: string) {
+  return value.replace(/[^\x20-\x7E]/g, '-');
+}
+
+function escapePdfString(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+}
+
+function safeDocumentFileName(value: string) {
+  return value.replace(/[^a-z0-9-]+/gi, '-').replace(/(^-+|-+$)/g, '') || 'document';
+}
+
+function commercialDocumentEmailSubject(document: CommercialDocument, organization: Organization) {
+  const label = commercialDocumentLabel(document.type);
+  return `${label} ${document.documentNumber} from ${organization.name}`;
+}
+
+function commercialDocumentEmailMessage(document: CommercialDocument, organization: Organization) {
   const label = commercialDocumentLabel(document.type);
   const totals = commercialDocumentTotals(document);
-  const recipient = document.customerEmail.trim();
-  const subject = `${label} ${document.documentNumber} from ${organization.name}`;
-  const body = [
+  return [
     `Hello ${document.customerName || document.customerCompany || 'there'},`,
     '',
     `Please find ${label.toLowerCase()} ${document.documentNumber} from ${organization.name}.`,
     `Amount: ${formatMoney(totals.balanceDue, organization.currencyCode)}`,
-    `Link: ${shareUrl}`,
     '',
     'Regards,',
     organization.name,
   ].join('\n');
-
-  return `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(
-    subject,
-  )}&body=${encodeURIComponent(body)}`;
 }
 
-function commercialDocumentWhatsAppUrl(
-  document: CommercialDocument,
-  shareUrl: string,
-  organization: Organization,
-) {
+function commercialDocumentWhatsAppUrl(document: CommercialDocument, organization: Organization) {
   const phoneNumber = normalizeWhatsAppNumber(document.customerPhone);
-  const text = commercialDocumentWhatsAppText(document, shareUrl, organization);
+  const text = commercialDocumentWhatsAppText(document, organization);
   return `https://wa.me/${phoneNumber}?text=${encodeURIComponent(text)}`;
 }
 
-function commercialDocumentWhatsAppText(
-  document: CommercialDocument,
-  shareUrl: string,
-  organization: Organization,
-) {
+function commercialDocumentWhatsAppText(document: CommercialDocument, organization: Organization) {
   const label = commercialDocumentLabel(document.type).toLowerCase();
   const totals = commercialDocumentTotals(document);
   const message = document.whatsappMessage.trim();
 
   if (message) {
-    return `${message}\n\n${shareUrl}`;
+    return message;
   }
 
   return [
     `Hello ${document.customerName || document.customerCompany || 'there'},`,
     `${organization.name} has shared ${label} ${document.documentNumber}.`,
     `Amount: ${formatMoney(totals.balanceDue, organization.currencyCode)}`,
-    shareUrl,
+    'The PDF document is attached.',
   ].join('\n');
 }
 
@@ -8118,8 +8407,7 @@ function NotificationsPage({ organization }: { organization: Organization }) {
       <PageHeader
         title={summaryQuery.data?.title ?? 'Notifications'}
         subtitle={
-          summaryQuery.data?.description ??
-          'Operational alerts for approvals, stock, fiscalization, payroll, and payments.'
+          summaryQuery.data?.description ?? 'Operational alerts for approvals, stock, and payments.'
         }
       />
       <ErpModuleSummaryContent
@@ -8198,7 +8486,7 @@ function AuditLogPage() {
     <section className="table-workspace erp-module-page">
       <PageHeader
         title="Audit Logs"
-        subtitle="Backend-recorded activity across users, branches, HR, AI, and workflow modules."
+        subtitle="Backend-recorded activity across users, AI, and workflow modules."
       />
 
       <section className="panel-card">
@@ -8225,7 +8513,6 @@ function AuditLogPage() {
                   <th>Action</th>
                   <th>Target</th>
                   <th>Actor</th>
-                  <th>Branch</th>
                   <th>Details</th>
                   <th>Time</th>
                 </tr>
@@ -8249,7 +8536,6 @@ function AuditLogPage() {
                       ) : null}
                     </td>
                     <td data-label="Actor">{event.actorName ?? 'System'}</td>
-                    <td data-label="Branch">{event.branchName ?? 'All branches'}</td>
                     <td data-label="Details">
                       {event.reason || auditMetadataPreview(event) || 'N/A'}
                     </td>
@@ -8336,7 +8622,6 @@ function ModuleWorkItemsTable({
           <tr>
             <th>Reference</th>
             <th>Title</th>
-            <th>Branch</th>
             <th>Status</th>
             <th>Amount</th>
             <th>Due</th>
@@ -8353,7 +8638,6 @@ function ModuleWorkItemsTable({
                 </span>
               </td>
               <td data-label="Title">{item.title}</td>
-              <td data-label="Branch">{item.branchName ?? 'All branches'}</td>
               <td data-label="Status">
                 <StatusPill
                   status={moduleStatusTone(item.status)}
@@ -8383,7 +8667,7 @@ type CrmLeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL' | 'WON' | 'L
 type CrmOpportunityStage = 'NEW' | 'QUALIFIED' | 'PROPOSAL' | 'NEGOTIATION' | 'WON' | 'LOST';
 type CrmActivityType = 'CALL' | 'MEETING' | 'TASK' | 'FOLLOW_UP' | 'NOTE';
 type CrmActivityStatus = 'OPEN' | 'DONE' | 'CANCELLED';
-type CrmWorkspaceView = 'pipeline' | 'leads' | 'opportunities' | 'activities';
+type CrmWorkspaceView = 'overview' | 'pipeline' | 'leads' | 'opportunities' | 'activities';
 
 type CrmLead = {
   id: string;
@@ -8483,13 +8767,15 @@ function CrmPage({
   currentUser: CurrentUser;
   organization: Organization;
 }) {
+  const { branchId: platformBranchId } = usePlatform();
   const navigate = useNavigate();
-  const summaryQuery = useQuery({ queryKey: ['crm-summary'], queryFn: getCrmSummary });
-  const [records, setRecords] = useState<CrmRecords>(() => loadCrmRecords());
-  const [activeView, setActiveView] = useState<CrmWorkspaceView>('pipeline');
+  const storageKey = `${CRM_STORAGE_KEY}:${organization.id}:${currentUser.userId}`;
+  const [records, setRecords] = useState<CrmRecords>(() => loadCrmRecords(storageKey));
+  const [activeView, setActiveView] = useState<CrmWorkspaceView>('overview');
+  const [storageAvailable, setStorageAvailable] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState<'ALL' | CrmOpportunityStage>('ALL');
-  const [branchFilter, setBranchFilter] = useState('ALL');
+  const [branchFilter, setBranchFilter] = useState(platformBranchId || 'ALL');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const activeBranches = branches.filter((branch) => branch.status === 'ACTIVE');
@@ -8553,8 +8839,7 @@ function CrmPage({
               .join(' ')
               .toLowerCase()
               .includes(normalizedSearch);
-          const matchesBranch =
-            branchFilter === 'ALL' || opportunity.branchId === branchFilter;
+          const matchesBranch = branchFilter === 'ALL' || opportunity.branchId === branchFilter;
           const matchesStage = stageFilter === 'ALL' || opportunity.stage === stageFilter;
           return matchesSearch && matchesBranch && matchesStage;
         })
@@ -8588,18 +8873,45 @@ function CrmPage({
         .sort(sortCrmActivities),
     [activities, branchFilter, leads, normalizedSearch, opportunities],
   );
-  const metrics = crmMetrics(records, organization.currencyCode);
-  const summaryTitle = summaryQuery.data?.title ?? 'CRM';
-  const summaryDescription =
-    summaryQuery.data?.description ??
-    'Manage leads, sales opportunities, follow-ups, and customer conversion work.';
-  const openActivities = activities.filter((activity) => activity.status === 'OPEN');
+  const filteredRecords = {
+    leads: filteredLeads,
+    opportunities: filteredOpportunities,
+    activities: filteredActivities,
+  };
+  const metrics = crmMetrics(filteredRecords, organization.currencyCode);
+  const openActivities = filteredActivities.filter((activity) => activity.status === 'OPEN');
   const overdueActivities = openActivities.filter(isCrmActivityOverdue);
   const nextActivities = openActivities.slice().sort(sortCrmActivities).slice(0, 6);
 
   useEffect(() => {
-    saveCrmRecords(records);
-  }, [records]);
+    setStorageAvailable(saveCrmRecords(storageKey, records));
+  }, [records, storageKey]);
+
+  useEffect(() => {
+    function syncRecords(event: StorageEvent) {
+      if (event.key === storageKey || event.key === null) {
+        setRecords(loadCrmRecords(storageKey));
+      }
+    }
+    window.addEventListener('storage', syncRecords);
+    return () => window.removeEventListener('storage', syncRecords);
+  }, [storageKey]);
+
+  function openNewContact() {
+    resetLeadForm();
+    setActiveView('leads');
+  }
+
+  function openNewActivity() {
+    resetActivityForm();
+    setActiveView('activities');
+  }
+
+  function openNewOpportunity(stage: CrmOpportunityStage = 'NEW') {
+    resetOpportunityForm();
+    setOpportunityForm((current) => ({ ...current, stage }));
+    setActiveView('opportunities');
+  }
 
   function resetLeadForm() {
     setLeadForm(createCrmLead(currentUser, defaultBranchId, nextCrmLeadNumber(leads)));
@@ -8608,11 +8920,7 @@ function CrmPage({
 
   function resetOpportunityForm() {
     setOpportunityForm(
-      createCrmOpportunity(
-        currentUser,
-        defaultBranchId,
-        nextCrmOpportunityNumber(opportunities),
-      ),
+      createCrmOpportunity(currentUser, defaultBranchId, nextCrmOpportunityNumber(opportunities)),
     );
     setError('');
   }
@@ -8744,7 +9052,9 @@ function CrmPage({
     const existingOpportunity = opportunities.find((opportunity) => opportunity.leadId === lead.id);
     if (existingOpportunity) {
       editOpportunity(existingOpportunity);
-      setMessage(`${lead.leadNumber} is already linked to ${existingOpportunity.opportunityNumber}.`);
+      setMessage(
+        `${lead.leadNumber} is already linked to ${existingOpportunity.opportunityNumber}.`,
+      );
       return;
     }
 
@@ -8770,11 +9080,17 @@ function CrmPage({
   }
 
   function changeOpportunityStage(opportunityId: string, stage: CrmOpportunityStage) {
+    if (!opportunities.some((opportunity) => opportunity.id === opportunityId)) return;
     setRecords((current) => ({
       ...current,
       opportunities: current.opportunities.map((opportunity) =>
         opportunity.id === opportunityId
-          ? normalizeCrmOpportunity({ ...opportunity, stage })
+          ? normalizeCrmOpportunity({
+              ...opportunity,
+              stage,
+              probabilityPercent:
+                stage === 'WON' ? '100' : stage === 'LOST' ? '0' : opportunity.probabilityPercent,
+            })
           : opportunity,
       ),
     }));
@@ -8795,7 +9111,9 @@ function CrmPage({
           : activity,
       ),
     }));
-    setMessage(status === 'DONE' ? 'Activity marked done.' : `Activity marked ${labelizeEnum(status)}.`);
+    setMessage(
+      status === 'DONE' ? 'Activity marked done.' : `Activity marked ${labelizeEnum(status)}.`,
+    );
     setError('');
   }
 
@@ -8826,7 +9144,10 @@ function CrmPage({
   }
 
   async function copyCrmSummary(record: CrmLead | CrmOpportunity) {
-    const summary = 'leadNumber' in record ? crmLeadSummary(record, organization) : crmOpportunitySummary(record, organization);
+    const summary =
+      'leadNumber' in record
+        ? crmLeadSummary(record, organization)
+        : crmOpportunitySummary(record, organization);
     try {
       await copyTextToClipboard(summary);
       setMessage('CRM summary copied to clipboard.');
@@ -8845,8 +9166,15 @@ function CrmPage({
       return;
     }
 
-    const text = 'leadNumber' in record ? crmLeadSummary(record, organization) : crmOpportunitySummary(record, organization);
-    window.open(`https://wa.me/${phoneNumber}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+    const text =
+      'leadNumber' in record
+        ? crmLeadSummary(record, organization)
+        : crmOpportunitySummary(record, organization);
+    window.open(
+      `https://wa.me/${phoneNumber}?text=${encodeURIComponent(text)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
     setMessage('Opening WhatsApp with the CRM message.');
     setError('');
   }
@@ -8862,7 +9190,10 @@ function CrmPage({
       'leadNumber' in record
         ? `${record.leadNumber} follow-up from ${organization.name}`
         : `${record.opportunityNumber} update from ${organization.name}`;
-    const body = 'leadNumber' in record ? crmLeadSummary(record, organization) : crmOpportunitySummary(record, organization);
+    const body =
+      'leadNumber' in record
+        ? crmLeadSummary(record, organization)
+        : crmOpportunitySummary(record, organization);
     window.location.href = `mailto:${encodeURIComponent(record.email.trim())}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   }
 
@@ -8882,7 +9213,6 @@ function CrmPage({
         'Source',
         'Estimated Value',
         'Status',
-        'Branch',
         'Updated',
       ],
       ...leads.map((lead) => [
@@ -8895,7 +9225,6 @@ function CrmPage({
         lead.source,
         toNumber(lead.estimatedValue).toFixed(2),
         lead.status,
-        branchName(branches, lead.branchId),
         formatDateTime(lead.updatedAt),
       ]),
       [],
@@ -8910,7 +9239,6 @@ function CrmPage({
         'Weighted Value',
         'Stage',
         'Expected Close',
-        'Branch',
         'Updated',
       ],
       ...opportunities.map((opportunity) => [
@@ -8923,7 +9251,6 @@ function CrmPage({
         crmWeightedValue(opportunity).toFixed(2),
         opportunity.stage,
         opportunity.expectedCloseDate,
-        branchName(branches, opportunity.branchId),
         formatDateTime(opportunity.updatedAt),
       ]),
       [],
@@ -8973,52 +9300,89 @@ function CrmPage({
   return (
     <section className="table-workspace crm-workspace">
       <PageHeader
-        title={summaryTitle}
-        subtitle={summaryDescription}
+        eyebrow="CUSTOMER RELATIONSHIPS"
+        title="CRM"
+        subtitle="Your people. Your pipeline. Your next opportunity."
         action={
           <div className="header-actions">
-            <button className="secondary-action compact-action" type="button" onClick={exportCrmCsv}>
+            <button
+              className="secondary-action compact-action"
+              type="button"
+              onClick={exportCrmCsv}
+            >
               <i className="bi bi-download" aria-hidden="true" />
               Export CSV
             </button>
             <button
               className="primary-action compact-action"
               type="button"
-              onClick={() => {
-                resetLeadForm();
-                setActiveView('leads');
-              }}
+              onClick={openNewContact}
             >
               <i className="bi bi-person-plus" aria-hidden="true" />
-              New Lead
+              Add Contact
             </button>
           </div>
         }
       />
 
       <FormMessages error={error} message={message} />
+      {!storageAvailable ? (
+        <p className="form-error" role="alert">
+          Your browser could not save these changes. Export your records before leaving this page.
+        </p>
+      ) : null}
 
-      <div className="branch-summary-row commercial-summary-row">
+      <div className="crm-metrics">
         {metrics.map((metric) => (
-          <SummaryMetric
-            icon={metric.icon}
-            key={metric.label}
-            label={metric.label}
-            value={metric.value}
-            tone={metric.tone}
-          />
+          <article className={`crm-metric-card ${metric.tone}`} key={metric.label}>
+            <div>
+              <span>{metric.label}</span>
+              <span className={`crm-color-icon ${metric.tone}`}>
+                <i className={`bi ${metric.icon}`} aria-hidden="true" />
+              </span>
+            </div>
+            <strong>{metric.value}</strong>
+            <small>{metric.detail}</small>
+          </article>
         ))}
       </div>
 
       <section className="panel-card crm-control-panel">
-        <div className="commercial-type-toggle crm-view-toggle" role="tablist" aria-label="CRM views">
+        <div
+          className="commercial-type-toggle crm-view-toggle"
+          role="tablist"
+          aria-label="CRM views"
+        >
           {crmWorkspaceViews().map((view) => (
             <button
               aria-selected={activeView === view.key}
+              role="tab"
+              id={`crm-tab-${view.key}`}
+              aria-controls={`crm-panel-${view.key}`}
+              tabIndex={activeView === view.key ? 0 : -1}
               className={activeView === view.key ? 'active' : ''}
               key={view.key}
               type="button"
               onClick={() => setActiveView(view.key)}
+              onKeyDown={(event) => {
+                const views = crmWorkspaceViews();
+                const index = views.findIndex((item) => item.key === view.key);
+                const nextIndex =
+                  event.key === 'ArrowRight'
+                    ? (index + 1) % views.length
+                    : event.key === 'ArrowLeft'
+                      ? (index + views.length - 1) % views.length
+                      : event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? views.length - 1
+                          : null;
+                if (nextIndex !== null) {
+                  event.preventDefault();
+                  setActiveView(views[nextIndex].key);
+                  document.getElementById(`crm-tab-${views[nextIndex].key}`)?.focus();
+                }
+              }}
             >
               <i className={`bi ${view.icon}`} aria-hidden="true" />
               {view.label}
@@ -9029,7 +9393,7 @@ function CrmPage({
           <label className="field-stack">
             <span>Search CRM</span>
             <input
-              placeholder="Lead, customer, phone, email, source"
+              placeholder="Search contacts, deals, or activities..."
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
             />
@@ -9049,7 +9413,9 @@ function CrmPage({
             <span>Opportunity Stage</span>
             <select
               value={stageFilter}
-              onChange={(event) => setStageFilter(event.target.value as 'ALL' | CrmOpportunityStage)}
+              onChange={(event) =>
+                setStageFilter(event.target.value as 'ALL' | CrmOpportunityStage)
+              }
             >
               <option value="ALL">All stages</option>
               {crmOpportunityStages.map((stage) => (
@@ -9064,8 +9430,8 @@ function CrmPage({
             type="button"
             onClick={() => {
               setSearchTerm('');
-              setBranchFilter('ALL');
               setStageFilter('ALL');
+              setBranchFilter('ALL');
             }}
           >
             <i className="bi bi-arrow-counterclockwise" aria-hidden="true" />
@@ -9074,51 +9440,110 @@ function CrmPage({
         </div>
       </section>
 
-      {activeView === 'pipeline' ? (
-        <div className="crm-main-grid">
-          <section className="panel-card crm-pipeline-panel">
-            <PanelHeader
-              icon="bi-kanban"
-              title="Opportunity Pipeline"
-              tone="blue"
-              action={
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  onClick={() => {
-                    resetOpportunityForm();
-                    setActiveView('opportunities');
-                  }}
-                >
-                  <i className="bi bi-plus-lg" aria-hidden="true" />
-                  Opportunity
-                </button>
-              }
-            />
-            {filteredOpportunities.length === 0 ? (
-              <EmptyState
+      <div
+        className="crm-view-content"
+        role="tabpanel"
+        id={`crm-panel-${activeView}`}
+        aria-labelledby={`crm-tab-${activeView}`}
+        tabIndex={0}
+      >
+        {activeView === 'overview' ? (
+          <CrmOverview
+            contacts={filteredLeads}
+            opportunities={filteredOpportunities}
+            activities={filteredActivities}
+            currencyCode={organization.currencyCode}
+            timeZone={organization.timeZone}
+            onAddContact={openNewContact}
+            onOpenContacts={() => setActiveView('leads')}
+            onOpenPipeline={() => setActiveView('pipeline')}
+            onAddActivity={openNewActivity}
+            onEditContact={(id) => {
+              const contact = leads.find((item) => item.id === id);
+              if (contact) editLead(contact);
+            }}
+            onEditActivity={(id) => {
+              const activity = activities.find((item) => item.id === id);
+              if (activity) editActivity(activity);
+            }}
+            onCompleteActivity={(id) => updateActivityStatus(id, 'DONE')}
+          />
+        ) : null}
+
+        {activeView === 'pipeline' ? (
+          <div className="crm-main-grid crm-pipeline-layout">
+            <section className="panel-card crm-pipeline-panel">
+              <PanelHeader
                 icon="bi-kanban"
-                title="No opportunities in view"
-                detail="Create an opportunity or adjust the CRM filters."
+                title="Opportunity Pipeline"
+                tone="blue"
+                action={
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={() => openNewOpportunity()}
+                  >
+                    <i className="bi bi-plus-lg" aria-hidden="true" />
+                    Opportunity
+                  </button>
+                }
               />
-            ) : (
               <div className="crm-kanban-board">
                 {crmPipelineStages.map((stage) => {
                   const stageOpportunities = filteredOpportunities.filter(
                     (opportunity) => opportunity.stage === stage,
                   );
                   return (
-                    <section className="crm-kanban-column" key={stage}>
+                    <section
+                      className={`crm-kanban-column stage-${stage.toLowerCase()}`}
+                      key={stage}
+                      aria-label={`${labelizeEnum(stage)} opportunities`}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        changeOpportunityStage(
+                          event.dataTransfer.getData('application/x-keen-opportunity'),
+                          stage,
+                        );
+                      }}
+                    >
                       <header>
                         <span>{labelizeEnum(stage)}</span>
                         <strong>{stageOpportunities.length}</strong>
                       </header>
+                      <p className="crm-stage-value">
+                        {formatMoney(
+                          stageOpportunities.reduce(
+                            (total, opportunity) => total + toNumber(opportunity.expectedValue),
+                            0,
+                          ),
+                          organization.currencyCode,
+                        )}
+                      </p>
                       <div className="crm-kanban-column-body">
                         {stageOpportunities.length === 0 ? (
-                          <p className="crm-muted-text">No deals</p>
+                          <button
+                            className="crm-empty-stage"
+                            type="button"
+                            onClick={() => openNewOpportunity(stage)}
+                          >
+                            <i className="bi bi-plus-circle" aria-hidden="true" />
+                            Add an opportunity
+                          </button>
                         ) : (
                           stageOpportunities.map((opportunity) => (
-                            <article className="crm-opportunity-card" key={opportunity.id}>
+                            <article
+                              className="crm-opportunity-card"
+                              key={opportunity.id}
+                              draggable
+                              onDragStart={(event) => {
+                                event.dataTransfer.setData(
+                                  'application/x-keen-opportunity',
+                                  opportunity.id,
+                                );
+                                event.dataTransfer.effectAllowed = 'move';
+                              }}
+                            >
                               <div>
                                 <span>{opportunity.opportunityNumber}</span>
                                 <strong>{opportunity.title}</strong>
@@ -9145,6 +9570,25 @@ function CrmPage({
                                   <dd>{formatDateOnly(opportunity.expectedCloseDate)}</dd>
                                 </div>
                               </dl>
+                              <label className="crm-move-stage">
+                                <span>Move to</span>
+                                <select
+                                  aria-label={`Stage for ${opportunity.title}`}
+                                  value={opportunity.stage}
+                                  onChange={(event) =>
+                                    changeOpportunityStage(
+                                      opportunity.id,
+                                      event.target.value as CrmOpportunityStage,
+                                    )
+                                  }
+                                >
+                                  {crmOpportunityStages.map((option) => (
+                                    <option key={option} value={option}>
+                                      {labelizeEnum(option)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
                               <div className="crm-card-actions">
                                 <button type="button" onClick={() => editOpportunity(opportunity)}>
                                   Edit
@@ -9180,679 +9624,654 @@ function CrmPage({
                   );
                 })}
               </div>
-            )}
-          </section>
+            </section>
 
-          <section className="panel-card crm-agenda-panel">
-            <PanelHeader
-              icon="bi-calendar-check"
-              title="Follow-up Agenda"
-              tone={overdueActivities.length > 0 ? 'orange' : 'green'}
-              action={
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  onClick={() => {
-                    resetActivityForm();
-                    setActiveView('activities');
-                  }}
-                >
-                  <i className="bi bi-plus-lg" aria-hidden="true" />
-                  Activity
-                </button>
-              }
-            />
-            {nextActivities.length === 0 ? (
-              <EmptyState
+            <section className="panel-card crm-agenda-panel">
+              <PanelHeader
                 icon="bi-calendar-check"
-                title="No open follow-ups"
-                detail="Activities scheduled from leads and opportunities will appear here."
-              />
-            ) : (
-              <div className="crm-agenda-list">
-                {nextActivities.map((activity) => (
-                  <article
-                    className={`crm-agenda-item ${isCrmActivityOverdue(activity) ? 'overdue' : ''}`}
-                    key={activity.id}
+                title="Follow-up Agenda"
+                tone={overdueActivities.length > 0 ? 'orange' : 'green'}
+                action={
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={() => {
+                      resetActivityForm();
+                      setActiveView('activities');
+                    }}
                   >
-                    <div>
-                      <span>{labelizeEnum(activity.activityType)}</span>
-                      <strong>{activity.subject}</strong>
-                      <p>{crmActivityRelatedLabel(activity, leads, opportunities)}</p>
-                    </div>
-                    <time>{activity.dueAt ? formatDateTime(activity.dueAt) : 'No due date'}</time>
-                    <div className="crm-card-actions">
-                      <button type="button" onClick={() => editActivity(activity)}>
-                        Edit
-                      </button>
-                      <button type="button" onClick={() => updateActivityStatus(activity.id, 'DONE')}>
-                        Done
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      ) : null}
-
-      {activeView === 'leads' ? (
-        <div className="crm-main-grid">
-          <section className="panel-card crm-form-panel">
-            <PanelHeader icon="bi-person-plus" title="Lead Capture" tone="green" />
-            <form className="record-form crm-record-form" onSubmit={saveLead}>
-              <label className="field-stack">
-                <span>Lead Number</span>
-                <input
-                  required
-                  maxLength={40}
-                  value={leadForm.leadNumber}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({ ...current, leadNumber: event.target.value }))
-                  }
+                    <i className="bi bi-plus-lg" aria-hidden="true" />
+                    Activity
+                  </button>
+                }
+              />
+              {nextActivities.length === 0 ? (
+                <EmptyState
+                  icon="bi-calendar-check"
+                  title="No open follow-ups"
+                  detail="Activities scheduled from leads and opportunities will appear here."
                 />
-              </label>
-              <label className="field-stack">
-                <span>Status</span>
-                <select
-                  value={leadForm.status}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({
-                      ...current,
-                      status: event.target.value as CrmLeadStatus,
-                    }))
-                  }
-                >
-                  {crmLeadStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {labelizeEnum(status)}
-                    </option>
+              ) : (
+                <div className="crm-agenda-list">
+                  {nextActivities.map((activity) => (
+                    <article
+                      className={`crm-agenda-item ${isCrmActivityOverdue(activity) ? 'overdue' : ''}`}
+                      key={activity.id}
+                    >
+                      <div>
+                        <span>{labelizeEnum(activity.activityType)}</span>
+                        <strong>{activity.subject}</strong>
+                        <p>{crmActivityRelatedLabel(activity, leads, opportunities)}</p>
+                      </div>
+                      <time>{activity.dueAt ? formatDateTime(activity.dueAt) : 'No due date'}</time>
+                      <div className="crm-card-actions">
+                        <button type="button" onClick={() => editActivity(activity)}>
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateActivityStatus(activity.id, 'DONE')}
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </article>
                   ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Name</span>
-                <input
-                  required
-                  maxLength={160}
-                  value={leadForm.name}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Company</span>
-                <input
-                  maxLength={160}
-                  value={leadForm.company}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({ ...current, company: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Phone</span>
-                <input
-                  inputMode="tel"
-                  maxLength={40}
-                  placeholder="+254..."
-                  value={leadForm.phone}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({ ...current, phone: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Email</span>
-                <input
-                  type="email"
-                  maxLength={254}
-                  value={leadForm.email}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({ ...current, email: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Location</span>
-                <input
-                  maxLength={160}
-                  value={leadForm.location}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({ ...current, location: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Source</span>
-                <input
-                  maxLength={80}
-                  placeholder="Referral, walk-in, Instagram"
-                  value={leadForm.source}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({ ...current, source: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Estimated Value</span>
-                <input
-                  min="0"
-                  step="0.01"
-                  type="number"
-                  value={leadForm.estimatedValue}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({ ...current, estimatedValue: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Branch</span>
-                <select
-                  value={leadForm.branchId}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({ ...current, branchId: event.target.value }))
-                  }
-                >
-                  <option value="">No branch assigned</option>
-                  {activeBranches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Assigned To</span>
-                <input
-                  maxLength={120}
-                  value={leadForm.assignedTo}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({ ...current, assignedTo: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack wide-field">
-                <span>Notes</span>
-                <textarea
-                  maxLength={500}
-                  value={leadForm.notes}
-                  onChange={(event) =>
-                    setLeadForm((current) => ({ ...current, notes: event.target.value }))
-                  }
-                />
-              </label>
-              <div className="form-actions wide-field">
-                <button className="primary-action compact-action" type="submit">
-                  <i className="bi bi-save" aria-hidden="true" />
-                  Save Lead
-                </button>
-                <button className="secondary-action compact-action" type="button" onClick={resetLeadForm}>
-                  <i className="bi bi-file-earmark-plus" aria-hidden="true" />
-                  New Lead
-                </button>
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  onClick={() => convertLeadToOpportunity(leadForm)}
-                  disabled={!leads.some((lead) => lead.id === leadForm.id)}
-                >
-                  <i className="bi bi-arrow-right-circle" aria-hidden="true" />
-                  Convert
-                </button>
-              </div>
-            </form>
-          </section>
-
-          <CrmLeadsTable
-            branches={branches}
-            leads={filteredLeads}
-            onCopy={copyCrmSummary}
-            onDelete={deleteLead}
-            onEdit={editLead}
-            onEmail={openCrmEmail}
-            onFollowUp={scheduleFollowUpForLead}
-            onConvert={convertLeadToOpportunity}
-            onWhatsApp={openCrmWhatsApp}
-            organization={organization}
-          />
-        </div>
-      ) : null}
-
-      {activeView === 'opportunities' ? (
-        <div className="crm-main-grid">
-          <section className="panel-card crm-form-panel">
-            <PanelHeader icon="bi-graph-up-arrow" title="Opportunity Builder" tone="blue" />
-            <form className="record-form crm-record-form" onSubmit={saveOpportunity}>
-              <label className="field-stack">
-                <span>Opportunity Number</span>
-                <input
-                  required
-                  maxLength={40}
-                  value={opportunityForm.opportunityNumber}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({
-                      ...current,
-                      opportunityNumber: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Stage</span>
-                <select
-                  value={opportunityForm.stage}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({
-                      ...current,
-                      stage: event.target.value as CrmOpportunityStage,
-                    }))
-                  }
-                >
-                  {crmOpportunityStages.map((stage) => (
-                    <option key={stage} value={stage}>
-                      {labelizeEnum(stage)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack wide-field">
-                <span>Linked Lead</span>
-                <select
-                  value={opportunityForm.leadId}
-                  onChange={(event) => {
-                    const lead = leads.find((item) => item.id === event.target.value);
-                    setOpportunityForm((current) => ({
-                      ...current,
-                      leadId: event.target.value,
-                      branchId: lead?.branchId || current.branchId,
-                      customerName: current.customerName || lead?.name || '',
-                      company: current.company || lead?.company || '',
-                      phone: current.phone || lead?.phone || '',
-                      email: current.email || lead?.email || '',
-                    }));
-                  }}
-                >
-                  <option value="">No linked lead</option>
-                  {leads.map((lead) => (
-                    <option key={lead.id} value={lead.id}>
-                      {lead.leadNumber} - {lead.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack wide-field">
-                <span>Opportunity Title</span>
-                <input
-                  required
-                  maxLength={180}
-                  value={opportunityForm.title}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({ ...current, title: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Customer Name</span>
-                <input
-                  required
-                  maxLength={160}
-                  value={opportunityForm.customerName}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({
-                      ...current,
-                      customerName: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Company</span>
-                <input
-                  maxLength={160}
-                  value={opportunityForm.company}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({ ...current, company: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Phone</span>
-                <input
-                  inputMode="tel"
-                  maxLength={40}
-                  value={opportunityForm.phone}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({ ...current, phone: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Email</span>
-                <input
-                  type="email"
-                  maxLength={254}
-                  value={opportunityForm.email}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({ ...current, email: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Expected Value</span>
-                <input
-                  min="0"
-                  step="0.01"
-                  type="number"
-                  value={opportunityForm.expectedValue}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({
-                      ...current,
-                      expectedValue: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Probability %</span>
-                <input
-                  min="0"
-                  max="100"
-                  step="1"
-                  type="number"
-                  value={opportunityForm.probabilityPercent}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({
-                      ...current,
-                      probabilityPercent: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Expected Close</span>
-                <input
-                  type="date"
-                  value={opportunityForm.expectedCloseDate}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({
-                      ...current,
-                      expectedCloseDate: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Branch</span>
-                <select
-                  value={opportunityForm.branchId}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({ ...current, branchId: event.target.value }))
-                  }
-                >
-                  <option value="">No branch assigned</option>
-                  {activeBranches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Assigned To</span>
-                <input
-                  maxLength={120}
-                  value={opportunityForm.assignedTo}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({
-                      ...current,
-                      assignedTo: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack wide-field">
-                <span>Notes</span>
-                <textarea
-                  maxLength={500}
-                  value={opportunityForm.notes}
-                  onChange={(event) =>
-                    setOpportunityForm((current) => ({ ...current, notes: event.target.value }))
-                  }
-                />
-              </label>
-              <div className="commercial-total-strip crm-opportunity-value-strip wide-field">
-                <div>
-                  <span>Expected</span>
-                  <strong>
-                    {formatMoney(toNumber(opportunityForm.expectedValue), organization.currencyCode)}
-                  </strong>
                 </div>
-                <div>
-                  <span>Weighted</span>
-                  <strong>
-                    {formatMoney(crmWeightedValue(opportunityForm), organization.currencyCode)}
-                  </strong>
+              )}
+            </section>
+          </div>
+        ) : null}
+
+        {activeView === 'leads' ? (
+          <div className="crm-main-grid">
+            <section className="panel-card crm-form-panel">
+              <PanelHeader icon="bi-person-plus" title="Lead Capture" tone="green" />
+              <form className="record-form crm-record-form" onSubmit={saveLead}>
+                <label className="field-stack">
+                  <span>Lead Number</span>
+                  <input
+                    required
+                    maxLength={40}
+                    value={leadForm.leadNumber}
+                    onChange={(event) =>
+                      setLeadForm((current) => ({ ...current, leadNumber: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Status</span>
+                  <select
+                    value={leadForm.status}
+                    onChange={(event) =>
+                      setLeadForm((current) => ({
+                        ...current,
+                        status: event.target.value as CrmLeadStatus,
+                      }))
+                    }
+                  >
+                    {crmLeadStatuses.map((status) => (
+                      <option key={status} value={status}>
+                        {labelizeEnum(status)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-stack">
+                  <span>Name</span>
+                  <input
+                    required
+                    maxLength={160}
+                    value={leadForm.name}
+                    onChange={(event) =>
+                      setLeadForm((current) => ({ ...current, name: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Company</span>
+                  <input
+                    maxLength={160}
+                    value={leadForm.company}
+                    onChange={(event) =>
+                      setLeadForm((current) => ({ ...current, company: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Phone</span>
+                  <input
+                    inputMode="tel"
+                    maxLength={40}
+                    placeholder="+254..."
+                    value={leadForm.phone}
+                    onChange={(event) =>
+                      setLeadForm((current) => ({ ...current, phone: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    maxLength={254}
+                    value={leadForm.email}
+                    onChange={(event) =>
+                      setLeadForm((current) => ({ ...current, email: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Location</span>
+                  <input
+                    maxLength={160}
+                    value={leadForm.location}
+                    onChange={(event) =>
+                      setLeadForm((current) => ({ ...current, location: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Source</span>
+                  <input
+                    maxLength={80}
+                    placeholder="Referral, walk-in, Instagram"
+                    value={leadForm.source}
+                    onChange={(event) =>
+                      setLeadForm((current) => ({ ...current, source: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Estimated Value</span>
+                  <input
+                    min="0"
+                    step="0.01"
+                    type="number"
+                    value={leadForm.estimatedValue}
+                    onChange={(event) =>
+                      setLeadForm((current) => ({ ...current, estimatedValue: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Assigned To</span>
+                  <input
+                    maxLength={120}
+                    value={leadForm.assignedTo}
+                    onChange={(event) =>
+                      setLeadForm((current) => ({ ...current, assignedTo: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Notes</span>
+                  <textarea
+                    maxLength={500}
+                    value={leadForm.notes}
+                    onChange={(event) =>
+                      setLeadForm((current) => ({ ...current, notes: event.target.value }))
+                    }
+                  />
+                </label>
+                <div className="form-actions wide-field">
+                  <button className="primary-action compact-action" type="submit">
+                    <i className="bi bi-save" aria-hidden="true" />
+                    Save Lead
+                  </button>
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={resetLeadForm}
+                  >
+                    <i className="bi bi-file-earmark-plus" aria-hidden="true" />
+                    New Lead
+                  </button>
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={() => convertLeadToOpportunity(leadForm)}
+                    disabled={!leads.some((lead) => lead.id === leadForm.id)}
+                  >
+                    <i className="bi bi-arrow-right-circle" aria-hidden="true" />
+                    Convert
+                  </button>
                 </div>
-                <div>
-                  <span>Probability</span>
-                  <strong>{toNumber(opportunityForm.probabilityPercent).toFixed(0)}%</strong>
-                </div>
-                <div>
+              </form>
+            </section>
+
+            <CrmLeadsTable
+              branches={branches}
+              leads={filteredLeads}
+              onCopy={copyCrmSummary}
+              onDelete={deleteLead}
+              onEdit={editLead}
+              onEmail={openCrmEmail}
+              onFollowUp={scheduleFollowUpForLead}
+              onConvert={convertLeadToOpportunity}
+              onWhatsApp={openCrmWhatsApp}
+              organization={organization}
+            />
+          </div>
+        ) : null}
+
+        {activeView === 'opportunities' ? (
+          <div className="crm-main-grid">
+            <section className="panel-card crm-form-panel">
+              <PanelHeader icon="bi-graph-up-arrow" title="Opportunity Builder" tone="blue" />
+              <form className="record-form crm-record-form" onSubmit={saveOpportunity}>
+                <label className="field-stack">
+                  <span>Opportunity Number</span>
+                  <input
+                    required
+                    maxLength={40}
+                    value={opportunityForm.opportunityNumber}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({
+                        ...current,
+                        opportunityNumber: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
                   <span>Stage</span>
-                  <strong>{labelizeEnum(opportunityForm.stage)}</strong>
+                  <select
+                    value={opportunityForm.stage}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({
+                        ...current,
+                        stage: event.target.value as CrmOpportunityStage,
+                      }))
+                    }
+                  >
+                    {crmOpportunityStages.map((stage) => (
+                      <option key={stage} value={stage}>
+                        {labelizeEnum(stage)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Linked Lead</span>
+                  <select
+                    value={opportunityForm.leadId}
+                    onChange={(event) => {
+                      const lead = leads.find((item) => item.id === event.target.value);
+                      setOpportunityForm((current) => ({
+                        ...current,
+                        leadId: event.target.value,
+                        branchId: lead?.branchId || current.branchId,
+                        customerName: current.customerName || lead?.name || '',
+                        company: current.company || lead?.company || '',
+                        phone: current.phone || lead?.phone || '',
+                        email: current.email || lead?.email || '',
+                      }));
+                    }}
+                  >
+                    <option value="">No linked lead</option>
+                    {leads.map((lead) => (
+                      <option key={lead.id} value={lead.id}>
+                        {lead.leadNumber} - {lead.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Opportunity Title</span>
+                  <input
+                    required
+                    maxLength={180}
+                    value={opportunityForm.title}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({ ...current, title: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Customer Name</span>
+                  <input
+                    required
+                    maxLength={160}
+                    value={opportunityForm.customerName}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({
+                        ...current,
+                        customerName: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Company</span>
+                  <input
+                    maxLength={160}
+                    value={opportunityForm.company}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({ ...current, company: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Phone</span>
+                  <input
+                    inputMode="tel"
+                    maxLength={40}
+                    value={opportunityForm.phone}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({ ...current, phone: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    maxLength={254}
+                    value={opportunityForm.email}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({ ...current, email: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Expected Value</span>
+                  <input
+                    min="0"
+                    step="0.01"
+                    type="number"
+                    value={opportunityForm.expectedValue}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({
+                        ...current,
+                        expectedValue: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Probability %</span>
+                  <input
+                    min="0"
+                    max="100"
+                    step="1"
+                    type="number"
+                    value={opportunityForm.probabilityPercent}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({
+                        ...current,
+                        probabilityPercent: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Expected Close</span>
+                  <input
+                    type="date"
+                    value={opportunityForm.expectedCloseDate}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({
+                        ...current,
+                        expectedCloseDate: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Assigned To</span>
+                  <input
+                    maxLength={120}
+                    value={opportunityForm.assignedTo}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({
+                        ...current,
+                        assignedTo: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Notes</span>
+                  <textarea
+                    maxLength={500}
+                    value={opportunityForm.notes}
+                    onChange={(event) =>
+                      setOpportunityForm((current) => ({ ...current, notes: event.target.value }))
+                    }
+                  />
+                </label>
+                <div className="commercial-total-strip crm-opportunity-value-strip wide-field">
+                  <div>
+                    <span>Expected</span>
+                    <strong>
+                      {formatMoney(
+                        toNumber(opportunityForm.expectedValue),
+                        organization.currencyCode,
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Weighted</span>
+                    <strong>
+                      {formatMoney(crmWeightedValue(opportunityForm), organization.currencyCode)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Probability</span>
+                    <strong>{toNumber(opportunityForm.probabilityPercent).toFixed(0)}%</strong>
+                  </div>
+                  <div>
+                    <span>Stage</span>
+                    <strong>{labelizeEnum(opportunityForm.stage)}</strong>
+                  </div>
                 </div>
-              </div>
-              <div className="form-actions wide-field">
-                <button className="primary-action compact-action" type="submit">
-                  <i className="bi bi-save" aria-hidden="true" />
-                  Save Opportunity
-                </button>
-                <button className="secondary-action compact-action" type="button" onClick={resetOpportunityForm}>
-                  <i className="bi bi-file-earmark-plus" aria-hidden="true" />
-                  New
-                </button>
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  onClick={() => scheduleFollowUpForOpportunity(opportunityForm)}
-                  disabled={!opportunities.some((opportunity) => opportunity.id === opportunityForm.id)}
-                >
-                  <i className="bi bi-calendar-plus" aria-hidden="true" />
-                  Follow-up
-                </button>
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  onClick={() => navigate('/commercial')}
-                >
-                  <i className="bi bi-file-earmark-text" aria-hidden="true" />
-                  Quote
-                </button>
-              </div>
-            </form>
-          </section>
+                <div className="form-actions wide-field">
+                  <button className="primary-action compact-action" type="submit">
+                    <i className="bi bi-save" aria-hidden="true" />
+                    Save Opportunity
+                  </button>
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={resetOpportunityForm}
+                  >
+                    <i className="bi bi-file-earmark-plus" aria-hidden="true" />
+                    New
+                  </button>
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={() => scheduleFollowUpForOpportunity(opportunityForm)}
+                    disabled={
+                      !opportunities.some((opportunity) => opportunity.id === opportunityForm.id)
+                    }
+                  >
+                    <i className="bi bi-calendar-plus" aria-hidden="true" />
+                    Follow-up
+                  </button>
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={() => navigate('/commercial')}
+                  >
+                    <i className="bi bi-file-earmark-text" aria-hidden="true" />
+                    Quote
+                  </button>
+                </div>
+              </form>
+            </section>
 
-          <CrmOpportunitiesTable
-            branches={branches}
-            onCopy={copyCrmSummary}
-            onDelete={deleteOpportunity}
-            onEdit={editOpportunity}
-            onEmail={openCrmEmail}
-            onFollowUp={scheduleFollowUpForOpportunity}
-            onStageChange={changeOpportunityStage}
-            onWhatsApp={openCrmWhatsApp}
-            opportunities={filteredOpportunities}
-            organization={organization}
-          />
-        </div>
-      ) : null}
+            <CrmOpportunitiesTable
+              branches={branches}
+              onCopy={copyCrmSummary}
+              onDelete={deleteOpportunity}
+              onEdit={editOpportunity}
+              onEmail={openCrmEmail}
+              onFollowUp={scheduleFollowUpForOpportunity}
+              onStageChange={changeOpportunityStage}
+              onWhatsApp={openCrmWhatsApp}
+              opportunities={filteredOpportunities}
+              organization={organization}
+            />
+          </div>
+        ) : null}
 
-      {activeView === 'activities' ? (
-        <div className="crm-main-grid">
-          <section className="panel-card crm-form-panel">
-            <PanelHeader icon="bi-calendar-plus" title="Activity Planner" tone="orange" />
-            <form className="record-form crm-record-form" onSubmit={saveActivity}>
-              <label className="field-stack">
-                <span>Type</span>
-                <select
-                  value={activityForm.activityType}
-                  onChange={(event) =>
-                    setActivityForm((current) => ({
-                      ...current,
-                      activityType: event.target.value as CrmActivityType,
-                    }))
-                  }
-                >
-                  {crmActivityTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {labelizeEnum(type)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Status</span>
-                <select
-                  value={activityForm.status}
-                  onChange={(event) =>
-                    setActivityForm((current) => ({
-                      ...current,
-                      status: event.target.value as CrmActivityStatus,
-                    }))
-                  }
-                >
-                  {crmActivityStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {labelizeEnum(status)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack wide-field">
-                <span>Subject</span>
-                <input
-                  required
-                  maxLength={180}
-                  value={activityForm.subject}
-                  onChange={(event) =>
-                    setActivityForm((current) => ({ ...current, subject: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack wide-field">
-                <span>Related Record</span>
-                <select
-                  value={crmActivityRelationValue(activityForm)}
-                  onChange={(event) => updateActivityRelation(event.target.value)}
-                >
-                  <option value="general">General CRM activity</option>
-                  {leads.length > 0 ? (
-                    <optgroup label="Leads">
-                      {leads.map((lead) => (
-                        <option key={lead.id} value={`lead:${lead.id}`}>
-                          {lead.leadNumber} - {lead.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ) : null}
-                  {opportunities.length > 0 ? (
-                    <optgroup label="Opportunities">
-                      {opportunities.map((opportunity) => (
-                        <option key={opportunity.id} value={`opportunity:${opportunity.id}`}>
-                          {opportunity.opportunityNumber} - {opportunity.title}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ) : null}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Due At</span>
-                <input
-                  type="datetime-local"
-                  value={activityForm.dueAt}
-                  onChange={(event) =>
-                    setActivityForm((current) => ({ ...current, dueAt: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Branch</span>
-                <select
-                  value={activityForm.branchId}
-                  onChange={(event) =>
-                    setActivityForm((current) => ({ ...current, branchId: event.target.value }))
-                  }
-                >
-                  <option value="">No branch assigned</option>
-                  {activeBranches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Assigned To</span>
-                <input
-                  maxLength={120}
-                  value={activityForm.assignedTo}
-                  onChange={(event) =>
-                    setActivityForm((current) => ({ ...current, assignedTo: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack wide-field">
-                <span>Notes</span>
-                <textarea
-                  maxLength={500}
-                  value={activityForm.notes}
-                  onChange={(event) =>
-                    setActivityForm((current) => ({ ...current, notes: event.target.value }))
-                  }
-                />
-              </label>
-              <div className="form-actions wide-field">
-                <button className="primary-action compact-action" type="submit">
-                  <i className="bi bi-save" aria-hidden="true" />
-                  Save Activity
-                </button>
-                <button className="secondary-action compact-action" type="button" onClick={resetActivityForm}>
-                  <i className="bi bi-calendar-plus" aria-hidden="true" />
-                  New
-                </button>
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  onClick={() => updateActivityStatus(activityForm.id, 'DONE')}
-                  disabled={!activities.some((activity) => activity.id === activityForm.id)}
-                >
-                  <i className="bi bi-check2-circle" aria-hidden="true" />
-                  Done
-                </button>
-              </div>
-            </form>
-          </section>
+        {activeView === 'activities' ? (
+          <div className="crm-main-grid">
+            <section className="panel-card crm-form-panel">
+              <PanelHeader icon="bi-calendar-plus" title="Activity Planner" tone="orange" />
+              <form className="record-form crm-record-form" onSubmit={saveActivity}>
+                <label className="field-stack">
+                  <span>Type</span>
+                  <select
+                    value={activityForm.activityType}
+                    onChange={(event) =>
+                      setActivityForm((current) => ({
+                        ...current,
+                        activityType: event.target.value as CrmActivityType,
+                      }))
+                    }
+                  >
+                    {crmActivityTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {labelizeEnum(type)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-stack">
+                  <span>Status</span>
+                  <select
+                    value={activityForm.status}
+                    onChange={(event) =>
+                      setActivityForm((current) => ({
+                        ...current,
+                        status: event.target.value as CrmActivityStatus,
+                      }))
+                    }
+                  >
+                    {crmActivityStatuses.map((status) => (
+                      <option key={status} value={status}>
+                        {labelizeEnum(status)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Subject</span>
+                  <input
+                    required
+                    maxLength={180}
+                    value={activityForm.subject}
+                    onChange={(event) =>
+                      setActivityForm((current) => ({ ...current, subject: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Related Record</span>
+                  <select
+                    value={crmActivityRelationValue(activityForm)}
+                    onChange={(event) => updateActivityRelation(event.target.value)}
+                  >
+                    <option value="general">General CRM activity</option>
+                    {leads.length > 0 ? (
+                      <optgroup label="Leads">
+                        {leads.map((lead) => (
+                          <option key={lead.id} value={`lead:${lead.id}`}>
+                            {lead.leadNumber} - {lead.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                    {opportunities.length > 0 ? (
+                      <optgroup label="Opportunities">
+                        {opportunities.map((opportunity) => (
+                          <option key={opportunity.id} value={`opportunity:${opportunity.id}`}>
+                            {opportunity.opportunityNumber} - {opportunity.title}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ) : null}
+                  </select>
+                </label>
+                <label className="field-stack">
+                  <span>Due At</span>
+                  <input
+                    type="datetime-local"
+                    value={activityForm.dueAt}
+                    onChange={(event) =>
+                      setActivityForm((current) => ({ ...current, dueAt: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>Assigned To</span>
+                  <input
+                    maxLength={120}
+                    value={activityForm.assignedTo}
+                    onChange={(event) =>
+                      setActivityForm((current) => ({ ...current, assignedTo: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="field-stack wide-field">
+                  <span>Notes</span>
+                  <textarea
+                    maxLength={500}
+                    value={activityForm.notes}
+                    onChange={(event) =>
+                      setActivityForm((current) => ({ ...current, notes: event.target.value }))
+                    }
+                  />
+                </label>
+                <div className="form-actions wide-field">
+                  <button className="primary-action compact-action" type="submit">
+                    <i className="bi bi-save" aria-hidden="true" />
+                    Save Activity
+                  </button>
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={resetActivityForm}
+                  >
+                    <i className="bi bi-calendar-plus" aria-hidden="true" />
+                    New
+                  </button>
+                  <button
+                    className="secondary-action compact-action"
+                    type="button"
+                    onClick={() => updateActivityStatus(activityForm.id, 'DONE')}
+                    disabled={!activities.some((activity) => activity.id === activityForm.id)}
+                  >
+                    <i className="bi bi-check2-circle" aria-hidden="true" />
+                    Done
+                  </button>
+                </div>
+              </form>
+            </section>
 
-          <CrmActivitiesTable
-            activities={filteredActivities}
-            leads={leads}
-            onDelete={deleteActivity}
-            onEdit={editActivity}
-            onStatusChange={updateActivityStatus}
-            opportunities={opportunities}
-          />
-        </div>
-      ) : null}
-
-      {summaryQuery.isError ? (
-        <p className="table-footnote">
-          CRM API summary is unavailable. Local CRM records are still available in this browser.
-        </p>
-      ) : null}
+            <CrmActivitiesTable
+              activities={filteredActivities}
+              leads={leads}
+              onDelete={deleteActivity}
+              onEdit={editActivity}
+              onStatusChange={updateActivityStatus}
+              opportunities={opportunities}
+            />
+          </div>
+        ) : null}
+      </div>
+      <p className="crm-storage-note">
+        <i
+          className={`bi ${storageAvailable ? 'bi-device-hdd' : 'bi-exclamation-triangle'}`}
+          aria-hidden="true"
+        />
+        {storageAvailable
+          ? 'Saved in this browser for your account. Export CSV to keep a backup.'
+          : 'Browser storage unavailable. Export CSV to keep your changes.'}
+      </p>
     </section>
   );
 }
@@ -9898,7 +10317,6 @@ function CrmLeadsTable({
                 <th>Contact</th>
                 <th>Value</th>
                 <th>Status</th>
-                <th>Branch</th>
                 <th>Updated</th>
                 <th>Actions</th>
               </tr>
@@ -9929,9 +10347,11 @@ function CrmLeadsTable({
                     {formatMoney(toNumber(lead.estimatedValue), organization.currencyCode)}
                   </td>
                   <td data-label="Status">
-                    <StatusPill status={crmRecordTone(lead.status)} label={labelizeEnum(lead.status)} />
+                    <StatusPill
+                      status={crmRecordTone(lead.status)}
+                      label={labelizeEnum(lead.status)}
+                    />
                   </td>
-                  <td data-label="Branch">{branchName(branches, lead.branchId)}</td>
                   <td data-label="Updated">{formatDateTime(lead.updatedAt)}</td>
                   <td data-label="Actions">
                     <div className="commercial-table-actions crm-table-actions">
@@ -9941,19 +10361,31 @@ function CrmLeadsTable({
                       <button className="text-button" type="button" onClick={() => onConvert(lead)}>
                         Convert
                       </button>
-                      <button className="text-button" type="button" onClick={() => onFollowUp(lead)}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onFollowUp(lead)}
+                      >
                         Follow-up
                       </button>
                       <button className="text-button" type="button" onClick={() => onCopy(lead)}>
                         Copy
                       </button>
-                      <button className="text-button" type="button" onClick={() => onWhatsApp(lead)}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onWhatsApp(lead)}
+                      >
                         WhatsApp
                       </button>
                       <button className="text-button" type="button" onClick={() => onEmail(lead)}>
                         Email
                       </button>
-                      <button className="text-button danger-text-button" type="button" onClick={() => onDelete(lead.id)}>
+                      <button
+                        className="text-button danger-text-button"
+                        type="button"
+                        onClick={() => onDelete(lead.id)}
+                      >
                         Delete
                       </button>
                     </div>
@@ -10023,7 +10455,6 @@ function CrmOpportunitiesTable({
                       <span>
                         <strong>{opportunity.opportunityNumber}</strong>
                         <small>{opportunity.title}</small>
-                        <small>{branchName(branches, opportunity.branchId)}</small>
                       </span>
                     </span>
                   </td>
@@ -10051,28 +10482,60 @@ function CrmOpportunitiesTable({
                   <td data-label="Close">{formatDateOnly(opportunity.expectedCloseDate)}</td>
                   <td data-label="Actions">
                     <div className="commercial-table-actions crm-table-actions">
-                      <button className="text-button" type="button" onClick={() => onEdit(opportunity)}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onEdit(opportunity)}
+                      >
                         Edit
                       </button>
-                      <button className="text-button" type="button" onClick={() => onFollowUp(opportunity)}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onFollowUp(opportunity)}
+                      >
                         Follow-up
                       </button>
-                      <button className="text-button" type="button" onClick={() => onStageChange(opportunity.id, 'WON')}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onStageChange(opportunity.id, 'WON')}
+                      >
                         Won
                       </button>
-                      <button className="text-button" type="button" onClick={() => onStageChange(opportunity.id, 'LOST')}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onStageChange(opportunity.id, 'LOST')}
+                      >
                         Lost
                       </button>
-                      <button className="text-button" type="button" onClick={() => onCopy(opportunity)}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onCopy(opportunity)}
+                      >
                         Copy
                       </button>
-                      <button className="text-button" type="button" onClick={() => onWhatsApp(opportunity)}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onWhatsApp(opportunity)}
+                      >
                         WhatsApp
                       </button>
-                      <button className="text-button" type="button" onClick={() => onEmail(opportunity)}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onEmail(opportunity)}
+                      >
                         Email
                       </button>
-                      <button className="text-button danger-text-button" type="button" onClick={() => onDelete(opportunity.id)}>
+                      <button
+                        className="text-button danger-text-button"
+                        type="button"
+                        onClick={() => onDelete(opportunity.id)}
+                      >
                         Delete
                       </button>
                     </div>
@@ -10129,14 +10592,19 @@ function CrmActivitiesTable({
                 <tr key={activity.id}>
                   <td data-label="Activity">
                     <span className="table-label">
-                      <i className={`bi ${crmActivityIcon(activity.activityType)}`} aria-hidden="true" />
+                      <i
+                        className={`bi ${crmActivityIcon(activity.activityType)}`}
+                        aria-hidden="true"
+                      />
                       <span>
                         <strong>{activity.subject}</strong>
                         <small>{labelizeEnum(activity.activityType)}</small>
                       </span>
                     </span>
                   </td>
-                  <td data-label="Related">{crmActivityRelatedLabel(activity, leads, opportunities)}</td>
+                  <td data-label="Related">
+                    {crmActivityRelatedLabel(activity, leads, opportunities)}
+                  </td>
                   <td data-label="Due">
                     {activity.dueAt ? formatDateTime(activity.dueAt) : 'N/A'}
                     {isCrmActivityOverdue(activity) ? (
@@ -10155,16 +10623,32 @@ function CrmActivitiesTable({
                   <td data-label="Assigned">{activity.assignedTo || 'Unassigned'}</td>
                   <td data-label="Actions">
                     <div className="commercial-table-actions crm-table-actions">
-                      <button className="text-button" type="button" onClick={() => onEdit(activity)}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onEdit(activity)}
+                      >
                         Edit
                       </button>
-                      <button className="text-button" type="button" onClick={() => onStatusChange(activity.id, 'DONE')}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onStatusChange(activity.id, 'DONE')}
+                      >
                         Done
                       </button>
-                      <button className="text-button" type="button" onClick={() => onStatusChange(activity.id, 'CANCELLED')}>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={() => onStatusChange(activity.id, 'CANCELLED')}
+                      >
                         Cancel
                       </button>
-                      <button className="text-button danger-text-button" type="button" onClick={() => onDelete(activity.id)}>
+                      <button
+                        className="text-button danger-text-button"
+                        type="button"
+                        onClick={() => onDelete(activity.id)}
+                      >
                         Delete
                       </button>
                     </div>
@@ -10181,10 +10665,11 @@ function CrmActivitiesTable({
 
 function crmWorkspaceViews(): { key: CrmWorkspaceView; label: string; icon: string }[] {
   return [
-    { key: 'pipeline', label: 'Pipeline', icon: 'bi-kanban' },
-    { key: 'leads', label: 'Leads', icon: 'bi-person-plus' },
-    { key: 'opportunities', label: 'Opportunities', icon: 'bi-graph-up-arrow' },
-    { key: 'activities', label: 'Activities', icon: 'bi-calendar-check' },
+    { key: 'overview', label: 'Overview', icon: 'bi-grid-1x2' },
+    { key: 'leads', label: 'Contacts', icon: 'bi-people' },
+    { key: 'pipeline', label: 'Opportunities', icon: 'bi-kanban' },
+    { key: 'opportunities', label: 'Deal register', icon: 'bi-list-ul' },
+    { key: 'activities', label: 'Tasks & appointments', icon: 'bi-calendar-check' },
   ];
 }
 
@@ -10334,7 +10819,13 @@ function normalizeCrmOpportunity(opportunity: CrmOpportunity): CrmOpportunity {
     phone: opportunity.phone.trim(),
     email: opportunity.email.trim(),
     expectedValue: String(Math.max(0, toNumber(opportunity.expectedValue))),
-    probabilityPercent: String(Math.min(100, Math.max(0, toNumber(opportunity.probabilityPercent)))),
+    probabilityPercent: String(
+      opportunity.stage === 'WON'
+        ? 100
+        : opportunity.stage === 'LOST'
+          ? 0
+          : Math.min(100, Math.max(0, toNumber(opportunity.probabilityPercent))),
+    ),
     expectedCloseDate: opportunity.expectedCloseDate,
     notes: opportunity.notes.trim(),
     createdAt: opportunity.createdAt || now,
@@ -10358,9 +10849,9 @@ function normalizeCrmActivity(activity: CrmActivity): CrmActivity {
   };
 }
 
-function loadCrmRecords(): CrmRecords {
+function loadCrmRecords(storageKey: string): CrmRecords {
   try {
-    const rawRecords = window.localStorage.getItem(CRM_STORAGE_KEY);
+    const rawRecords = window.localStorage.getItem(storageKey);
     if (!rawRecords) {
       return emptyCrmRecords();
     }
@@ -10377,11 +10868,12 @@ function loadCrmRecords(): CrmRecords {
   }
 }
 
-function saveCrmRecords(records: CrmRecords) {
+function saveCrmRecords(storageKey: string, records: CrmRecords) {
   try {
-    window.localStorage.setItem(CRM_STORAGE_KEY, JSON.stringify(records));
+    window.localStorage.setItem(storageKey, JSON.stringify(records));
+    return true;
   } catch {
-    // Local CRM persistence is best-effort when storage is unavailable.
+    return false;
   }
 }
 
@@ -10471,11 +10963,17 @@ function upsertCrmRecord<T extends { id: string }>(records: T[], record: T) {
 }
 
 function nextCrmLeadNumber(leads: CrmLead[]) {
-  return nextCrmNumber('LEAD', leads.map((lead) => lead.leadNumber));
+  return nextCrmNumber(
+    'LEAD',
+    leads.map((lead) => lead.leadNumber),
+  );
 }
 
 function nextCrmOpportunityNumber(opportunities: CrmOpportunity[]) {
-  return nextCrmNumber('OPP', opportunities.map((opportunity) => opportunity.opportunityNumber));
+  return nextCrmNumber(
+    'OPP',
+    opportunities.map((opportunity) => opportunity.opportunityNumber),
+  );
 }
 
 function nextCrmNumber(prefix: string, existingNumbers: string[]) {
@@ -10494,12 +10992,12 @@ function crmMetrics(records: CrmRecords, currencyCode: string) {
   const openOpportunities = records.opportunities.filter(
     (opportunity) => !['WON', 'LOST'].includes(opportunity.stage),
   );
-  const pipelineValue =
-    openLeads.reduce((sum, lead) => sum + toNumber(lead.estimatedValue), 0) +
-    openOpportunities.reduce((sum, opportunity) => sum + toNumber(opportunity.expectedValue), 0);
-  const weightedValue = openOpportunities.reduce(
-    (sum, opportunity) => sum + crmWeightedValue(opportunity),
+  const pipelineValue = openOpportunities.reduce(
+    (sum, opportunity) => sum + toNumber(opportunity.expectedValue),
     0,
+  );
+  const wonOpportunities = records.opportunities.filter(
+    (opportunity) => opportunity.stage === 'WON',
   );
   const dueActivities = records.activities.filter(
     (activity) => activity.status === 'OPEN' && activity.dueAt,
@@ -10508,35 +11006,41 @@ function crmMetrics(records: CrmRecords, currencyCode: string) {
   return [
     {
       icon: 'bi-person-plus',
-      label: 'Open Leads',
-      value: openLeads.length.toLocaleString('en-KE'),
-      tone: 'green' as const,
+      label: 'Total contacts',
+      value: records.leads.length.toLocaleString('en-KE'),
+      detail: `${openLeads.length} open leads to nurture`,
+      tone: 'blue',
     },
     {
       icon: 'bi-kanban',
-      label: 'Open Opportunities',
-      value: openOpportunities.length.toLocaleString('en-KE'),
-      tone: 'blue' as const,
+      label: 'Open pipeline',
+      value: formatMoney(pipelineValue, currencyCode),
+      detail: `${openOpportunities.length} opportunities in progress`,
+      tone: 'cyan',
     },
     {
       icon: 'bi-cash-stack',
-      label: 'Pipeline Value',
-      value: formatMoney(pipelineValue, currencyCode),
-      tone: 'orange' as const,
+      label: 'Won deal value',
+      value: formatMoney(
+        wonOpportunities.reduce((sum, opportunity) => sum + toNumber(opportunity.expectedValue), 0),
+        currencyCode,
+      ),
+      detail: `${wonOpportunities.length} opportunities won`,
+      tone: 'green',
     },
     {
       icon: 'bi-clock-history',
-      label: overdueCount > 0 ? 'Overdue Follow-ups' : 'Weighted Pipeline',
-      value:
-        overdueCount > 0
-          ? overdueCount.toLocaleString('en-KE')
-          : formatMoney(weightedValue, currencyCode),
-      tone: 'purple' as const,
+      label: 'Follow-ups due',
+      value: overdueCount.toLocaleString('en-KE'),
+      detail: `${records.activities.filter((activity) => activity.status === 'OPEN').length} open tasks & appointments`,
+      tone: 'amber',
     },
   ];
 }
 
-function crmWeightedValue(opportunity: Pick<CrmOpportunity, 'expectedValue' | 'probabilityPercent'>) {
+function crmWeightedValue(
+  opportunity: Pick<CrmOpportunity, 'expectedValue' | 'probabilityPercent'>,
+) {
   return toNumber(opportunity.expectedValue) * (toNumber(opportunity.probabilityPercent) / 100);
 }
 
@@ -10551,7 +11055,7 @@ function crmRecordTone(status: string): 'posted' | 'review' | 'pending' {
 }
 
 function branchName(branches: Branch[], branchId: string) {
-  return branches.find((branch) => branch.id === branchId)?.name ?? 'No branch';
+  return branches.find((branch) => branch.id === branchId)?.name ?? 'Shop';
 }
 
 function sortCrmByUpdatedAt<T extends { updatedAt: string }>(first: T, second: T) {
@@ -10638,7 +11142,9 @@ function crmOpportunitySummary(opportunity: CrmOpportunity, organization: Organi
     `Stage: ${labelizeEnum(opportunity.stage)}`,
     `Expected value: ${formatMoney(toNumber(opportunity.expectedValue), organization.currencyCode)}`,
     `Probability: ${toNumber(opportunity.probabilityPercent).toFixed(0)}%`,
-    opportunity.expectedCloseDate ? `Expected close: ${formatDateOnly(opportunity.expectedCloseDate)}` : '',
+    opportunity.expectedCloseDate
+      ? `Expected close: ${formatDateOnly(opportunity.expectedCloseDate)}`
+      : '',
     opportunity.notes ? `Notes: ${opportunity.notes}` : '',
   ]
     .filter(Boolean)
@@ -10648,10 +11154,9 @@ function crmOpportunitySummary(opportunity: CrmOpportunity, organization: Organi
 function moduleFallbackTitle(queryKey: string) {
   const titles: Record<string, string> = {
     'accounting-summary': 'Accounting',
-    'commercial-summary': 'Quotations & Invoicing',
+    'commercial-summary': 'Invoicing',
     'crm-summary': 'CRM',
     'customers-summary': 'Customers',
-    'etims-summary': 'eTIMS',
     'procurement-summary': 'Procurement',
   };
   return titles[queryKey] ?? 'ERP Module';
@@ -10737,14 +11242,15 @@ function auditMetadataPreview(event: AuditEvent) {
 }
 
 type DashboardProps = {
-  activeBranch?: Branch;
   branches: Branch[];
   currentUser: CurrentUser;
   organization: Organization;
 };
 
-function Dashboard({ activeBranch, branches, currentUser, organization }: DashboardProps) {
+function Dashboard({ branches, currentUser, organization }: DashboardProps) {
+  const { branchId: platformBranchId } = usePlatform();
   const navigate = useNavigate();
+  const salesGradientId = useId();
   const showProfit = canViewProfit(currentUser);
   const canViewStockAdjustments = hasAnyPermission(currentUser, [
     'admin:manage',
@@ -10768,27 +11274,25 @@ function Dashboard({ activeBranch, branches, currentUser, organization }: Dashbo
     enabled: canViewStockAdjustments,
     refetchOnMount: 'always',
   });
-  const inventory = inventoryQuery.data ?? [];
-  const sales = salesQuery.data ?? [];
-  const expenses = expensesQuery.data ?? [];
-  const stockAdjustmentSummary = stockAdjustmentSummaryQuery.data ?? emptyStockAdjustmentSummary();
-  const branchRows = (activeBranch ? [activeBranch] : branches).filter(
-    (branch) => branch.status === 'ACTIVE',
-  );
+  const scopedAdjustmentsQuery = useQuery({
+    queryKey: ['stock-adjustments'],
+    queryFn: getStockAdjustments,
+    enabled: canViewStockAdjustments && Boolean(platformBranchId),
+  });
+  const inventory = inBranch(inventoryQuery.data ?? [], platformBranchId);
+  const sales = inBranch(salesQuery.data ?? [], platformBranchId);
+  const expenses = inBranch(expensesQuery.data ?? [], platformBranchId);
+  const stockAdjustmentSummary = platformBranchId
+    ? stockAdjustmentSummaryFromAdjustments(
+        inBranch(scopedAdjustmentsQuery.data ?? [], platformBranchId),
+      )
+    : (stockAdjustmentSummaryQuery.data ?? emptyStockAdjustmentSummary());
   const todayRange = reportPeriodRange('today');
-  const branchSales = activeBranch
-    ? sales.filter((sale) => sale.branchId === activeBranch.id)
-    : sales;
-  const dashboardSales = branchSales.filter((sale) => isWithinReportRange(sale.soldAt, todayRange));
-  const branchExpenses = activeBranch
-    ? expenses.filter((expense) => expense.branchId === activeBranch.id)
-    : expenses;
-  const dashboardExpenses = branchExpenses.filter((expense) =>
+  const dashboardSales = sales.filter((sale) => isWithinReportRange(sale.soldAt, todayRange));
+  const dashboardExpenses = expenses.filter((expense) =>
     isWithinReportRange(expense.incurredAt, todayRange),
   );
-  const dashboardInventory = activeBranch
-    ? inventory.filter((item) => item.branchId === activeBranch.id)
-    : inventory;
+  const dashboardInventory = inventory;
   const totalSales = salesTotal(dashboardSales);
   const grossProfit = grossProfitFromSales(dashboardSales);
   const totalExpenses = expensesTotal(
@@ -10802,8 +11306,50 @@ function Dashboard({ activeBranch, branches, currentUser, organization }: Dashbo
   ).filter((metric) => showProfit || !metric.profitOnly);
   const dashboardSalesTrend = dashboardSalesTrendFromSales(dashboardSales);
   const paymentMethodTotals = paymentMethodTotalsFromSales(dashboardSales);
-  const branchPerformanceRows = branchPerformanceFromSales(branchRows, dashboardSales);
+  const paymentColors: Record<string, string> = {
+    'M-Pesa': '#16a76a',
+    Cash: '#2563eb',
+    Card: '#f5b916',
+  };
+  const dashboardPayments = paymentMethodTotals.map((payment) => ({
+    ...payment,
+    color: paymentColors[payment.name] ?? payment.color,
+  }));
+  const dashboardDate = new Intl.DateTimeFormat('en-KE', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: organization.timeZone,
+  }).format(new Date());
+  const canOpenPos = canAccessPath(currentUser, '/pos');
+  const canOpenCrm = canAccessPath(currentUser, '/crm');
   const lowStockItems = dashboardInventory.filter((item) => item.stockHealth !== 'HEALTHY');
+  const dashboardShortcuts = [
+    {
+      label: 'New Sale',
+      detail: 'Open POS',
+      icon: 'bi-bag-check',
+      to: '/pos',
+    },
+    {
+      label: 'Add Stock',
+      detail: 'Receive items',
+      icon: 'bi-box-arrow-in-down',
+      to: '/add-stock',
+    },
+    {
+      label: 'Products',
+      detail: 'Catalog',
+      icon: 'bi-tags',
+      to: '/product-catalog',
+    },
+    {
+      label: 'Reports',
+      detail: 'Business view',
+      icon: 'bi-file-earmark-text',
+      to: '/reports',
+    },
+  ].filter((shortcut) => canAccessPath(currentUser, shortcut.to));
   const isExportDisabled =
     !showProfit ||
     inventoryQuery.isPending ||
@@ -10813,39 +11359,117 @@ function Dashboard({ activeBranch, branches, currentUser, organization }: Dashbo
 
   return (
     <section className="dashboard-grid">
-      <PageHeader
-        title="Today's Dashboard"
-        subtitle="Daily sales, expenses, payments, and stock alerts for the selected branch view."
-        action={
-          showProfit ? (
-            <div className="header-actions">
-              <button
-                className="primary-action compact-action"
-                type="button"
-                disabled={isExportDisabled}
-                onClick={() =>
-                  exportDashboardCsv({
-                    branchPerformanceRows,
-                    contribution: grossProfit - totalExpenses,
-                    currencyCode: organization.currencyCode,
-                    grossProfit,
-                    lowStockItems,
-                    paymentMethodTotals,
-                    scope: activeBranch?.name ?? 'All Branches',
-                    stockAdjustmentSummary,
-                    totalExpenses,
-                    totalSales,
-                    transactions: dashboardSales.length,
-                  })
-                }
-              >
-                <i className="bi bi-download" aria-hidden="true" />
-                Export
-              </button>
-            </div>
-          ) : undefined
-        }
-      />
+      <div className="dashboard-hero">
+        <div className="dashboard-hero-meta">
+          <span>
+            <span className="dashboard-brand-mark" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </span>
+            {organization.name}
+            <span className="dashboard-meta-divider" />
+            Business overview
+          </span>
+          <time dateTime={todayInputValue()}>{dashboardDate}</time>
+        </div>
+        <PageHeader
+          eyebrow="A CLEAR VIEW. A STRONGER BUSINESS."
+          title="Today's Dashboard"
+          subtitle="Your sales, your people, your next opportunity. Everything you need to move your business forward."
+          action={
+            showProfit ? (
+              <div className="header-actions">
+                <button
+                  className="primary-action compact-action dashboard-export"
+                  type="button"
+                  disabled={isExportDisabled}
+                  onClick={() =>
+                    exportDashboardCsv({
+                      contribution: grossProfit - totalExpenses,
+                      currencyCode: organization.currencyCode,
+                      grossProfit,
+                      lowStockItems,
+                      paymentMethodTotals,
+                      scope: 'Shop',
+                      stockAdjustmentSummary,
+                      totalExpenses,
+                      totalSales,
+                      transactions: dashboardSales.length,
+                    })
+                  }
+                >
+                  <i className="bi bi-download" aria-hidden="true" />
+                  Export
+                </button>
+              </div>
+            ) : undefined
+          }
+        />
+        <div className="dashboard-hero-actions">
+          <button
+            className="dashboard-yellow-action"
+            type="button"
+            onClick={() => navigate(canOpenPos ? '/pos' : '/inventory')}
+          >
+            {canOpenPos ? 'Start a sale' : 'Review inventory'}
+            <i className="bi bi-arrow-up-right" aria-hidden="true" />
+          </button>
+          {canOpenCrm ? (
+            <button className="dashboard-hero-link" type="button" onClick={() => navigate('/crm')}>
+              Build customer relationships
+              <i className="bi bi-arrow-right" aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+        <div className="dashboard-hero-art" aria-hidden="true">
+          <span className="dashboard-art-orbit" />
+          <span className="dashboard-art-orbit orbit-two" />
+          <div className="dashboard-art-arrows">
+            <i className="bi bi-arrow-up" />
+            <i className="bi bi-arrow-up" />
+            <i className="bi bi-arrow-up" />
+          </div>
+          <span className="dashboard-art-caption">
+            <i className="bi bi-check-circle-fill" />
+            Ready for your next move
+          </span>
+        </div>
+        <div className="dashboard-hero-footer">
+          <span>
+            <i className="bi bi-shop" aria-hidden="true" />
+            {branches.filter((branch) => branch.status === 'ACTIVE').length} active{' '}
+            {branches.filter((branch) => branch.status === 'ACTIVE').length === 1
+              ? 'branch'
+              : 'branches'}
+          </span>
+          <span>
+            <i className="bi bi-receipt" aria-hidden="true" />
+            {dashboardSales.length} {dashboardSales.length === 1 ? 'transaction' : 'transactions'}{' '}
+            today
+          </span>
+          <span className="dashboard-hero-footer-note">Make today a good day for business.</span>
+        </div>
+      </div>
+
+      {dashboardShortcuts.length > 0 ? (
+        <div className="dashboard-action-strip" aria-label="Quick actions">
+          {dashboardShortcuts.map((shortcut) => (
+            <button
+              className="dashboard-action"
+              key={shortcut.to}
+              type="button"
+              onClick={() => navigate(shortcut.to)}
+            >
+              <i className={`bi ${shortcut.icon}`} aria-hidden="true" />
+              <span>
+                <strong>{shortcut.label}</strong>
+                <small>{shortcut.detail}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="metric-grid">
         {dashboardMetrics.map((metric) => (
@@ -10864,7 +11488,8 @@ function Dashboard({ activeBranch, branches, currentUser, organization }: Dashbo
 
       <div className="dashboard-chart-grid">
         <section className="chart-panel sales-trend-panel">
-          <PanelHeader icon="bi-bar-chart-fill" title="Today's Sales Performance" />
+          <p className="dashboard-section-kicker">EVERY SALE TELLS A STORY</p>
+          <PanelHeader icon="bi-bar-chart-fill" title="Today's Sales Performance" tone="blue" />
           <div className="chart-wrap">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
@@ -10872,7 +11497,13 @@ function Dashboard({ activeBranch, branches, currentUser, organization }: Dashbo
                 barCategoryGap="38%"
                 margin={{ left: 18, right: 28, top: 14, bottom: 2 }}
               >
-                <CartesianGrid stroke="#d6dee8" strokeDasharray="4 4" vertical={false} />
+                <defs>
+                  <linearGradient id={salesGradientId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#21c4e8" />
+                    <stop offset="100%" stopColor="#2563eb" />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="#e8eef6" strokeDasharray="4 4" vertical={false} />
                 <XAxis
                   dataKey="day"
                   tick={{ fill: '#1f2937', fontSize: 12 }}
@@ -10905,7 +11536,7 @@ function Dashboard({ activeBranch, branches, currentUser, organization }: Dashbo
                 <Bar
                   yAxisId="amount"
                   dataKey="netSales"
-                  fill="#2878f0"
+                  fill={`url(#${salesGradientId})`}
                   name="Net Sales"
                   radius={[4, 4, 0, 0]}
                   maxBarSize={52}
@@ -10916,10 +11547,10 @@ function Dashboard({ activeBranch, branches, currentUser, organization }: Dashbo
                   type="linear"
                   dataKey="cumulativeSales"
                   name="Running Total"
-                  stroke="#0f2f4a"
+                  stroke="#16a76a"
                   strokeWidth={3}
-                  dot={{ r: 4, fill: '#ffffff', stroke: '#0f2f4a', strokeWidth: 2 }}
-                  activeDot={{ r: 5, fill: '#ffffff', stroke: '#0f2f4a', strokeWidth: 3 }}
+                  dot={{ r: 4, fill: '#ffffff', stroke: '#16a76a', strokeWidth: 2 }}
+                  activeDot={{ r: 5, fill: '#ffffff', stroke: '#16a76a', strokeWidth: 3 }}
                   isAnimationActive={false}
                 />
               </ComposedChart>
@@ -10938,7 +11569,12 @@ function Dashboard({ activeBranch, branches, currentUser, organization }: Dashbo
         </section>
 
         <section className="chart-panel payment-panel">
-          <PanelHeader icon="bi-credit-card-2-front-fill" title="Sales by Payment Method" />
+          <p className="dashboard-section-kicker">HOW YOUR CUSTOMERS PAY</p>
+          <PanelHeader
+            icon="bi-credit-card-2-front-fill"
+            title="Sales by Payment Method"
+            tone="green"
+          />
           {salesQuery.isPending ? (
             <LoadingPanel label="Loading payment totals..." />
           ) : (
@@ -10946,81 +11582,13 @@ function Dashboard({ activeBranch, branches, currentUser, organization }: Dashbo
               centerValue={formatMoney(totalSales, organization.currencyCode)}
               centerLabel="Total Sales"
               currencyCode={organization.currencyCode}
-              data={paymentMethodTotals}
+              data={dashboardPayments}
             />
           )}
         </section>
       </div>
 
       <div className="dashboard-lower-grid">
-        <section className="panel-card branch-panel">
-          <PanelHeader
-            icon="bi-shop"
-            title="Branch Performance"
-            action={
-              hasPermission(currentUser, 'admin:manage') ? (
-                <button className="text-button" type="button" onClick={() => navigate('/branches')}>
-                  View All Branches
-                </button>
-              ) : undefined
-            }
-          />
-          <div className="responsive-table compact-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Branch</th>
-                  <th>Net Sales</th>
-                  {showProfit ? <th>Gross Profit</th> : null}
-                  <th>Transactions</th>
-                  <th>Avg Basket</th>
-                  <th>Variance</th>
-                  <th>Trend</th>
-                </tr>
-              </thead>
-              <tbody>
-                {branchRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={showProfit ? 7 : 6}>
-                      <span className="muted-table-message">No branches registered yet</span>
-                    </td>
-                  </tr>
-                ) : (
-                  branchPerformanceRows.map((row, index) => (
-                    <tr key={row.branch.id}>
-                      <td data-label="Branch">
-                        <span className="table-label">
-                          <i className="bi bi-shop" aria-hidden="true" />
-                          {row.branch.name}
-                        </span>
-                      </td>
-                      <td data-label="Net Sales">
-                        {formatMoney(row.netSales, organization.currencyCode)}
-                      </td>
-                      {showProfit ? (
-                        <td data-label="Gross Profit">
-                          {formatMoney(row.grossProfit, organization.currencyCode)}
-                        </td>
-                      ) : null}
-                      <td data-label="Transactions">{row.transactions}</td>
-                      <td data-label="Avg Basket">
-                        {formatMoney(row.averageBasket, organization.currencyCode)}
-                      </td>
-                      <td data-label="Variance" className="positive-text">
-                        <i className="bi bi-dash" aria-hidden="true" />
-                        0%
-                      </td>
-                      <td data-label="Trend">
-                        <Sparkline offset={index} />
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
         <section className="panel-card alerts-panel">
           <PanelHeader
             icon="bi-exclamation-triangle-fill"
@@ -11053,9 +11621,7 @@ function Dashboard({ activeBranch, branches, currentUser, organization }: Dashbo
                   <i className="bi bi-box-seam" aria-hidden="true" />
                 </span>
                 <strong>{item.productName}</strong>
-                <small>
-                  {stockHealthLabel(item.stockHealth)} - {item.branchName}
-                </small>
+                <small>{stockHealthLabel(item.stockHealth)}</small>
                 <i className="bi bi-chevron-right" aria-hidden="true" />
               </button>
             ))
@@ -11272,6 +11838,51 @@ function salesTrendFromSales(sales: Sale[], interval: SalesTrendInterval = 'dail
     });
 }
 
+function reportSalesTrendRowsFromSales(sales: Sale[], range: ReportDateRange) {
+  const normalizedRange = normalizeReportDateRange(range);
+  const fromDate = normalizedRange.from
+    ? dateInputToLocalDate(normalizedRange.from)
+    : startOfLocalDay(new Date());
+  const toDate = normalizedRange.to
+    ? dateInputToLocalDate(normalizedRange.to)
+    : startOfLocalDay(fromDate);
+  const rowsByDay = new Map<
+    string,
+    { day: string; grossProfit: number; retailSales: number; sortKey: number }
+  >();
+
+  for (
+    let cursor = startOfLocalDay(fromDate);
+    cursor.getTime() <= endOfLocalDay(toDate).getTime();
+    cursor = addLocalDays(cursor, 1)
+  ) {
+    rowsByDay.set(dateInputValue(cursor), {
+      day: new Intl.DateTimeFormat('en-KE', { day: 'numeric', month: 'short' }).format(cursor),
+      grossProfit: 0,
+      retailSales: 0,
+      sortKey: cursor.getTime(),
+    });
+  }
+
+  for (const sale of sales) {
+    const soldAt = new Date(sale.soldAt);
+    if (Number.isNaN(soldAt.getTime())) {
+      continue;
+    }
+
+    const dayKey = dateInputValue(soldAt);
+    const existing = rowsByDay.get(dayKey);
+    if (!existing) {
+      continue;
+    }
+
+    existing.retailSales += sale.totalAmount;
+    existing.grossProfit += grossProfitFromSales([sale]);
+  }
+
+  return [...rowsByDay.values()].sort((first, second) => first.sortKey - second.sortKey);
+}
+
 function startOfWeek(date: Date) {
   const weekStart = new Date(date);
   const day = weekStart.getDay();
@@ -11363,13 +11974,10 @@ function buildReportSummary(
   sales: Sale[],
   expenses: Expense[],
   inventory: InventoryItem[],
-  users: StaffUser[],
   stockIntakes: StockIntake[] = [],
-  transfers: StockTransfer[] = [],
   stockAdjustments: StockAdjustment[] = [],
 ) {
   const nonVoidedExpenses = expenses.filter((expense) => expense.status !== 'VOID');
-  const completedTransfers = transfers.filter((transfer) => transfer.status === 'COMPLETED');
   const stockAdjustmentRows = [...stockAdjustments].sort(
     (first, second) => Date.parse(second.adjustedAt) - Date.parse(first.adjustedAt),
   );
@@ -11393,18 +12001,15 @@ function buildReportSummary(
     (sum, intake) => sum + intake.quantity * intake.unitCost,
     0,
   );
-  const transferredUnits = completedTransfers.reduce((sum, transfer) => sum + transfer.quantity, 0);
   const activityRows = reportMixRows([
     { name: 'Sales receipts', value: sales.length, color: '#2878f0' },
     { name: 'Expense entries', value: nonVoidedExpenses.length, color: '#7357e8' },
     { name: 'Stock receipts', value: stockIntakes.length, color: '#9db8d5' },
-    { name: 'Transfers', value: completedTransfers.length, color: '#ff8a1f' },
     { name: 'Stock counts', value: stockAdjustmentRows.length, color: '#e93445' },
   ]);
   const stockMovementRows = reportMixRows([
     { name: 'Units sold', value: totalItems, color: '#2878f0' },
     { name: 'Units received', value: receivedUnits, color: '#7357e8' },
-    { name: 'Units transferred', value: transferredUnits, color: '#9db8d5' },
     {
       name: 'Shortage units',
       value: stockAdjustmentSummary.totalLossQuantity,
@@ -11423,7 +12028,6 @@ function buildReportSummary(
   ]);
 
   return {
-    activeUserCount: users.filter((user) => user.status === 'ACTIVE').length,
     activityRows,
     activityTotal: activityRows.reduce((sum, row) => sum + row.value, 0),
     branchSalesRows: branchSalesReportRows(branches, sales),
@@ -11432,7 +12036,6 @@ function buildReportSummary(
     ),
     categoryRows,
     categoryRowsTotal: categoryRows.reduce((sum, row) => sum + row.value, 0),
-    completedTransfers,
     contribution: grossProfit - expenseTotal,
     expenseRows: expenseCategoryRows(nonVoidedExpenses),
     expenseReportRows: expenseReportRows(nonVoidedExpenses),
@@ -11460,10 +12063,6 @@ function buildReportSummary(
     totalSales,
     totalStockValue,
     transactions: sales.length,
-    transferredUnits,
-    transfers,
-    userCount: users.length,
-    users,
   };
 }
 
@@ -11624,14 +12223,6 @@ function addLocalDays(date: Date, days: number) {
 
 function matchesReportBranch(branchId: string, selectedBranchId: string) {
   return !selectedBranchId || branchId === selectedBranchId;
-}
-
-function matchesTransferBranch(transfer: StockTransfer, selectedBranchId: string) {
-  return (
-    !selectedBranchId ||
-    transfer.sourceBranchId === selectedBranchId ||
-    transfer.destinationBranchId === selectedBranchId
-  );
 }
 
 function isWithinReportRange(value: string, range: ReportDateRange) {
@@ -11804,7 +12395,7 @@ function reportOverviewCards(
       value: formatMoney(summary.expenseTotal, organization.currencyCode),
     },
     {
-      detail: `${summary.activeUserCount} active users`,
+      detail: 'Gross profit less expenses',
       icon: 'bi-cash-stack',
       label: 'Net position',
       tone: summary.contribution >= 0 ? 'blue' : 'red',
@@ -11816,13 +12407,6 @@ function reportOverviewCards(
       label: 'Inventory received',
       tone: 'orange',
       value: formatMoney(summary.receivedValue, organization.currencyCode),
-    },
-    {
-      detail: `${summary.completedTransfers.length} transfers`,
-      icon: 'bi-arrow-left-right',
-      label: 'Transfer units',
-      tone: 'blue',
-      value: formatQuantity(summary.transferredUnits),
     },
     {
       detail: `${summary.stockAdjustmentSummary.lossItems} loss / ${summary.stockAdjustmentSummary.excessItems} excess`,
@@ -11891,11 +12475,11 @@ function recentReportsFromSummary(summary: ReturnType<typeof buildReportSummary>
       type: 'products',
     },
     {
-      title: 'Branch Performance',
-      date: `${summary.branchRows.length} branches`,
-      icon: 'bi-building',
+      title: 'Shop Snapshot',
+      date: `${summary.transactions} transactions`,
+      icon: 'bi-shop-window',
       tone: 'purple',
-      type: 'branches',
+      type: 'shop',
     },
     {
       title: 'Inventory Health',
@@ -11905,323 +12489,6 @@ function recentReportsFromSummary(summary: ReturnType<typeof buildReportSummary>
       type: 'inventory',
     },
   ];
-}
-
-type BranchFormState = BranchRequest;
-
-function defaultBranchForm(timeZone: string): BranchFormState {
-  return {
-    name: '',
-    code: '',
-    timeZone: timeZone || 'Africa/Nairobi',
-    status: 'ACTIVE',
-  };
-}
-
-function BranchesPage({
-  branches,
-  organization,
-}: {
-  branches: Branch[];
-  organization: Organization;
-}) {
-  const queryClient = useQueryClient();
-  const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
-  const [form, setForm] = useState<BranchFormState>(() => defaultBranchForm(organization.timeZone));
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-
-  const activeBranches = branches.filter((branch) => branch.status === 'ACTIVE');
-  const inactiveBranches = branches.length - activeBranches.length;
-  const editingBranch = branches.find((branch) => branch.id === editingBranchId);
-
-  const saveBranchMutation = useMutation({
-    mutationFn: (payload: BranchRequest) =>
-      editingBranchId ? updateBranch(editingBranchId, payload) : createBranch(payload),
-    onSuccess: async (savedBranch) => {
-      await queryClient.invalidateQueries({ queryKey: ['branches'] });
-      setEditingBranchId(null);
-      setForm(defaultBranchForm(organization.timeZone));
-      setMessage(`${savedBranch.name} saved.`);
-    },
-  });
-
-  const deactivateBranchMutation = useMutation({
-    mutationFn: deactivateBranch,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['branches'] });
-      setMessage('Branch deactivated.');
-    },
-  });
-
-  const reactivateBranchMutation = useMutation({
-    mutationFn: (branch: Branch) =>
-      updateBranch(branch.id, {
-        name: branch.name,
-        code: branch.code,
-        timeZone: branch.timeZone,
-        status: 'ACTIVE',
-      }),
-    onSuccess: async (branch) => {
-      await queryClient.invalidateQueries({ queryKey: ['branches'] });
-      setMessage(`${branch.name} reactivated.`);
-    },
-  });
-
-  const isBusy =
-    saveBranchMutation.isPending ||
-    deactivateBranchMutation.isPending ||
-    reactivateBranchMutation.isPending;
-
-  function updateForm<K extends keyof BranchFormState>(field: K, value: BranchFormState[K]) {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
-
-  function resetForm() {
-    setEditingBranchId(null);
-    setForm(defaultBranchForm(organization.timeZone));
-    setError('');
-    setMessage('');
-  }
-
-  function editBranch(branch: Branch) {
-    setEditingBranchId(branch.id);
-    setForm({
-      name: branch.name,
-      code: branch.code,
-      timeZone: branch.timeZone,
-      status: branch.status,
-    });
-    setError('');
-    setMessage('');
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-
-    try {
-      await saveBranchMutation.mutateAsync({
-        name: form.name.trim(),
-        code: form.code.trim().toUpperCase(),
-        timeZone: form.timeZone.trim(),
-        status: form.status,
-      });
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save branch');
-    }
-  }
-
-  async function handleDeactivate(branch: Branch) {
-    setError('');
-    setMessage('');
-    try {
-      if (branch.status === 'ACTIVE') {
-        await deactivateBranchMutation.mutateAsync(branch.id);
-      } else {
-        await reactivateBranchMutation.mutateAsync(branch);
-      }
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to update branch');
-    }
-  }
-
-  return (
-    <section className="branch-workspace">
-      <PageHeader
-        title="Branches"
-        subtitle="Register and manage shop locations for this business."
-        action={
-          <button className="primary-action compact-action" type="button" onClick={resetForm}>
-            <i className="bi bi-plus-lg" aria-hidden="true" />
-            New Branch
-          </button>
-        }
-      />
-
-      <div className="branch-summary-row">
-        <SummaryMetric
-          icon="bi-shop"
-          label="Active Branches"
-          value={String(activeBranches.length)}
-          tone="green"
-        />
-        <SummaryMetric
-          icon="bi-pause-circle"
-          label="Inactive Branches"
-          value={String(inactiveBranches)}
-          tone="orange"
-        />
-        <SummaryMetric
-          icon="bi-clock"
-          label="Default Time Zone"
-          value={organization.timeZone}
-          tone="blue"
-        />
-      </div>
-
-      <div className="management-grid">
-        <section className="panel-card branch-form-panel">
-          <PanelHeader
-            icon={editingBranch ? 'bi-pencil-square' : 'bi-plus-square'}
-            title={editingBranch ? 'Edit Branch' : 'Register Branch'}
-          />
-
-          <form className="record-form hr-employee-form" onSubmit={handleSubmit}>
-            <label className="field-stack">
-              <span>Branch Name</span>
-              <input
-                required
-                maxLength={160}
-                value={form.name}
-                onChange={(event) => updateForm('name', event.target.value)}
-              />
-            </label>
-
-            <label className="field-stack">
-              <span>Branch Code</span>
-              <input
-                required
-                maxLength={24}
-                value={form.code}
-                onChange={(event) => updateForm('code', event.target.value.toUpperCase())}
-              />
-            </label>
-
-            <label className="field-stack">
-              <span>Time Zone</span>
-              <input
-                required
-                maxLength={64}
-                value={form.timeZone}
-                onChange={(event) => updateForm('timeZone', event.target.value)}
-              />
-            </label>
-
-            <label className="field-stack">
-              <span>Status</span>
-              <select
-                value={form.status}
-                onChange={(event) =>
-                  updateForm('status', event.target.value as BranchFormState['status'])
-                }
-              >
-                <option value="ACTIVE">Active</option>
-                <option value="INACTIVE">Inactive</option>
-              </select>
-            </label>
-
-            {error ? (
-              <p className="message-banner error" role="alert">
-                <i className="bi bi-exclamation-circle-fill" aria-hidden="true" />
-                {error}
-              </p>
-            ) : null}
-            {message ? (
-              <p className="message-banner success" role="status">
-                <i className="bi bi-check-circle-fill" aria-hidden="true" />
-                {message}
-              </p>
-            ) : null}
-
-            <div className="form-actions">
-              {editingBranch ? (
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  onClick={resetForm}
-                >
-                  Cancel
-                </button>
-              ) : null}
-              <button className="primary-action compact-action" type="submit" disabled={isBusy}>
-                <i className="bi bi-check2" aria-hidden="true" />
-                {isBusy ? 'Saving...' : editingBranch ? 'Save Changes' : 'Register Branch'}
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <section className="panel-card branch-list-panel">
-          <PanelHeader icon="bi-list-check" title="Registered Branches" />
-
-          {branches.length === 0 ? (
-            <div className="empty-state">
-              <i className="bi bi-shop" aria-hidden="true" />
-              <strong>No branches registered</strong>
-              <span>Branches you register will appear here.</span>
-            </div>
-          ) : (
-            <div className="responsive-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Branch</th>
-                    <th>Code</th>
-                    <th>Time Zone</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {branches.map((branch) => (
-                    <tr key={branch.id}>
-                      <td data-label="Branch">
-                        <span className="table-label">
-                          <i className="bi bi-shop" aria-hidden="true" />
-                          {branch.name}
-                        </span>
-                      </td>
-                      <td data-label="Code">{branch.code}</td>
-                      <td data-label="Time Zone">{branch.timeZone}</td>
-                      <td data-label="Status">
-                        <StatusPill
-                          status={branch.status === 'ACTIVE' ? 'posted' : 'pending'}
-                          label={branch.status === 'ACTIVE' ? 'Active' : 'Inactive'}
-                        />
-                      </td>
-                      <td data-label="Actions">
-                        <span className="table-actions">
-                          <button
-                            className="text-button"
-                            type="button"
-                            onClick={() => editBranch(branch)}
-                          >
-                            <i className="bi bi-pencil" aria-hidden="true" />
-                            Edit
-                          </button>
-                          <button
-                            className={
-                              branch.status === 'ACTIVE' ? 'text-button danger-text' : 'text-button'
-                            }
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => handleDeactivate(branch)}
-                          >
-                            <i
-                              className={`bi ${
-                                branch.status === 'ACTIVE' ? 'bi-pause-circle' : 'bi-play-circle'
-                              }`}
-                              aria-hidden="true"
-                            />
-                            {branch.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate'}
-                          </button>
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </div>
-    </section>
-  );
 }
 
 type SupplierFormState = SupplierRequest;
@@ -12710,6 +12977,663 @@ function SuppliersPage({ organization }: { organization: Organization }) {
   );
 }
 
+type CustomerFormState = CustomerRequest;
+type CustomerPeriodPreset = 'week' | 'month' | 'quarter' | 'custom';
+
+function defaultCustomerForm(branches: Branch[]): CustomerFormState {
+  return {
+    branchId: branches.find((branch) => branch.status === 'ACTIVE')?.id,
+    customerCode: nextCustomerCode(),
+    name: '',
+    contactPerson: '',
+    phone: '',
+    email: '',
+    address: '',
+    kraPin: '',
+    customerType: 'INDIVIDUAL',
+    creditLimit: 0,
+    outstandingBalance: 0,
+    paymentTerms: '',
+    notes: '',
+    status: 'ACTIVE',
+  };
+}
+
+function customerToRequest(customer: Customer): CustomerFormState {
+  return {
+    branchId: customer.branchId,
+    customerCode: customer.customerCode,
+    name: customer.name,
+    contactPerson: customer.contactPerson ?? '',
+    phone: customer.phone ?? '',
+    email: customer.email ?? '',
+    address: customer.address ?? '',
+    kraPin: customer.kraPin ?? '',
+    customerType: customer.customerType,
+    creditLimit: customer.creditLimit ?? 0,
+    outstandingBalance: customer.outstandingBalance ?? 0,
+    paymentTerms: customer.paymentTerms ?? '',
+    notes: customer.notes ?? '',
+    status: customer.status,
+  };
+}
+
+function normalizeCustomerRequest(form: CustomerFormState): CustomerRequest {
+  return {
+    branchId: optionalTrimmedValue(form.branchId),
+    customerCode: form.customerCode.trim().toUpperCase(),
+    name: form.name.trim(),
+    contactPerson: form.contactPerson.trim(),
+    phone: form.phone.trim(),
+    email: form.email.trim(),
+    address: form.address.trim(),
+    kraPin: form.kraPin.trim().toUpperCase(),
+    customerType: form.customerType,
+    creditLimit: Math.max(0, form.creditLimit || 0),
+    outstandingBalance: Math.max(0, form.outstandingBalance || 0),
+    paymentTerms: form.paymentTerms.trim(),
+    notes: form.notes.trim(),
+    status: form.status,
+  };
+}
+
+function customerPeriodDates(preset: CustomerPeriodPreset) {
+  const today = todayInputValue();
+  if (preset === 'week') {
+    return { from: addDaysInputValue(today, -6), to: today };
+  }
+  if (preset === 'quarter') {
+    return { from: addDaysInputValue(today, -89), to: today };
+  }
+  return { from: addDaysInputValue(today, -29), to: today };
+}
+
+function nextCustomerCode() {
+  return `CUS-${Date.now().toString().slice(-6)}`;
+}
+
+function CustomersPage({
+  branches,
+  organization,
+}: {
+  branches: Branch[];
+  organization: Organization;
+}) {
+  const { branchId: platformBranchId } = usePlatform();
+  const queryClient = useQueryClient();
+  const summaryQuery = useQuery({ queryKey: ['customers-summary'], queryFn: getCustomersSummary });
+  const customersQuery = useQuery({ queryKey: ['customers'], queryFn: getCustomers });
+  const customers = inBranch(customersQuery.data ?? [], platformBranchId);
+  const activeBranches = branches.filter((branch) => branch.status === 'ACTIVE');
+  const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [form, setForm] = useState<CustomerFormState>(() => defaultCustomerForm(branches));
+  const [periodPreset, setPeriodPreset] = useState<CustomerPeriodPreset>('month');
+  const initialPeriod = customerPeriodDates('month');
+  const [reportFrom, setReportFrom] = useState(initialPeriod.from);
+  const [reportTo, setReportTo] = useState(initialPeriod.to);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const editingCustomer = customers.find((customer) => customer.id === editingCustomerId);
+  const selectedCustomer =
+    customers.find((customer) => customer.id === selectedCustomerId) ?? customers[0] ?? null;
+  const activeCustomers = customers.filter((customer) => customer.status === 'ACTIVE');
+  const creditHoldCustomers = customers.filter((customer) => customer.status === 'CREDIT_HOLD');
+  const receivables = customers.reduce(
+    (sum, customer) => sum + (customer.outstandingBalance ?? 0),
+    0,
+  );
+  const reportQuery = useQuery({
+    queryKey: ['customer-period-report', selectedCustomer?.id, reportFrom, reportTo],
+    queryFn: () =>
+      getCustomerPeriodReport(selectedCustomer?.id ?? '', { from: reportFrom, to: reportTo }),
+    enabled: Boolean(selectedCustomer?.id),
+  });
+  const report = reportQuery.data;
+
+  const saveCustomerMutation = useMutation({
+    mutationFn: (payload: CustomerRequest) =>
+      editingCustomerId ? updateCustomer(editingCustomerId, payload) : createCustomer(payload),
+    onSuccess: async (customer) => {
+      await queryClient.invalidateQueries({ queryKey: ['customers'] });
+      await queryClient.invalidateQueries({ queryKey: ['customers-summary'] });
+      setEditingCustomerId(null);
+      setSelectedCustomerId(customer.id);
+      setForm(defaultCustomerForm(branches));
+      setMessage(`${customer.name} saved.`);
+    },
+  });
+
+  const clearCustomerMutation = useMutation({
+    mutationFn: clearCustomerData,
+    onSuccess: async (customer) => {
+      await queryClient.invalidateQueries({ queryKey: ['customers'] });
+      await queryClient.invalidateQueries({ queryKey: ['customers-summary'] });
+      await queryClient.invalidateQueries({ queryKey: ['customer-period-report'] });
+      setMessage(`${customer.name} customer balances cleared.`);
+    },
+  });
+
+  const deleteCustomerMutation = useMutation({
+    mutationFn: deleteCustomer,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['customers'] });
+      await queryClient.invalidateQueries({ queryKey: ['customers-summary'] });
+      setSelectedCustomerId(null);
+      setMessage('Customer deleted.');
+    },
+  });
+
+  const isBusy =
+    saveCustomerMutation.isPending ||
+    clearCustomerMutation.isPending ||
+    deleteCustomerMutation.isPending;
+
+  useEffect(() => {
+    if (!selectedCustomerId && customers.length > 0) {
+      setSelectedCustomerId(customers[0].id);
+    }
+  }, [customers, selectedCustomerId]);
+
+  function updateForm<K extends keyof CustomerFormState>(field: K, value: CustomerFormState[K]) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function resetForm() {
+    setEditingCustomerId(null);
+    setForm(defaultCustomerForm(branches));
+    setError('');
+    setMessage('');
+  }
+
+  function editCustomer(customer: Customer) {
+    setEditingCustomerId(customer.id);
+    setSelectedCustomerId(customer.id);
+    setForm(customerToRequest(customer));
+    setError('');
+    setMessage('');
+  }
+
+  function selectPeriodPreset(nextPreset: CustomerPeriodPreset) {
+    setPeriodPreset(nextPreset);
+    if (nextPreset !== 'custom') {
+      const dates = customerPeriodDates(nextPreset);
+      setReportFrom(dates.from);
+      setReportTo(dates.to);
+    }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    try {
+      await saveCustomerMutation.mutateAsync(normalizeCustomerRequest(form));
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save customer');
+    }
+  }
+
+  async function handleClearCustomer(customer: Customer) {
+    setError('');
+    setMessage('');
+    try {
+      await clearCustomerMutation.mutateAsync(customer.id);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error ? caughtError.message : 'Unable to clear customer data',
+      );
+    }
+  }
+
+  async function handleDeleteCustomer(customer: Customer) {
+    setError('');
+    setMessage('');
+    try {
+      await deleteCustomerMutation.mutateAsync(customer.id);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to delete customer');
+    }
+  }
+
+  return (
+    <section className="branch-workspace customers-workspace">
+      <PageHeader
+        title={summaryQuery.data?.title ?? 'Customers'}
+        subtitle={
+          summaryQuery.data?.description ??
+          'Manage customer records, balances, and period purchase history.'
+        }
+        action={
+          <button className="primary-action compact-action" type="button" onClick={resetForm}>
+            <i className="bi bi-plus-lg" aria-hidden="true" />
+            New Customer
+          </button>
+        }
+      />
+
+      <div className="branch-summary-row">
+        <SummaryMetric
+          icon="bi-person-check"
+          label="Active Customers"
+          value={String(activeCustomers.length)}
+          tone="green"
+        />
+        <SummaryMetric
+          icon="bi-shield-exclamation"
+          label="Credit Hold"
+          value={String(creditHoldCustomers.length)}
+          tone="orange"
+        />
+        <SummaryMetric
+          icon="bi-cash-stack"
+          label="Receivables"
+          value={formatMoney(receivables, organization.currencyCode)}
+          tone="purple"
+        />
+        <SummaryMetric
+          icon="bi-calendar-range"
+          label="Period Paid"
+          value={formatMoney(report?.paidAmount ?? 0, organization.currencyCode)}
+          tone="blue"
+        />
+      </div>
+
+      <FormMessages error={error} message={message} />
+
+      <div className="management-grid customers-management-grid">
+        <section className="panel-card branch-form-panel">
+          <PanelHeader
+            icon={editingCustomer ? 'bi-pencil-square' : 'bi-person-plus'}
+            title={editingCustomer ? 'Edit Customer' : 'Add Customer'}
+          />
+          <form className="record-form" onSubmit={handleSubmit}>
+            <label className="field-stack">
+              <span>Customer Code</span>
+              <input
+                required
+                maxLength={40}
+                value={form.customerCode}
+                onChange={(event) => updateForm('customerCode', event.target.value.toUpperCase())}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Customer Name</span>
+              <input
+                required
+                maxLength={160}
+                value={form.name}
+                onChange={(event) => updateForm('name', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Type</span>
+              <select
+                value={form.customerType}
+                onChange={(event) => updateForm('customerType', event.target.value as CustomerType)}
+              >
+                <option value="INDIVIDUAL">Individual</option>
+                <option value="BUSINESS">Business</option>
+              </select>
+            </label>
+            <label className="field-stack">
+              <span>Branch</span>
+              <select
+                value={form.branchId ?? ''}
+                onChange={(event) => updateForm('branchId', event.target.value || undefined)}
+              >
+                <option value="">All branches</option>
+                {activeBranches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-stack">
+              <span>Contact Person</span>
+              <input
+                maxLength={160}
+                value={form.contactPerson}
+                onChange={(event) => updateForm('contactPerson', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Phone</span>
+              <input
+                inputMode="tel"
+                maxLength={40}
+                value={form.phone}
+                onChange={(event) => updateForm('phone', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Email</span>
+              <input
+                maxLength={254}
+                type="email"
+                value={form.email}
+                onChange={(event) => updateForm('email', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>KRA PIN</span>
+              <input
+                maxLength={40}
+                value={form.kraPin}
+                onChange={(event) => updateForm('kraPin', event.target.value.toUpperCase())}
+              />
+            </label>
+            <label className="field-stack wide-field">
+              <span>Address</span>
+              <input
+                maxLength={255}
+                value={form.address}
+                onChange={(event) => updateForm('address', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Credit Limit</span>
+              <input
+                min="0"
+                step="0.01"
+                type="number"
+                value={form.creditLimit}
+                onChange={(event) => updateForm('creditLimit', Number(event.target.value) || 0)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Outstanding Balance</span>
+              <input
+                min="0"
+                step="0.01"
+                type="number"
+                value={form.outstandingBalance}
+                onChange={(event) =>
+                  updateForm('outstandingBalance', Number(event.target.value) || 0)
+                }
+              />
+            </label>
+            <label className="field-stack">
+              <span>Payment Terms</span>
+              <input
+                maxLength={120}
+                value={form.paymentTerms}
+                onChange={(event) => updateForm('paymentTerms', event.target.value)}
+              />
+            </label>
+            <label className="field-stack">
+              <span>Status</span>
+              <select
+                value={form.status}
+                onChange={(event) => updateForm('status', event.target.value as CustomerStatus)}
+              >
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+                <option value="CREDIT_HOLD">Credit Hold</option>
+              </select>
+            </label>
+            <label className="field-stack wide-field">
+              <span>Notes</span>
+              <textarea
+                maxLength={500}
+                value={form.notes}
+                onChange={(event) => updateForm('notes', event.target.value)}
+              />
+            </label>
+            <div className="form-actions">
+              {editingCustomer ? (
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={resetForm}
+                >
+                  Cancel
+                </button>
+              ) : null}
+              <button className="primary-action compact-action" type="submit" disabled={isBusy}>
+                <i className="bi bi-check2" aria-hidden="true" />
+                {isBusy ? 'Saving...' : editingCustomer ? 'Save Changes' : 'Add Customer'}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="panel-card branch-list-panel">
+          <PanelHeader icon="bi-people" title="Customer Records" />
+          {customersQuery.isPending ? (
+            <LoadingPanel label="Loading customers..." />
+          ) : customersQuery.isError ? (
+            <EmptyState
+              icon="bi-exclamation-circle"
+              title="Customers could not be loaded"
+              detail="Refresh the page or try again when the API is available."
+            />
+          ) : customers.length === 0 ? (
+            <EmptyState
+              icon="bi-person-plus"
+              title="No customers registered"
+              detail="Customers you add will appear here."
+            />
+          ) : (
+            <div className="responsive-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Customer</th>
+                    <th>Code</th>
+                    <th>Contact</th>
+                    <th>Branch</th>
+                    <th>Balance</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customers.map((customer) => (
+                    <tr
+                      className={customer.id === selectedCustomer?.id ? 'selected-row' : ''}
+                      key={customer.id}
+                    >
+                      <td data-label="Customer">
+                        <span className="table-label">
+                          <i className="bi bi-person-lines-fill" aria-hidden="true" />
+                          <span>
+                            <strong>{customer.name}</strong>
+                            <small>{customer.email || customer.phone || 'No contact saved'}</small>
+                          </span>
+                        </span>
+                      </td>
+                      <td data-label="Code">{customer.customerCode}</td>
+                      <td data-label="Contact">{customer.contactPerson || 'N/A'}</td>
+                      <td data-label="Branch">{customer.branchName || 'All branches'}</td>
+                      <td data-label="Balance">
+                        {formatMoney(customer.outstandingBalance ?? 0, organization.currencyCode)}
+                      </td>
+                      <td data-label="Status">
+                        <StatusPill
+                          status={
+                            customer.status === 'ACTIVE'
+                              ? 'posted'
+                              : customer.status === 'CREDIT_HOLD'
+                                ? 'review'
+                                : 'pending'
+                          }
+                          label={labelizeEnum(customer.status)}
+                        />
+                      </td>
+                      <td data-label="Actions">
+                        <span className="table-actions">
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => setSelectedCustomerId(customer.id)}
+                          >
+                            <i className="bi bi-graph-up" aria-hidden="true" />
+                            Data
+                          </button>
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => editCustomer(customer)}
+                          >
+                            <i className="bi bi-pencil" aria-hidden="true" />
+                            Edit
+                          </button>
+                          <button
+                            className="text-button"
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleClearCustomer(customer)}
+                          >
+                            <i className="bi bi-eraser" aria-hidden="true" />
+                            Clear
+                          </button>
+                          <button
+                            className="text-button danger-text"
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleDeleteCustomer(customer)}
+                          >
+                            <i className="bi bi-trash" aria-hidden="true" />
+                            Delete
+                          </button>
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className="panel-card branch-list-panel customers-period-panel">
+          <PanelHeader
+            icon="bi-calendar-range"
+            title={selectedCustomer ? `${selectedCustomer.name} Data` : 'Customer Data'}
+          />
+          {selectedCustomer ? (
+            <>
+              <div className="report-period-row">
+                {(['week', 'month', 'quarter'] as CustomerPeriodPreset[]).map((preset) => (
+                  <button
+                    className={`report-period-button ${periodPreset === preset ? 'active' : ''}`}
+                    key={preset}
+                    type="button"
+                    onClick={() => selectPeriodPreset(preset)}
+                  >
+                    <i className="bi bi-calendar-week" aria-hidden="true" />
+                    {preset === 'week' ? 'Weekly' : preset === 'quarter' ? '3 Months' : 'Monthly'}
+                  </button>
+                ))}
+              </div>
+              <div className="record-form customer-period-form">
+                <label className="field-stack">
+                  <span>From</span>
+                  <input
+                    type="date"
+                    value={reportFrom}
+                    onChange={(event) => {
+                      setPeriodPreset('custom');
+                      setReportFrom(event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="field-stack">
+                  <span>To</span>
+                  <input
+                    type="date"
+                    value={reportTo}
+                    onChange={(event) => {
+                      setPeriodPreset('custom');
+                      setReportTo(event.target.value);
+                    }}
+                  />
+                </label>
+              </div>
+              {reportQuery.isPending ? (
+                <LoadingPanel label="Loading customer data..." />
+              ) : reportQuery.isError ? (
+                <EmptyState
+                  icon="bi-exclamation-circle"
+                  title="Customer data could not be loaded"
+                  detail="Check the selected dates and try again."
+                />
+              ) : (
+                <>
+                  <div className="invoice-summary-row">
+                    <div>
+                      <span>Bought</span>
+                      <strong>
+                        {formatMoney(report?.boughtAmount ?? 0, organization.currencyCode)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Paid</span>
+                      <strong>
+                        {formatMoney(report?.paidAmount ?? 0, organization.currencyCode)}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Balance</span>
+                      <strong>
+                        {formatMoney(report?.balanceAmount ?? 0, organization.currencyCode)}
+                      </strong>
+                    </div>
+                  </div>
+                  {report?.activities.length ? (
+                    <div className="responsive-table compact-table">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Sale</th>
+                            <th>Date</th>
+                            <th>Branch</th>
+                            <th>Bought</th>
+                            <th>Paid</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.activities.map((activity) => (
+                            <tr key={`${activity.reference}-${activity.occurredAt}`}>
+                              <td data-label="Sale">{activity.reference}</td>
+                              <td data-label="Date">{formatDateTime(activity.occurredAt)}</td>
+                              <td data-label="Branch">{activity.branchName}</td>
+                              <td data-label="Bought">
+                                {formatMoney(activity.boughtAmount, organization.currencyCode)}
+                              </td>
+                              <td data-label="Paid">
+                                {formatMoney(activity.paidAmount, organization.currencyCode)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <EmptyState
+                      icon="bi-receipt"
+                      title="No customer activity"
+                      detail="Sales matching this customer name will appear for the selected period."
+                    />
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            <EmptyState
+              icon="bi-person-lines-fill"
+              title="Select a customer"
+              detail="Customer purchases and payments will appear here."
+            />
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
 type RoleFormState = RoleRequest;
 type PermissionFormState = PermissionRequest;
 type RoleManagementDialog = 'role' | 'permission' | null;
@@ -12742,6 +13666,12 @@ function uniquePermissionCodes(codes: string[]) {
   return Array.from(new Set(codes.filter(Boolean))).sort((first, second) =>
     first.localeCompare(second),
   );
+}
+
+const MANAGED_ROLE_KEYS = new Set(['ADMIN', 'SHOP_MANAGER', 'CASHIER']);
+
+function isManagedRole(role: Role) {
+  return MANAGED_ROLE_KEYS.has(role.key);
 }
 
 function PermissionCodeList({ codes, limit }: { codes: string[]; limit?: number }) {
@@ -12793,7 +13723,7 @@ function RolesPage() {
   const queryClient = useQueryClient();
   const rolesQuery = useQuery({ queryKey: ['roles'], queryFn: getRoles });
   const permissionsQuery = useQuery({ queryKey: ['permissions'], queryFn: getPermissions });
-  const roles = rolesQuery.data ?? [];
+  const roles = (rolesQuery.data ?? []).filter(isManagedRole);
   const permissions = permissionsQuery.data ?? [];
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
   const [editingPermissionId, setEditingPermissionId] = useState<string | null>(null);
@@ -12990,7 +13920,7 @@ function RolesPage() {
     <section className="branch-workspace">
       <PageHeader
         title="Roles"
-        subtitle="Define role keys, permission assignments, and the permission catalog."
+        subtitle="Manage Admin, Shop Manager, and Cashier access. Cashiers sell, register expenses, and manage their own shifts at assigned shops."
         action={
           <div className="header-actions">
             <button
@@ -13000,14 +13930,6 @@ function RolesPage() {
             >
               <i className="bi bi-key" aria-hidden="true" />
               Permissions
-            </button>
-            <button
-              className="primary-action compact-action"
-              type="button"
-              onClick={openNewRoleDialog}
-            >
-              <i className="bi bi-plus-lg" aria-hidden="true" />
-              New Role
             </button>
           </div>
         }
@@ -13224,6 +14146,7 @@ function RolesPage() {
                             <button
                               className="text-button"
                               type="button"
+                              disabled={role.key === 'CASHIER'}
                               onClick={() => editRole(role)}
                             >
                               <i className="bi bi-pencil" aria-hidden="true" />
@@ -13232,7 +14155,7 @@ function RolesPage() {
                             <button
                               className="text-button danger-text"
                               type="button"
-                              disabled={deleteRoleMutation.isPending || role.assignedUsers > 0}
+                              disabled={deleteRoleMutation.isPending || role.assignedUsers >= 0}
                               onClick={() => handleDelete(role)}
                             >
                               <i className="bi bi-trash" aria-hidden="true" />
@@ -13398,205 +14321,24 @@ function defaultUserForm(): UserFormState {
   };
 }
 
-type HrDepartmentFormState = DepartmentRequest;
-type HrJobTitleFormState = JobTitleRequest;
-type HrEmployeeFormState = EmployeeRequest;
-type HrAttendanceFormState = AttendanceRequest;
-type HrLeaveTypeFormState = LeaveTypeRequest;
-type HrLeaveRequestFormState = LeaveRequestInput;
-type HrPayrollComponentFormState = PayrollComponentRequest;
-type HrPayrollPeriodFormState = PayrollPeriodRequest;
-type HrPayrollRunFormState = PayrollRunRequest;
-type HrPayrollAdjustmentFormState = PayrollEmployeeAdjustmentRequest;
-type HrPayrollSalesBonusRuleFormState = PayrollSalesBonusRuleRequest;
-type HrPayslipRecord = {
-  run: PayrollRun;
-  period: PayrollPeriod | null;
-  employee: PayrollRun['employees'][number];
-};
-type HrPerformanceEntryFormState = EmployeePerformanceEntryRequest;
-
-function defaultHrDepartmentForm(): HrDepartmentFormState {
-  return {
-    name: '',
-    code: '',
-    description: '',
-    branchId: '',
-    managerUserId: '',
-    active: true,
-  };
-}
-
-function defaultHrJobTitleForm(): HrJobTitleFormState {
-  return {
-    title: '',
-    code: '',
-    departmentId: '',
-    description: '',
-    active: true,
-  };
-}
-
-function defaultHrEmployeeForm(branchId = ''): HrEmployeeFormState {
-  return {
-    employeeNumber: '',
-    firstName: '',
-    middleName: '',
-    lastName: '',
-    preferredName: '',
-    email: '',
-    phone: '',
-    gender: '',
-    dateOfBirth: '',
-    nationalIdNumber: '',
-    primaryBranchId: branchId,
-    departmentId: '',
-    jobTitleId: '',
-    employmentType: 'PERMANENT',
-    employmentStatus: 'ACTIVE',
-    joiningDate: dateInputValue(new Date()),
-    probationEndDate: '',
-    contractStartDate: '',
-    contractEndDate: '',
-    userId: '',
-    managerEmployeeId: '',
-    workLocation: '',
-    emergencyContactName: '',
-    emergencyContactPhone: '',
-    address: '',
-    notes: '',
-    basicSalary: 0,
-    salaryPaymentMethod: 'UNSPECIFIED',
-    bankName: '',
-    bankAccountNumber: '',
-    bankAccountName: '',
-    mpesaNumber: '',
-    active: true,
-  };
-}
-
-function defaultHrAttendanceForm(branchId = ''): HrAttendanceFormState {
-  return {
-    employeeId: '',
-    branchId,
-    attendanceDate: dateInputValue(new Date()),
-    clockIn: '',
-    clockOut: '',
-    status: 'PRESENT',
-    notes: '',
-    correctionReason: '',
-  };
-}
-
-function defaultHrLeaveTypeForm(): HrLeaveTypeFormState {
-  return {
-    name: '',
-    code: '',
-    description: '',
-    requiresBalance: true,
-    defaultDays: 21,
-    active: true,
-  };
-}
-
-function defaultHrLeaveRequestForm(): HrLeaveRequestFormState {
-  return {
-    employeeId: '',
-    leaveTypeId: '',
-    startDate: dateInputValue(new Date()),
-    endDate: dateInputValue(new Date()),
-    reason: '',
-    approverUserId: '',
-    approverComments: '',
-    status: 'DRAFT',
-  };
-}
-
-function defaultHrPayrollComponentForm(): HrPayrollComponentFormState {
-  return {
-    name: '',
-    code: '',
-    componentType: 'EARNING',
-    taxable: false,
-    defaultAmount: 0,
-    active: true,
-  };
-}
-
-function defaultHrPayrollPeriodForm(): HrPayrollPeriodFormState {
-  const today = new Date();
-  return {
-    branchId: '',
-    name: '',
-    periodStart: dateInputValue(new Date(today.getFullYear(), today.getMonth(), 1)),
-    periodEnd: dateInputValue(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
-    paymentDate: '',
-    status: 'DRAFT',
-  };
-}
-
-function defaultHrPayrollRunForm(): HrPayrollRunFormState {
-  return {
-    payrollPeriodId: '',
-    name: '',
-    status: 'DRAFT',
-  };
-}
-
-function defaultHrPayrollAdjustmentForm(
-  bonusAmount = 0,
-  lossAmount = 0,
-  notes = '',
-): HrPayrollAdjustmentFormState {
-  return {
-    bonusAmount,
-    lossAmount,
-    notes,
-  };
-}
-
-function defaultHrPayrollSalesBonusRuleForm(): HrPayrollSalesBonusRuleFormState {
-  return {
-    dailySalesTarget: 0,
-    bonusPerTargetDay: 0,
-    active: true,
-  };
-}
-
-function defaultHrPerformanceEntryForm(employeeId = ''): HrPerformanceEntryFormState {
-  return {
-    employeeId,
-    entryType: 'PERFORMANCE_REVIEW',
-    entryDate: dateInputValue(new Date()),
-    title: '',
-    amount: 0,
-    score: 80,
-    notes: '',
-  };
-}
-
-function UsersPage({ branches }: { branches: Branch[] }) {
+function UsersPage() {
+  const { branches } = usePlatform();
   const queryClient = useQueryClient();
-  const rolesQuery = useQuery({ queryKey: ['roles'], queryFn: getRoles });
   const usersQuery = useQuery({ queryKey: ['users'], queryFn: getUsers });
-  const roles = rolesQuery.data ?? [];
+  const rolesQuery = useQuery({ queryKey: ['roles'], queryFn: getRoles });
   const users = usersQuery.data ?? [];
-  const activeBranches = branches.filter((branch) => branch.status === 'ACTIVE');
+  const roles = rolesQuery.data ?? [];
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [form, setForm] = useState<UserFormState>(() => defaultUserForm());
-  const [message, setMessage] = useState('');
+  const [form, setForm] = useState<UserFormState>(defaultUserForm);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const editingUser = users.find((user) => user.id === editingUserId);
-  const selectedRolePermissionCodes = uniquePermissionCodes(
-    roles.filter((role) => form.roleIds.includes(role.id)).flatMap((role) => role.permissionCodes),
-  );
 
   const saveUserMutation = useMutation({
     mutationFn: (payload: UserRequest) =>
       editingUserId ? updateUser(editingUserId, payload) : createUser(payload),
     onSuccess: async (user) => {
       await queryClient.invalidateQueries({ queryKey: ['users'] });
-      await queryClient.invalidateQueries({ queryKey: ['roles'] });
       setEditingUserId(null);
       setForm(defaultUserForm());
       setMessage(`${user.displayName} saved.`);
@@ -13610,6 +14352,13 @@ function UsersPage({ branches }: { branches: Branch[] }) {
       setMessage('User disabled.');
     },
   });
+
+  function resetForm() {
+    setEditingUserId(null);
+    setForm(defaultUserForm());
+    setError('');
+    setMessage('');
+  }
 
   function editUser(user: StaffUser) {
     setEditingUserId(user.id);
@@ -13625,22 +14374,22 @@ function UsersPage({ branches }: { branches: Branch[] }) {
     setMessage('');
   }
 
-  function resetForm() {
-    setEditingUserId(null);
-    setForm(defaultUserForm());
-    setError('');
-    setMessage('');
-  }
-
-  function toggleFormId(field: 'roleIds' | 'branchIds', id: string) {
+  function toggleRoleAssignment(id: string) {
     setForm((current) => {
-      const values = new Set(current[field]);
-      if (values.has(id)) {
-        values.delete(id);
-      } else {
-        values.add(id);
-      }
-      return { ...current, [field]: Array.from(values) };
+      const remaining = current.roleIds.filter((value) => value !== id);
+      return {
+        ...current,
+        roleIds: current.roleIds.includes(id)
+          ? remaining
+          : roles.find((role) => role.id === id)?.key === 'CASHIER'
+            ? [id]
+            : [
+                ...remaining.filter(
+                  (value) => roles.find((role) => role.id === value)?.key !== 'CASHIER',
+                ),
+                id,
+              ],
+      };
     });
   }
 
@@ -13649,30 +14398,45 @@ function UsersPage({ branches }: { branches: Branch[] }) {
     setError('');
     setMessage('');
     try {
-      const userPayload: UserRequest = {
+      if (
+        roles.some((role) => role.key === 'CASHIER' && form.roleIds.includes(role.id)) &&
+        !form.branchIds.length
+      ) {
+        setError('Select at least one shop for the cashier.');
+        return;
+      }
+      await saveUserMutation.mutateAsync({
         email: form.email.trim(),
+        password: form.password || undefined,
         displayName: form.displayName.trim(),
         status: form.status,
         roleIds: form.roleIds,
         branchIds: form.branchIds,
-      };
-      if (!editingUserId || form.password) {
-        userPayload.password = form.password;
-      }
-
-      await saveUserMutation.mutateAsync(userPayload);
+      });
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Unable to save user');
     }
   }
 
-  async function handleDisable(user: StaffUser) {
+  async function handleStatusChange(user: StaffUser) {
     setError('');
     setMessage('');
     try {
-      await disableUserMutation.mutateAsync(user.id);
+      if (user.status === 'ACTIVE') {
+        await disableUserMutation.mutateAsync(user.id);
+        return;
+      }
+      await updateUser(user.id, {
+        email: user.email,
+        displayName: user.displayName,
+        status: 'ACTIVE',
+        roleIds: user.roleIds,
+        branchIds: user.branchIds,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      setMessage(`${user.displayName} reactivated.`);
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to disable user');
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to update user');
     }
   }
 
@@ -13680,7 +14444,7 @@ function UsersPage({ branches }: { branches: Branch[] }) {
     <section className="branch-workspace">
       <PageHeader
         title="Users"
-        subtitle="Register team members and assign them to roles and branch locations."
+        subtitle="Manage sign-in accounts, roles and permissions."
         action={
           <button className="primary-action compact-action" type="button" onClick={resetForm}>
             <i className="bi bi-plus-lg" aria-hidden="true" />
@@ -13688,32 +14452,13 @@ function UsersPage({ branches }: { branches: Branch[] }) {
           </button>
         }
       />
-
-      <div className="branch-summary-row">
-        <SummaryMetric icon="bi-people" label="Users" value={String(users.length)} tone="green" />
-        <SummaryMetric
-          icon="bi-person-check"
-          label="Active Users"
-          value={String(users.filter((user) => user.status === 'ACTIVE').length)}
-          tone="blue"
-        />
-        <SummaryMetric
-          icon="bi-key"
-          label="Permission Codes"
-          value={String(
-            uniquePermissionCodes(roles.flatMap((role) => role.permissionCodes)).length,
-          )}
-          tone="orange"
-        />
-      </div>
-
+      <FormMessages error={error} message={message} />
       <div className="management-grid users-management-grid">
-        <section className="panel-card branch-form-panel users-form-panel">
+        <section className="panel-card branch-form-panel">
           <PanelHeader
             icon={editingUser ? 'bi-pencil-square' : 'bi-person-plus'}
             title={editingUser ? 'Edit User' : 'Register User'}
           />
-
           <form className="record-form" onSubmit={handleSubmit}>
             <label className="field-stack">
               <span>Display Name</span>
@@ -13730,8 +14475,8 @@ function UsersPage({ branches }: { branches: Branch[] }) {
               <span>Email</span>
               <input
                 required
-                type="email"
                 maxLength={254}
+                type="email"
                 value={form.email}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, email: event.target.value }))
@@ -13742,10 +14487,8 @@ function UsersPage({ branches }: { branches: Branch[] }) {
               <span>Password</span>
               <input
                 required={!editingUser}
-                type="password"
-                autoComplete="new-password"
                 minLength={8}
-                maxLength={72}
+                type="password"
                 value={form.password}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, password: event.target.value }))
@@ -13759,7 +14502,7 @@ function UsersPage({ branches }: { branches: Branch[] }) {
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
-                    status: event.target.value as StaffUser['status'],
+                    status: event.target.value as UserFormState['status'],
                   }))
                 }
               >
@@ -13767,32 +14510,45 @@ function UsersPage({ branches }: { branches: Branch[] }) {
                 <option value="DISABLED">Disabled</option>
               </select>
             </label>
-
             <CheckboxGroup
               items={roles}
               label="Roles"
               selectedIds={form.roleIds}
               emptyLabel="No roles registered"
               getLabel={(role) => `${role.name} (${role.key})`}
-              onToggle={(roleId) => toggleFormId('roleIds', roleId)}
+              onToggle={toggleRoleAssignment}
             />
-
-            <div className="permission-preview">
-              <span>Effective Permissions</span>
-              <PermissionCodeList codes={selectedRolePermissionCodes} limit={6} />
-            </div>
-
             <CheckboxGroup
-              items={activeBranches}
-              label="Branches"
+              items={branches}
+              label="Assigned shops"
               selectedIds={form.branchIds}
-              emptyLabel="No active branches registered"
+              emptyLabel="Register an active shop before assigning cashiers."
               getLabel={(branch) => branch.name}
-              onToggle={(branchId) => toggleFormId('branchIds', branchId)}
+              onToggle={(id) =>
+                setForm((current) => ({
+                  ...current,
+                  branchIds: current.branchIds.includes(id)
+                    ? current.branchIds.filter((value) => value !== id)
+                    : [...current.branchIds, id],
+                }))
+              }
             />
-
-            <FormMessages error={error} message={message} />
-
+            {roles.some((role) => role.key === 'CASHIER' && form.roleIds.includes(role.id)) && (
+              <p>
+                Cashiers require at least one assigned shop and cannot be combined with another
+                role.
+              </p>
+            )}
+            {form.roleIds.length > 0 ? (
+              <div className="field-stack wide-field">
+                <span>Assigned permissions</span>
+                <PermissionCodeList
+                  codes={roles
+                    .filter((role) => form.roleIds.includes(role.id))
+                    .flatMap((role) => role.permissionCodes)}
+                />
+              </div>
+            ) : null}
             <div className="form-actions">
               {editingUser ? (
                 <button
@@ -13819,4911 +14575,79 @@ function UsersPage({ branches }: { branches: Branch[] }) {
           </form>
         </section>
 
-        <section className="panel-card branch-list-panel users-list-panel">
-          <PanelHeader
-            icon="bi-list-check"
-            title="Registered Users"
-            action={<span className="catalog-count-pill">{users.length} users</span>}
-          />
+        <section className="panel-card branch-list-panel">
+          <PanelHeader icon="bi-people" title="Registered Users" />
           {usersQuery.isPending || rolesQuery.isPending ? (
             <LoadingPanel label="Loading users..." />
+          ) : usersQuery.isError || rolesQuery.isError ? (
+            <EmptyState
+              icon="bi-exclamation-circle"
+              title="Users could not be loaded"
+              detail="Refresh the page or try again when the API is available."
+            />
           ) : users.length === 0 ? (
             <EmptyState
               icon="bi-people"
               title="No users registered"
-              detail="Users created here will appear in this list."
+              detail="Users you register will appear here."
             />
           ) : (
-            <div className="user-directory-list">
-              {users.map((user) => (
-                <article className="user-directory-row" key={user.id}>
-                  <div className="user-directory-identity">
-                    <span className="user-directory-icon">
-                      <i className="bi bi-person" aria-hidden="true" />
-                    </span>
-                    <span>
-                      <strong>{user.displayName}</strong>
-                      <small>{user.email}</small>
-                    </span>
-                  </div>
-
-                  <div className="user-directory-access">
-                    <div className="user-detail-block">
-                      <span className="user-detail-label">Roles</span>
-                      <TextPillList values={user.roleNames} />
-                    </div>
-                    <div className="user-detail-block">
-                      <span className="user-detail-label">Permissions</span>
-                      <PermissionCodeList codes={user.permissionCodes} limit={5} />
-                    </div>
-                  </div>
-
-                  <div className="user-directory-status">
-                    <div className="user-detail-block">
-                      <span className="user-detail-label">Branches</span>
-                      <TextPillList emptyLabel="All branches" values={user.branchNames} />
-                    </div>
-                    <StatusPill
-                      status={user.status === 'ACTIVE' ? 'posted' : 'pending'}
-                      label={user.status === 'ACTIVE' ? 'Active' : 'Disabled'}
-                    />
-                  </div>
-
-                  <div className="user-directory-actions">
-                    <button className="text-button" type="button" onClick={() => editUser(user)}>
-                      <i className="bi bi-pencil" aria-hidden="true" />
-                      Edit
-                    </button>
-                    <button
-                      className="text-button danger-text"
-                      type="button"
-                      disabled={disableUserMutation.isPending || user.status === 'DISABLED'}
-                      onClick={() => handleDisable(user)}
-                    >
-                      <i className="bi bi-person-dash" aria-hidden="true" />
-                      Disable
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-    </section>
-  );
-}
-
-function HrDashboardPage({
-  branches,
-  currentUser,
-}: {
-  branches: Branch[];
-  currentUser: CurrentUser;
-}) {
-  const [attendancePeriod, setAttendancePeriod] = useState<'week' | 'month'>('week');
-  const [distributionScope, setDistributionScope] = useState<'all' | 'active'>('all');
-  const departmentsQuery = useQuery({ queryKey: ['hr', 'departments'], queryFn: getHrDepartments });
-  const jobTitlesQuery = useQuery({ queryKey: ['hr', 'job-titles'], queryFn: getHrJobTitles });
-  const employeesQuery = useQuery({
-    queryKey: ['hr', 'employees', 'dashboard'],
-    queryFn: () =>
-      getHrEmployees(new URLSearchParams({ page: '0', size: '5', sort: 'joiningDate,desc' })),
-  });
-  const employees = employeesQuery.data?.items ?? [];
-  const departments = departmentsQuery.data ?? [];
-  const jobTitles = jobTitlesQuery.data ?? [];
-  const totalEmployees = employeesQuery.data?.total ?? 0;
-  const activeEmployees = employees.filter((employee) => employee.active).length;
-  const probationEmployees = employees.filter(
-    (employee) => employee.employmentStatus === 'PROBATION',
-  ).length;
-  const linkedUsers = employees.filter((employee) => employee.linkedUserId).length;
-  const employeesForDistribution =
-    distributionScope === 'active' ? employees.filter((employee) => employee.active) : employees;
-  const scopedBranches = branches.filter(
-    (branch) =>
-      branch.status === 'ACTIVE' &&
-      (currentUser.branchIds.length === 0 || currentUser.branchIds.includes(branch.id)),
-  );
-  const scopedBranchCount = scopedBranches.length;
-  const branchSummary = scopedBranches
-    .map((branch) => ({
-      name: branch.name,
-      employees: employees.filter((employee) => employee.branchId === branch.id).length,
-    }))
-    .filter((row) => row.employees > 0);
-  const departmentChartData = departments
-    .map((department, index) => {
-      const value = employeesForDistribution.filter(
-        (employee) => employee.departmentId === department.id,
-      ).length;
-      return {
-        name: department.name,
-        value,
-        percent:
-          employeesForDistribution.length === 0
-            ? 0
-            : Math.round((value / employeesForDistribution.length) * 100),
-        color: ['#2878f0', '#22c55e', '#fb923c', '#8b5cf6', '#ec4899', '#0ea5e9'][index % 6],
-      };
-    })
-    .filter((entry) => entry.value > 0);
-  const attendanceSource =
-    attendancePeriod === 'month'
-      ? [...employees].reverse().slice(0, Math.min(employees.length, 5))
-      : employees;
-  const attendanceChartData = attendanceSource.map((employee, index) => ({
-    day:
-      new Date(employee.joiningDate).toLocaleDateString(undefined, {
-        weekday: 'short',
-      }) || `Day ${index + 1}`,
-    date:
-      new Date(employee.joiningDate).toLocaleDateString(undefined, {
-        day: 'numeric',
-        month: 'short',
-      }) || employee.joiningDate,
-    present: Math.max(1, activeEmployees - Math.max(0, attendanceSource.length - index - 1)),
-    absent: Math.max(0, Math.min(probationEmployees + index, totalEmployees) - Math.max(1, index)),
-    attendance:
-      totalEmployees === 0
-        ? 0
-        : Math.min(
-            100,
-            Math.round(
-              (Math.max(1, activeEmployees - Math.max(0, employees.length - index - 1)) /
-                Math.max(totalEmployees, 1)) *
-                100,
-            ),
-          ),
-  }));
-  const scheduleItems = branchSummary.slice(0, 4).map((branch, index) => ({
-    id: `${branch.name}-${index}`,
-    time:
-      index === 0
-        ? '09:00 AM - 10:00 AM'
-        : index === 1
-          ? '11:00 AM - 12:00 PM'
-          : index === 2
-            ? '02:00 PM - 03:00 PM'
-            : '04:00 PM - 05:00 PM',
-    title:
-      index === 0
-        ? 'Branch Team Sync'
-        : index === 1
-          ? 'Interview Window'
-          : index === 2
-            ? 'Performance Review'
-            : 'HR Structure Review',
-    detail: `${branch.name} - ${branch.employees} employees in scope`,
-    badge: index === 0 ? 'Meeting' : index === 1 ? 'Interview' : index === 2 ? 'Review' : 'Branch',
-    badgeClass:
-      index === 0 ? 'meeting' : index === 1 ? 'interview' : index === 2 ? 'review' : 'deadline',
-    icon:
-      index === 0
-        ? 'bi-people'
-        : index === 1
-          ? 'bi-person-badge'
-          : index === 2
-            ? 'bi-bar-chart'
-            : 'bi-file-earmark-text',
-  }));
-  const greetingName = currentUser.displayName.split(' ')[0] || currentUser.displayName;
-  const attendanceLegend = [
-    { label: 'Present', tone: 'present' },
-    { label: 'Absent', tone: 'absent' },
-    { label: 'Attendance %', tone: 'attendance' },
-  ];
-
-  return (
-    <section className="branch-workspace hr-dashboard-workspace">
-      <div className="hr-dashboard-body">
-        <div className="hr-dashboard-hero hr-dashboard-hero-match">
-          <div>
-            <div className="hr-page-back">
-              <HrBackButton />
-            </div>
-            <h1>HR Dashboard</h1>
-            <h2>Good morning, {greetingName} </h2>
-            <p>Here&apos;s what&apos;s happening at your accessible branches today.</p>
-          </div>
-          <div className="hr-dashboard-actions">
-            <button className="select-shell hr-period-pill" type="button">
-              <i className="bi bi-calendar3" aria-hidden="true" />
-              <span>
-                {new Date().toLocaleDateString(undefined, {
-                  month: 'long',
-                  year: 'numeric',
-                })}
-              </span>
-              <i className="bi bi-chevron-down" aria-hidden="true" />
-            </button>
-            <NavLink
-              className="primary-action compact-action hr-dashboard-add-action"
-              to="/hr/employees"
-            >
-              <i className="bi bi-plus-lg" aria-hidden="true" />
-              Add Employee
-            </NavLink>
-          </div>
-        </div>
-
-        <div className="hr-kpi-grid hr-kpi-grid-match">
-          <HrDashboardMetricCard
-            icon="bi-people-fill"
-            label="Total Employees"
-            value={String(totalEmployees)}
-            detail={
-              totalEmployees === 0
-                ? `${departments.length} departments configured`
-                : `${Math.round((activeEmployees / Math.max(totalEmployees, 1)) * 100)}% active workforce`
-            }
-            tone="blue"
-          />
-          <HrDashboardMetricCard
-            icon="bi-person-check"
-            label="Present Today"
-            value={String(activeEmployees)}
-            detail={
-              totalEmployees === 0
-                ? 'No employee attendance baseline yet'
-                : `${Math.round((activeEmployees / Math.max(totalEmployees, 1)) * 100)}% of total`
-            }
-            tone="green"
-          />
-          <HrDashboardMetricCard
-            icon="bi-calendar-week"
-            label="On Leave"
-            value={String(probationEmployees)}
-            detail={
-              totalEmployees === 0
-                ? 'No leave snapshot available yet'
-                : `${Math.round((probationEmployees / Math.max(totalEmployees, 1)) * 100)}% of total`
-            }
-            tone="orange"
-          />
-          <HrDashboardMetricCard
-            icon="bi-briefcase"
-            label="Open Positions"
-            value={String(jobTitles.length)}
-            detail={`${scopedBranchCount} active branches in scope`}
-            tone="purple"
-          />
-        </div>
-
-        <div className="hr-dashboard-grid">
-          <section className="panel-card hr-dashboard-panel hr-attendance-panel">
-            <div className="hr-panel-heading hr-panel-heading-match">
-              <div>
-                <h3>Attendance Overview</h3>
-              </div>
-              <select
-                className="select-shell hr-period-inline hr-dashboard-select"
-                value={attendancePeriod}
-                onChange={(event) => setAttendancePeriod(event.target.value as 'week' | 'month')}
-              >
-                <option value="week">This Week</option>
-                <option value="month">This Month</option>
-              </select>
-            </div>
-            <div className="hr-attendance-legend">
-              {attendanceLegend.map((item) => (
-                <span className={`hr-attendance-legend-item ${item.tone}`} key={item.label}>
-                  <i aria-hidden="true" />
-                  {item.label}
-                </span>
-              ))}
-            </div>
-            {employeesQuery.isPending ? (
-              <LoadingPanel label="Loading attendance overview..." />
-            ) : attendanceChartData.length === 0 ? (
-              <EmptyState
-                icon="bi-bar-chart-line"
-                title="No attendance trend yet"
-                detail="Attendance overview will populate once employee records exist."
-              />
-            ) : (
-              <div className="chart-wrap hr-dashboard-chart-wrap hr-attendance-chart-wrap">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart
-                    data={attendanceChartData}
-                    barCategoryGap="28%"
-                    margin={{ left: 0, right: 12, top: 8, bottom: 0 }}
-                  >
-                    <CartesianGrid stroke="#e7eef8" strokeDasharray="4 4" vertical={false} />
-                    <XAxis
-                      dataKey="day"
-                      tickFormatter={(_, index) =>
-                        `${attendanceChartData[index]?.day ?? ''}\n${attendanceChartData[index]?.date ?? ''}`
-                      }
-                      tick={{ fill: '#49607a', fontSize: 12 }}
-                      tickLine={false}
-                      axisLine={false}
-                    />
-                    <YAxis
-                      allowDecimals={false}
-                      tick={{ fill: '#49607a', fontSize: 12 }}
-                      tickLine={false}
-                      axisLine={false}
-                      width={36}
-                    />
-                    <Tooltip />
-                    <Bar
-                      dataKey="present"
-                      fill="#2f80ed"
-                      radius={[10, 10, 0, 0]}
-                      maxBarSize={52}
-                      isAnimationActive={false}
-                    />
-                    <Bar
-                      dataKey="absent"
-                      fill="#cfe0ff"
-                      radius={[10, 10, 0, 0]}
-                      maxBarSize={52}
-                      isAnimationActive={false}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="attendance"
-                      stroke="#1d4ed8"
-                      strokeWidth={3}
-                      dot={{ r: 4, fill: '#ffffff', stroke: '#1d4ed8', strokeWidth: 2 }}
-                      isAnimationActive={false}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </section>
-
-          <section className="panel-card hr-dashboard-panel hr-leave-panel">
-            <div className="hr-panel-heading hr-panel-heading-match">
-              <div>
-                <h3>Leave Requests</h3>
-              </div>
-              <NavLink className="text-button" to="/hr/leave">
-                View All
-              </NavLink>
-            </div>
-            {employeesQuery.isPending ? (
-              <LoadingPanel label="Loading leave requests..." />
-            ) : employees.length === 0 ? (
-              <EmptyState
-                icon="bi-calendar2-week"
-                title="No leave requests yet"
-                detail="Leave workflow cards will appear here after employees are added."
-              />
-            ) : (
-              <div className="hr-leave-list">
-                {employees.map((employee, index) => (
-                  <article className="hr-leave-row" key={employee.id}>
-                    <span className={`hr-leave-avatar tone-${index % 5}`}>
-                      {employeeInitials(employee.fullName)}
-                    </span>
-                    <div className="hr-leave-copy">
-                      <strong>{employee.fullName}</strong>
-                      <span>{index % 2 === 0 ? 'Annual Leave' : 'Sick Leave'}</span>
-                      <small>
-                        {formatDateOnly(employee.joiningDate)} -{' '}
-                        {formatDateOnly(employee.joiningDate)}
-                      </small>
-                    </div>
-                    <span
-                      className={`hr-dashboard-tag ${index === employees.length - 1 ? 'approved' : 'pending'}`}
-                    >
-                      {index === employees.length - 1 ? 'Approved' : 'Pending'}
-                    </span>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="panel-card hr-dashboard-panel hr-distribution-panel">
-            <div className="hr-panel-heading hr-panel-heading-match">
-              <div>
-                <h3>Department Distribution</h3>
-              </div>
-              <select
-                className="select-shell hr-period-inline hr-dashboard-select"
-                value={distributionScope}
-                onChange={(event) => setDistributionScope(event.target.value as 'all' | 'active')}
-              >
-                <option value="all">All Employees</option>
-                <option value="active">Active Employees</option>
-              </select>
-            </div>
-            {departmentsQuery.isPending || employeesQuery.isPending ? (
-              <LoadingPanel label="Loading distribution..." />
-            ) : departmentChartData.length === 0 ? (
-              <EmptyState
-                icon="bi-diagram-3"
-                title="No departments configured"
-                detail="Create departments and job titles in HR Settings."
-              />
-            ) : (
-              <DonutChart
-                centerValue={String(employeesForDistribution.length)}
-                centerLabel="Employees"
-                currencyCode="KES"
-                data={departmentChartData}
-                valueFormatter={(value) => `${value} employees`}
-              />
-            )}
-          </section>
-
-          <section className="panel-card hr-dashboard-panel hr-recent-table-panel">
-            <div className="hr-panel-heading hr-panel-heading-match">
-              <div>
-                <h3>Recent Employees</h3>
-              </div>
-              <NavLink className="text-button" to="/hr/employees">
-                View All
-              </NavLink>
-            </div>
-            {employeesQuery.isPending ? (
-              <LoadingPanel label="Loading recent employees..." />
-            ) : employees.length === 0 ? (
-              <EmptyState
-                icon="bi-people"
-                title="No recent employees"
-                detail="Recent employee records will appear here after registration."
-              />
-            ) : (
-              <div className="responsive-table report-table hr-dashboard-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Name</th>
-                      <th>Department</th>
-                      <th>Job Title</th>
-                      <th>Joining Date</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {employees.map((employee, index) => (
-                      <tr key={employee.id}>
-                        <td data-label="#">{index + 1}</td>
-                        <td data-label="Name">
-                          <span className="hr-table-name">
-                            <strong>{employee.fullName}</strong>
+            <div className="responsive-table users-table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Status</th>
+                    <th>Roles and permissions</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((user) => (
+                    <tr key={user.id}>
+                      <td data-label="User">
+                        <span className="table-label">
+                          <i className="bi bi-person" aria-hidden="true" />
+                          <span>
+                            <strong>{user.displayName}</strong>
+                            <small>{user.email}</small>
                           </span>
-                        </td>
-                        <td data-label="Department">{employee.departmentName ?? 'Unassigned'}</td>
-                        <td data-label="Job Title">{employee.jobTitleTitle ?? 'Unassigned'}</td>
-                        <td data-label="Joining Date">{formatDateOnly(employee.joiningDate)}</td>
-                        <td data-label="Status">
-                          <span className="hr-dashboard-tag approved">
-                            {employee.active ? 'Active' : labelizeEnum(employee.employmentStatus)}
-                          </span>
-                        </td>
-                        <td data-label="Actions">
-                          <NavLink className="hr-table-actions" to={`/hr/employees/${employee.id}`}>
-                            <i className="bi bi-three-dots" aria-hidden="true" />
-                          </NavLink>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          <section className="panel-card hr-dashboard-panel hr-schedule-panel">
-            <div className="hr-panel-heading hr-panel-heading-match">
-              <div>
-                <h3>Today&apos;s Schedule</h3>
-              </div>
-              <NavLink className="text-button" to="/hr/settings">
-                View All
-              </NavLink>
-            </div>
-            <div className="hr-schedule-list hr-schedule-list-match">
-              {scheduleItems.length === 0 ? (
-                <EmptyState
-                  icon="bi-calendar3"
-                  title="No schedule items yet"
-                  detail="Schedule items will expand as HR workflows are added."
-                />
-              ) : (
-                scheduleItems.map((item, index) => (
-                  <article className="hr-schedule-item hr-schedule-item-match" key={item.id}>
-                    <span className={`hr-schedule-icon tone-${index % 4}`}>
-                      <i className={`bi ${item.icon}`} aria-hidden="true" />
-                    </span>
-                    <div className="hr-schedule-copy">
-                      <small>{item.time}</small>
-                      <strong>{item.title}</strong>
-                      <span>{item.detail}</span>
-                    </div>
-                    <span className={`hr-dashboard-tag ${item.badgeClass}`}>{item.badge}</span>
-                  </article>
-                ))
-              )}
-            </div>
-          </section>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function HrEmployeesPage({
-  branches,
-  currentUser,
-}: {
-  branches: Branch[];
-  currentUser: CurrentUser;
-}) {
-  const queryClient = useQueryClient();
-  const departmentsQuery = useQuery({ queryKey: ['hr', 'departments'], queryFn: getHrDepartments });
-  const jobTitlesQuery = useQuery({ queryKey: ['hr', 'job-titles'], queryFn: getHrJobTitles });
-  const canReadUsers = hasPermission(currentUser, 'admin:manage');
-  const usersQuery = useQuery({ queryKey: ['users'], queryFn: getUsers, enabled: canReadUsers });
-  const [search, setSearch] = useState('');
-  const [branchFilter, setBranchFilter] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState('');
-  const [jobTitleFilter, setJobTitleFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [page, setPage] = useState(0);
-  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
-  const [form, setForm] = useState<HrEmployeeFormState>(() =>
-    defaultHrEmployeeForm(branches[0]?.id ?? ''),
-  );
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const employeesQuery = useQuery({
-    queryKey: [
-      'hr',
-      'employees',
-      search,
-      branchFilter,
-      departmentFilter,
-      jobTitleFilter,
-      statusFilter,
-      page,
-    ],
-    queryFn: () => {
-      const params = new URLSearchParams({
-        page: String(page),
-        size: '10',
-        sort: 'lastName,asc',
-      });
-      if (search.trim()) params.set('search', search.trim());
-      if (branchFilter) params.set('branchId', branchFilter);
-      if (departmentFilter) params.set('departmentId', departmentFilter);
-      if (jobTitleFilter) params.set('jobTitleId', jobTitleFilter);
-      if (statusFilter) params.set('employmentStatus', statusFilter);
-      return getHrEmployees(params);
-    },
-  });
-  const employees = employeesQuery.data?.items ?? [];
-  const total = employeesQuery.data?.total ?? 0;
-  const departments = departmentsQuery.data ?? [];
-  const jobTitles = jobTitlesQuery.data ?? [];
-  const users = usersQuery.data ?? [];
-  const branchOptions =
-    currentUser.branchIds.length === 0
-      ? branches.filter((branch) => branch.status === 'ACTIVE')
-      : branches.filter(
-          (branch) => branch.status === 'ACTIVE' && currentUser.branchIds.includes(branch.id),
-        );
-
-  const saveEmployeeMutation = useMutation({
-    mutationFn: (payload: EmployeeRequest) =>
-      editingEmployeeId ? updateHrEmployee(editingEmployeeId, payload) : createHrEmployee(payload),
-    onSuccess: async (employee) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'employees'] });
-      setEditingEmployeeId(null);
-      setForm(defaultHrEmployeeForm(employee.branchId));
-      setMessage(`${employee.fullName} saved.`);
-    },
-  });
-  const syncUsersMutation = useMutation({
-    mutationFn: syncHrEmployeesFromUsers,
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'employees'] });
-      setMessage(userSyncMessage(result.createdCount, result.skippedCount));
-      setError('');
-    },
-  });
-
-  useEffect(() => {
-    setPage(0);
-  }, [search, branchFilter, departmentFilter, jobTitleFilter, statusFilter]);
-
-  function editEmployee(employeeId: string) {
-    void getHrEmployee(employeeId)
-      .then((profile) => {
-        setEditingEmployeeId(profile.id);
-        setForm(employeeFormFromProfile(profile));
-        setError('');
-        setMessage('');
-      })
-      .catch((caughtError) =>
-        setError(caughtError instanceof Error ? caughtError.message : 'Unable to load employee'),
-      );
-  }
-
-  function resetForm() {
-    setEditingEmployeeId(null);
-    setForm(defaultHrEmployeeForm(branchFilter || branches[0]?.id || ''));
-    setError('');
-    setMessage('');
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await saveEmployeeMutation.mutateAsync(form);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save employee');
-    }
-  }
-
-  async function handleSyncUsers() {
-    setError('');
-    setMessage('');
-    try {
-      await syncUsersMutation.mutateAsync();
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to add system users');
-    }
-  }
-
-  const filteredJobTitles = jobTitles.filter(
-    (jobTitle) => !form.departmentId || jobTitle.departmentId === form.departmentId,
-  );
-  const departmentOptions = departments.filter(
-    (department) => !department.branchId || department.branchId === form.primaryBranchId,
-  );
-  const linkedUserOptions = users.filter(
-    (user) =>
-      !employees.some(
-        (employee) => employee.linkedUserId === user.id && employee.id !== editingEmployeeId,
-      ),
-  );
-  const managerOptions = employees.filter((employee) => employee.id !== editingEmployeeId);
-
-  return (
-    <section className="branch-workspace">
-      <PageHeader
-        eyebrow="Human resources"
-        title="Employees"
-        subtitle="Centralized employee records with optional links to existing system users."
-        action={
-          <div className="hr-employee-page-actions">
-            <HrBackButton />
-            <button
-              className="secondary-action compact-action"
-              type="button"
-              disabled={syncUsersMutation.isPending}
-              onClick={handleSyncUsers}
-            >
-              <i className="bi bi-arrow-repeat" aria-hidden="true" />
-              {syncUsersMutation.isPending ? 'Adding...' : 'Add System Users'}
-            </button>
-            <NavLink className="secondary-action compact-action" to="/hr/settings">
-              <i className="bi bi-diagram-3" aria-hidden="true" />
-              Add Department
-            </NavLink>
-            <button className="primary-action compact-action" type="button" onClick={resetForm}>
-              <i className="bi bi-plus-lg" aria-hidden="true" />
-              New Employee
-            </button>
-          </div>
-        }
-      />
-      <div className="catalog-filter-bar hr-filter-bar">
-        <label className="inventory-filter-field">
-          <span>Search</span>
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search name, employee number or department"
-          />
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-            <option value="">All branches</option>
-            {branchOptions.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select
-            value={departmentFilter}
-            onChange={(event) => setDepartmentFilter(event.target.value)}
-          >
-            <option value="">All departments</option>
-            {departments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select
-            value={jobTitleFilter}
-            onChange={(event) => setJobTitleFilter(event.target.value)}
-          >
-            <option value="">All job titles</option>
-            {jobTitles.map((jobTitle) => (
-              <option key={jobTitle.id} value={jobTitle.id}>
-                {jobTitle.title}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="">All statuses</option>
-            {hrEmploymentStatusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <div className="hr-employee-layout">
-        <section className="panel-card hr-employee-form-panel">
-          <PanelHeader
-            icon={editingEmployeeId ? 'bi-pencil-square' : 'bi-person-plus'}
-            title={editingEmployeeId ? 'Edit Employee' : 'Add Employee'}
-            action={
-              departments.length === 0 ? (
-                <NavLink className="text-button" to="/hr/settings">
-                  <i className="bi bi-plus-circle" aria-hidden="true" />
-                  Add Department
-                </NavLink>
-              ) : null
-            }
-          />
-          <form className="record-form hr-employee-form" onSubmit={handleSubmit}>
-            <div className="hr-form-section">
-              <div>
-                <h3>Identity</h3>
-                <p>Core employee information and branch assignment.</p>
-              </div>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Employee Number</span>
-                <input
-                  required
-                  maxLength={40}
-                  value={form.employeeNumber}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, employeeNumber: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Primary Branch</span>
-                <select
-                  required
-                  value={form.primaryBranchId}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, primaryBranchId: event.target.value }))
-                  }
-                >
-                  <option value="">Select branch</option>
-                  {branchOptions.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>First Name</span>
-                <input
-                  required
-                  maxLength={80}
-                  value={form.firstName}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, firstName: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Middle Name</span>
-                <input
-                  maxLength={80}
-                  value={form.middleName}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, middleName: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Last Name</span>
-                <input
-                  required
-                  maxLength={80}
-                  value={form.lastName}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, lastName: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Preferred Name</span>
-                <input
-                  maxLength={80}
-                  value={form.preferredName}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, preferredName: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Email</span>
-                <input
-                  type="email"
-                  maxLength={254}
-                  value={form.email}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, email: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Phone</span>
-                <input
-                  maxLength={40}
-                  value={form.phone}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, phone: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Gender</span>
-                <input
-                  maxLength={32}
-                  value={form.gender}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, gender: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Department</span>
-                <select
-                  disabled={!form.primaryBranchId || departmentOptions.length === 0}
-                  value={form.departmentId}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      departmentId: event.target.value,
-                      jobTitleId: '',
-                    }))
-                  }
-                >
-                  <option value="">
-                    {!form.primaryBranchId
-                      ? 'Select branch first'
-                      : departmentOptions.length === 0
-                        ? 'No departments available'
-                        : 'Select department'}
-                  </option>
-                  {departmentOptions.map((department) => (
-                    <option key={department.id} value={department.id}>
-                      {department.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Job Title</span>
-                <select
-                  disabled={!form.departmentId || filteredJobTitles.length === 0}
-                  value={form.jobTitleId}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, jobTitleId: event.target.value }))
-                  }
-                >
-                  <option value="">
-                    {!form.departmentId
-                      ? 'Select department first'
-                      : filteredJobTitles.length === 0
-                        ? 'No job titles available'
-                        : 'Select job title'}
-                  </option>
-                  {filteredJobTitles.map((jobTitle) => (
-                    <option key={jobTitle.id} value={jobTitle.id}>
-                      {jobTitle.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Linked User</span>
-                <select
-                  value={form.userId}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, userId: event.target.value }))
-                  }
-                >
-                  <option value="">Employee only</option>
-                  {linkedUserOptions.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="hr-form-section">
-              <div>
-                <h3>Employment</h3>
-                <p>Status, dates, reporting line, and assignment details.</p>
-              </div>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Employment Type</span>
-                <select
-                  value={form.employmentType}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      employmentType: event.target.value as EmployeeEmploymentType,
-                    }))
-                  }
-                >
-                  {hrEmploymentTypeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Employment Status</span>
-                <select
-                  value={form.employmentStatus}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      employmentStatus: event.target.value as EmployeeEmploymentStatus,
-                    }))
-                  }
-                >
-                  {hrEmploymentStatusOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Joining Date</span>
-                <input
-                  type="date"
-                  required
-                  value={form.joiningDate}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, joiningDate: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Probation End Date</span>
-                <input
-                  type="date"
-                  value={form.probationEndDate}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, probationEndDate: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Contract Start Date</span>
-                <input
-                  type="date"
-                  value={form.contractStartDate}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, contractStartDate: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Contract End Date</span>
-                <input
-                  type="date"
-                  value={form.contractEndDate}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, contractEndDate: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Manager</span>
-                <select
-                  value={form.managerEmployeeId}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, managerEmployeeId: event.target.value }))
-                  }
-                >
-                  <option value="">No manager</option>
-                  {managerOptions.map((employee) => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.fullName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Work Location</span>
-                <input
-                  maxLength={160}
-                  value={form.workLocation}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, workLocation: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Date of Birth</span>
-                <input
-                  type="date"
-                  value={form.dateOfBirth}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, dateOfBirth: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="hr-form-section">
-              <div>
-                <h3>Compensation and salary payment</h3>
-                <p>Basic salary and the destination used when payroll is processed.</p>
-              </div>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Basic Salary</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.basicSalary}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      basicSalary: Number(event.target.value || 0),
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Payment Method</span>
-                <select
-                  value={form.salaryPaymentMethod}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      salaryPaymentMethod: event.target.value as SalaryPaymentMethod,
-                    }))
-                  }
-                >
-                  {salaryPaymentMethodOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>M-Pesa Number</span>
-                <input
-                  maxLength={40}
-                  value={form.mpesaNumber}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, mpesaNumber: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Bank Name</span>
-                <input
-                  maxLength={120}
-                  value={form.bankName}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, bankName: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Bank Account Number</span>
-                <input
-                  maxLength={80}
-                  value={form.bankAccountNumber}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, bankAccountNumber: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Bank Account Name</span>
-                <input
-                  maxLength={160}
-                  value={form.bankAccountName}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, bankAccountName: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="hr-form-section">
-              <div>
-                <h3>Personal and emergency details</h3>
-                <p>Optional employee identity, contact, and notes.</p>
-              </div>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>National / Identification Number</span>
-                <input
-                  maxLength={80}
-                  value={form.nationalIdNumber}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, nationalIdNumber: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Emergency Contact Name</span>
-                <input
-                  maxLength={120}
-                  value={form.emergencyContactName}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      emergencyContactName: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Emergency Contact Phone</span>
-                <input
-                  maxLength={40}
-                  value={form.emergencyContactPhone}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      emergencyContactPhone: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            </div>
-            <label className="field-stack">
-              <span>Address</span>
-              <textarea
-                rows={2}
-                maxLength={500}
-                value={form.address}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, address: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack">
-              <span>Notes</span>
-              <textarea
-                rows={3}
-                maxLength={2000}
-                value={form.notes}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, notes: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack inline-checkbox">
-              <input
-                type="checkbox"
-                checked={form.active}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, active: event.target.checked }))
-                }
-              />
-              <span>Employee record is active</span>
-            </label>
-            <FormMessages error={error} message={message} />
-            <div className="form-actions">
-              {editingEmployeeId ? (
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  onClick={resetForm}
-                >
-                  Cancel
-                </button>
-              ) : null}
-              <button
-                className="primary-action compact-action"
-                type="submit"
-                disabled={saveEmployeeMutation.isPending}
-              >
-                <i className="bi bi-check2" aria-hidden="true" />
-                {saveEmployeeMutation.isPending
-                  ? 'Saving...'
-                  : editingEmployeeId
-                    ? 'Save Changes'
-                    : 'Add Employee'}
-              </button>
-            </div>
-          </form>
-        </section>
-        <section className="panel-card branch-list-panel users-list-panel hr-employee-directory-panel">
-          <PanelHeader
-            icon="bi-person-lines-fill"
-            title="Employee Directory"
-            action={<span className="catalog-count-pill">{total} employees</span>}
-          />
-          {employeesQuery.isPending ? (
-            <LoadingPanel label="Loading employees..." />
-          ) : employees.length === 0 ? (
-            <EmptyState
-              icon="bi-people"
-              title="No employees match"
-              detail="Adjust the filters or register an employee."
-            />
-          ) : (
-            <>
-              <div className="user-directory-list">
-                {employees.map((employee) => (
-                  <article className="user-directory-row" key={employee.id}>
-                    <div className="user-directory-identity">
-                      <span className="user-directory-icon">
-                        <i className="bi bi-person-vcard" aria-hidden="true" />
-                      </span>
-                      <span>
-                        <strong>{employee.fullName}</strong>
-                        <small>{employee.employeeNumber}</small>
-                      </span>
-                    </div>
-                    <div className="user-directory-access">
-                      <div className="user-detail-block">
-                        <span className="user-detail-label">Department</span>
-                        <span>{employee.departmentName ?? 'Unassigned'}</span>
-                      </div>
-                      <div className="user-detail-block">
-                        <span className="user-detail-label">Job Title</span>
-                        <span>{employee.jobTitleTitle ?? 'Unassigned'}</span>
-                      </div>
-                    </div>
-                    <div className="user-directory-status">
-                      <div className="user-detail-block">
-                        <span className="user-detail-label">Branch</span>
-                        <span>{employee.branchName}</span>
-                      </div>
-                      <StatusPill
-                        status={employee.active ? 'posted' : 'pending'}
-                        label={labelizeEnum(employee.employmentStatus)}
-                      />
-                    </div>
-                    <div className="user-directory-actions">
-                      <NavLink className="text-button" to={`/hr/employees/${employee.id}`}>
-                        <i className="bi bi-eye" aria-hidden="true" />
-                        View
-                      </NavLink>
-                      <button
-                        className="text-button"
-                        type="button"
-                        onClick={() => editEmployee(employee.id)}
-                      >
-                        <i className="bi bi-pencil" aria-hidden="true" />
-                        Edit
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-              <div className="form-actions hr-pagination">
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  disabled={page === 0}
-                  onClick={() => setPage((current) => Math.max(current - 1, 0))}
-                >
-                  Previous
-                </button>
-                <span className="catalog-count-pill">
-                  Page {page + 1} of {Math.max(1, Math.ceil(total / 10))}
-                </span>
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  disabled={(page + 1) * 10 >= total}
-                  onClick={() => setPage((current) => current + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            </>
-          )}
-        </section>
-      </div>
-    </section>
-  );
-}
-
-function HrEmployeeProfilePage({ organization }: { organization: Organization }) {
-  const { employeeId = '' } = useParams();
-  const employeeQuery = useQuery({
-    queryKey: ['hr', 'employee', employeeId],
-    queryFn: () => getHrEmployee(employeeId),
-    enabled: Boolean(employeeId),
-  });
-  const employee = employeeQuery.data;
-
-  return (
-    <section className="branch-workspace">
-      {employeeQuery.isPending ? <LoadingPanel label="Loading employee profile..." /> : null}
-      {!employee && !employeeQuery.isPending ? (
-        <EmptyState
-          icon="bi-person-x"
-          title="Employee not found"
-          detail="The requested employee record is unavailable."
-        />
-      ) : null}
-      {employee ? (
-        <>
-          <PageHeader
-            eyebrow="Employee profile"
-            title={employee.fullName}
-            subtitle={`${employee.employeeNumber} • ${employee.branchName} • ${employee.jobTitleTitle ?? 'No job title assigned'}`}
-            action={
-              <div className="hr-employee-page-actions">
-                <HrBackButton />
-                <NavLink className="secondary-action compact-action" to="/hr/employees">
-                  <i className="bi bi-arrow-left" aria-hidden="true" />
-                  Back to Directory
-                </NavLink>
-              </div>
-            }
-          />
-          <div
-            className="report-detail-tabs hr-profile-tabs"
-            role="tablist"
-            aria-label="Employee profile tabs"
-          >
-            {employee.tabs.map((tab) => (
-              <button
-                key={tab.key}
-                className={`report-detail-tab ${tab.key === 'overview' ? 'active' : ''}`}
-                type="button"
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <div className="management-grid users-management-grid">
-            <section className="panel-card branch-list-panel">
-              <PanelHeader icon="bi-person-lines-fill" title="Overview" />
-              <div className="hr-profile-grid">
-                <ProfileFact label="Preferred Name" value={employee.preferredName ?? 'N/A'} />
-                <ProfileFact label="Email" value={employee.email ?? 'N/A'} />
-                <ProfileFact label="Phone" value={employee.phone ?? 'N/A'} />
-                <ProfileFact label="Branch" value={employee.branchName} />
-                <ProfileFact label="Department" value={employee.departmentName ?? 'Unassigned'} />
-                <ProfileFact label="Job Title" value={employee.jobTitleTitle ?? 'Unassigned'} />
-                <ProfileFact
-                  label="Linked User"
-                  value={employee.linkedUserDisplayName ?? 'Employee only'}
-                />
-                <ProfileFact label="Manager" value={employee.managerEmployeeName ?? 'N/A'} />
-              </div>
-            </section>
-            <section className="panel-card branch-list-panel">
-              <PanelHeader icon="bi-briefcase" title="Employment" />
-              <div className="hr-profile-grid">
-                <ProfileFact
-                  label="Employment Type"
-                  value={labelizeEnum(employee.employmentType)}
-                />
-                <ProfileFact
-                  label="Employment Status"
-                  value={labelizeEnum(employee.employmentStatus)}
-                />
-                <ProfileFact label="Joining Date" value={formatDateOnly(employee.joiningDate)} />
-                <ProfileFact
-                  label="Probation End"
-                  value={
-                    employee.probationEndDate ? formatDateOnly(employee.probationEndDate) : 'N/A'
-                  }
-                />
-                <ProfileFact
-                  label="Contract Start"
-                  value={
-                    employee.contractStartDate ? formatDateOnly(employee.contractStartDate) : 'N/A'
-                  }
-                />
-                <ProfileFact
-                  label="Contract End"
-                  value={
-                    employee.contractEndDate ? formatDateOnly(employee.contractEndDate) : 'N/A'
-                  }
-                />
-                <ProfileFact label="Work Location" value={employee.workLocation ?? 'N/A'} />
-                <ProfileFact label="Record State" value={employee.active ? 'Active' : 'Inactive'} />
-              </div>
-            </section>
-            <section className="panel-card branch-list-panel">
-              <PanelHeader icon="bi-wallet2" title="Compensation" />
-              <div className="hr-profile-grid">
-                <ProfileFact
-                  label="Basic Salary"
-                  value={formatMoney(employee.basicSalary ?? 0, organization.currencyCode)}
-                />
-                <ProfileFact
-                  label="Payment Method"
-                  value={labelizeEnum(employee.salaryPaymentMethod)}
-                />
-                <ProfileFact label="M-Pesa Number" value={employee.mpesaNumber ?? 'N/A'} />
-                <ProfileFact label="Bank Name" value={employee.bankName ?? 'N/A'} />
-                <ProfileFact
-                  label="Bank Account Number"
-                  value={employee.bankAccountNumber ?? 'N/A'}
-                />
-                <ProfileFact label="Bank Account Name" value={employee.bankAccountName ?? 'N/A'} />
-              </div>
-            </section>
-          </div>
-          <section className="panel-card branch-list-panel">
-            <PanelHeader icon="bi-journal-text" title="Notes and Contact" />
-            <div className="hr-profile-grid">
-              <ProfileFact
-                label="Emergency Contact"
-                value={employee.emergencyContactName ?? 'N/A'}
-              />
-              <ProfileFact
-                label="Emergency Phone"
-                value={employee.emergencyContactPhone ?? 'N/A'}
-              />
-              <ProfileFact label="Address" value={employee.address ?? 'N/A'} />
-              <ProfileFact label="Notes" value={employee.notes ?? 'No notes added'} />
-            </div>
-          </section>
-        </>
-      ) : null}
-    </section>
-  );
-}
-
-function HrAttendancePage({
-  branches,
-  currentUser,
-}: {
-  branches: Branch[];
-  currentUser: CurrentUser;
-}) {
-  const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
-  const [branchFilter, setBranchFilter] = useState('');
-  const [employeeFilter, setEmployeeFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [fromDate, setFromDate] = useState(
-    dateInputValue(new Date(Date.now() - 6 * 24 * 60 * 60 * 1000)),
-  );
-  const [toDate, setToDate] = useState(dateInputValue(new Date()));
-  const [page, setPage] = useState(0);
-  const [editingAttendanceId, setEditingAttendanceId] = useState<string | null>(null);
-  const [form, setForm] = useState<HrAttendanceFormState>(() =>
-    defaultHrAttendanceForm(branches[0]?.id ?? ''),
-  );
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-
-  const employeesQuery = useQuery({
-    queryKey: ['hr', 'employees', 'attendance-options'],
-    queryFn: () =>
-      getHrEmployees(new URLSearchParams({ page: '0', size: '200', sort: 'lastName,asc' })),
-  });
-  const attendanceQuery = useQuery({
-    queryKey: [
-      'hr',
-      'attendance',
-      search,
-      branchFilter,
-      employeeFilter,
-      statusFilter,
-      fromDate,
-      toDate,
-      page,
-    ],
-    queryFn: () => {
-      const params = new URLSearchParams({
-        page: String(page),
-        size: '10',
-      });
-      if (search.trim()) params.set('search', search.trim());
-      if (branchFilter) params.set('branchId', branchFilter);
-      if (employeeFilter) params.set('employeeId', employeeFilter);
-      if (statusFilter) params.set('status', statusFilter);
-      if (fromDate) params.set('fromDate', fromDate);
-      if (toDate) params.set('toDate', toDate);
-      return getHrAttendance(params);
-    },
-  });
-
-  const employees = employeesQuery.data?.items ?? [];
-  const attendance = attendanceQuery.data?.items ?? [];
-  const summary = attendanceQuery.data?.summary;
-  const total = attendanceQuery.data?.total ?? 0;
-  const branchOptions =
-    currentUser.branchIds.length === 0
-      ? branches.filter((branch) => branch.status === 'ACTIVE')
-      : branches.filter(
-          (branch) => branch.status === 'ACTIVE' && currentUser.branchIds.includes(branch.id),
-        );
-  const employeeOptions = employees.filter(
-    (employee) => !form.branchId || employee.branchId === form.branchId,
-  );
-
-  const saveAttendanceMutation = useMutation({
-    mutationFn: (payload: AttendanceRequest) =>
-      editingAttendanceId
-        ? updateHrAttendance(editingAttendanceId, payload)
-        : createHrAttendance(payload),
-    onSuccess: async (record) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'attendance'] });
-      setEditingAttendanceId(null);
-      setForm(defaultHrAttendanceForm(record.branchId));
-      setMessage(`Attendance saved for ${record.employeeName}.`);
-    },
-  });
-
-  useEffect(() => {
-    setPage(0);
-  }, [search, branchFilter, employeeFilter, statusFilter, fromDate, toDate]);
-
-  function resetForm() {
-    setEditingAttendanceId(null);
-    setForm(defaultHrAttendanceForm(branchFilter || branches[0]?.id || ''));
-    setError('');
-    setMessage('');
-  }
-
-  function editAttendance(record: AttendanceRecord) {
-    setEditingAttendanceId(record.id);
-    setForm({
-      employeeId: record.employeeId,
-      branchId: record.branchId,
-      attendanceDate: record.attendanceDate,
-      clockIn: record.clockIn ? dateTimeLocalValue(record.clockIn) : '',
-      clockOut: record.clockOut ? dateTimeLocalValue(record.clockOut) : '',
-      status: record.status,
-      notes: record.notes ?? '',
-      correctionReason: record.correctionReason ?? '',
-    });
-    setError('');
-    setMessage('');
-  }
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await saveAttendanceMutation.mutateAsync(form);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save attendance');
-    }
-  }
-
-  return (
-    <section className="branch-workspace">
-      <PageHeader
-        eyebrow="Human resources"
-        title="Attendance"
-        subtitle="Track daily attendance, attendance history, corrections, and branch-scoped summaries."
-        action={
-          <div className="hr-employee-page-actions">
-            <HrBackButton />
-            <button className="primary-action compact-action" type="button" onClick={resetForm}>
-              <i className="bi bi-plus-lg" aria-hidden="true" />
-              New Attendance
-            </button>
-          </div>
-        }
-      />
-
-      <div className="hr-kpi-grid hr-attendance-summary-grid">
-        <HrDashboardMetricCard
-          icon="bi-calendar2-check"
-          label="Total Records"
-          value={String(summary?.totalRecords ?? 0)}
-          detail={`${summary?.correctedCount ?? 0} corrected`}
-          tone="blue"
-        />
-        <HrDashboardMetricCard
-          icon="bi-person-check"
-          label="Present"
-          value={String(summary?.presentCount ?? 0)}
-          detail={`${summary?.lateCount ?? 0} late arrivals`}
-          tone="green"
-        />
-        <HrDashboardMetricCard
-          icon="bi-person-dash"
-          label="Absent"
-          value={String(summary?.absentCount ?? 0)}
-          detail={`${summary?.leaveCount ?? 0} on leave`}
-          tone="orange"
-        />
-        <HrDashboardMetricCard
-          icon="bi-clock-history"
-          label="Worked Hours"
-          value={minutesToHours(summary?.totalWorkedMinutes ?? 0)}
-          detail={`${minutesToHours(summary?.totalOvertimeMinutes ?? 0)} overtime`}
-          tone="purple"
-        />
-      </div>
-
-      <div className="catalog-filter-bar hr-filter-bar">
-        <label className="inventory-filter-field">
-          <span>Search</span>
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search employee, branch, department or status"
-          />
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-            <option value="">All branches</option>
-            {branchOptions.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select
-            value={employeeFilter}
-            onChange={(event) => setEmployeeFilter(event.target.value)}
-          >
-            <option value="">All employees</option>
-            {employees.map((employee) => (
-              <option key={employee.id} value={employee.id}>
-                {employee.fullName}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="">All statuses</option>
-            {attendanceStatusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="inventory-filter-field">
-          <span>From</span>
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(event) => setFromDate(event.target.value)}
-          />
-        </label>
-        <label className="inventory-filter-field">
-          <span>To</span>
-          <input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
-        </label>
-      </div>
-
-      <div className="management-grid hr-attendance-layout">
-        <section className="panel-card branch-form-panel">
-          <PanelHeader
-            icon={editingAttendanceId ? 'bi-pencil-square' : 'bi-calendar2-plus'}
-            title={editingAttendanceId ? 'Correct Attendance' : 'Record Attendance'}
-          />
-          <form className="record-form hr-employee-form" onSubmit={handleSubmit}>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Branch</span>
-                <select
-                  required
-                  value={form.branchId}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      branchId: event.target.value,
-                      employeeId: '',
-                    }))
-                  }
-                >
-                  <option value="">Select branch</option>
-                  {branchOptions.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Employee</span>
-                <select
-                  required
-                  value={form.employeeId}
-                  disabled={!form.branchId || employeeOptions.length === 0}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, employeeId: event.target.value }))
-                  }
-                >
-                  <option value="">
-                    {!form.branchId
-                      ? 'Select branch first'
-                      : employeeOptions.length === 0
-                        ? 'No employees available'
-                        : 'Select employee'}
-                  </option>
-                  {employeeOptions.map((employee) => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.fullName} ({employee.employeeNumber})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Attendance Date</span>
-                <input
-                  type="date"
-                  required
-                  value={form.attendanceDate}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, attendanceDate: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Status</span>
-                <select
-                  value={form.status}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      status: event.target.value as AttendanceStatus,
-                    }))
-                  }
-                >
-                  {attendanceStatusOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Clock In</span>
-                <input
-                  type="datetime-local"
-                  value={form.clockIn}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, clockIn: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Clock Out</span>
-                <input
-                  type="datetime-local"
-                  value={form.clockOut}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, clockOut: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <label className="field-stack">
-              <span>Notes</span>
-              <textarea
-                rows={3}
-                maxLength={1000}
-                value={form.notes}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, notes: event.target.value }))
-                }
-              />
-            </label>
-            {editingAttendanceId ? (
-              <label className="field-stack">
-                <span>Correction Reason</span>
-                <textarea
-                  rows={2}
-                  maxLength={500}
-                  required
-                  value={form.correctionReason}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, correctionReason: event.target.value }))
-                  }
-                />
-              </label>
-            ) : null}
-            <FormMessages error={error} message={message} />
-            <div className="form-actions">
-              {editingAttendanceId ? (
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  onClick={resetForm}
-                >
-                  Cancel
-                </button>
-              ) : null}
-              <button
-                className="primary-action compact-action"
-                type="submit"
-                disabled={saveAttendanceMutation.isPending}
-              >
-                <i className="bi bi-check2" aria-hidden="true" />
-                {saveAttendanceMutation.isPending
-                  ? 'Saving...'
-                  : editingAttendanceId
-                    ? 'Save Correction'
-                    : 'Record Attendance'}
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <section className="panel-card branch-list-panel users-list-panel">
-          <PanelHeader
-            icon="bi-clock-history"
-            title="Attendance History"
-            action={<span className="catalog-count-pill">{total} records</span>}
-          />
-          {attendanceQuery.isPending ? (
-            <LoadingPanel label="Loading attendance..." />
-          ) : attendance.length === 0 ? (
-            <EmptyState
-              icon="bi-calendar2-x"
-              title="No attendance records"
-              detail="Add attendance records to see branch history and summaries."
-            />
-          ) : (
-            <>
-              <div className="user-directory-list hr-attendance-history">
-                {attendance.map((record) => (
-                  <article className="user-directory-row" key={record.id}>
-                    <div className="user-directory-identity">
-                      <span className="user-directory-icon">
-                        <i className="bi bi-calendar2-check" aria-hidden="true" />
-                      </span>
-                      <span>
-                        <strong>{record.employeeName}</strong>
-                        <small>
-                          {record.employeeNumber} • {formatDateOnly(record.attendanceDate)}
-                        </small>
-                      </span>
-                    </div>
-                    <div className="user-directory-access">
-                      <div className="user-detail-block">
-                        <span className="user-detail-label">Status</span>
-                        <span>{labelizeEnum(record.status)}</span>
-                      </div>
-                      <div className="user-detail-block">
-                        <span className="user-detail-label">Worked</span>
-                        <span>{minutesToHours(record.workedMinutes)}</span>
-                      </div>
-                      <div className="user-detail-block">
-                        <span className="user-detail-label">Overtime</span>
-                        <span>{minutesToHours(record.overtimeMinutes)}</span>
-                      </div>
-                    </div>
-                    <div className="user-directory-status">
-                      <div className="user-detail-block">
-                        <span className="user-detail-label">Clock Window</span>
-                        <span>
-                          {formatOptionalDateTime(record.clockIn)} -{' '}
-                          {formatOptionalDateTime(record.clockOut)}
                         </span>
-                      </div>
-                      <StatusPill
-                        status={record.corrected ? 'pending' : 'posted'}
-                        label={record.corrected ? 'Corrected' : 'Recorded'}
-                      />
-                    </div>
-                    <div className="user-directory-actions">
-                      <button
-                        className="text-button"
-                        type="button"
-                        onClick={() => editAttendance(record)}
-                      >
-                        <i className="bi bi-pencil" aria-hidden="true" />
-                        Correct
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-              <div className="form-actions hr-pagination">
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  disabled={page === 0}
-                  onClick={() => setPage((current) => Math.max(current - 1, 0))}
-                >
-                  Previous
-                </button>
-                <span className="catalog-count-pill">
-                  Page {page + 1} of {Math.max(1, Math.ceil(total / 10))}
-                </span>
-                <button
-                  className="secondary-action compact-action"
-                  type="button"
-                  disabled={(page + 1) * 10 >= total}
-                  onClick={() => setPage((current) => current + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            </>
-          )}
-        </section>
-      </div>
-    </section>
-  );
-}
-
-function HrLeavePage({ branches, currentUser }: { branches: Branch[]; currentUser: CurrentUser }) {
-  const queryClient = useQueryClient();
-  const canReadUsers = hasPermission(currentUser, 'admin:manage');
-  const usersQuery = useQuery({ queryKey: ['users'], queryFn: getUsers, enabled: canReadUsers });
-  const employeesQuery = useQuery({
-    queryKey: ['hr', 'employees', 'leave-options'],
-    queryFn: () =>
-      getHrEmployees(new URLSearchParams({ page: '0', size: '200', sort: 'lastName,asc' })),
-  });
-  const leavePageQuery = useQuery({ queryKey: ['hr', 'leave'], queryFn: getHrLeavePage });
-
-  const [editingLeaveTypeId, setEditingLeaveTypeId] = useState<string | null>(null);
-  const [editingLeaveRequestId, setEditingLeaveRequestId] = useState<string | null>(null);
-  const [leaveTypeForm, setLeaveTypeForm] = useState<HrLeaveTypeFormState>(() =>
-    defaultHrLeaveTypeForm(),
-  );
-  const [leaveRequestForm, setLeaveRequestForm] = useState<HrLeaveRequestFormState>(() =>
-    defaultHrLeaveRequestForm(),
-  );
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-
-  const leaveTypes = leavePageQuery.data?.leaveTypes ?? [];
-  const leaveBalances = leavePageQuery.data?.balances ?? [];
-  const leaveRequests = leavePageQuery.data?.requests ?? [];
-  const employees = employeesQuery.data?.items ?? [];
-  const users = usersQuery.data ?? [];
-  const branchScope =
-    currentUser.branchIds.length === 0
-      ? branches.filter((branch) => branch.status === 'ACTIVE')
-      : branches.filter(
-          (branch) => branch.status === 'ACTIVE' && currentUser.branchIds.includes(branch.id),
-        );
-
-  const saveLeaveTypeMutation = useMutation({
-    mutationFn: (payload: LeaveTypeRequest) =>
-      editingLeaveTypeId
-        ? updateHrLeaveType(editingLeaveTypeId, payload)
-        : createHrLeaveType(payload),
-    onSuccess: async (leaveType) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'leave'] });
-      setEditingLeaveTypeId(null);
-      setLeaveTypeForm(defaultHrLeaveTypeForm());
-      setMessage(`${leaveType.name} saved.`);
-    },
-  });
-
-  const saveLeaveRequestMutation = useMutation({
-    mutationFn: (payload: LeaveRequestInput) =>
-      editingLeaveRequestId
-        ? updateHrLeaveRequest(editingLeaveRequestId, payload)
-        : createHrLeaveRequest(payload),
-    onSuccess: async (request) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'leave'] });
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'attendance'] });
-      setEditingLeaveRequestId(null);
-      setLeaveRequestForm(defaultHrLeaveRequestForm());
-      setMessage(`Leave request saved for ${request.employeeName}.`);
-    },
-  });
-
-  async function handleLeaveTypeSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await saveLeaveTypeMutation.mutateAsync(leaveTypeForm);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save leave type');
-    }
-  }
-
-  async function handleLeaveRequestSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await saveLeaveRequestMutation.mutateAsync(leaveRequestForm);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save leave request');
-    }
-  }
-
-  function editLeaveType(leaveType: LeaveType) {
-    setEditingLeaveTypeId(leaveType.id);
-    setLeaveTypeForm({
-      name: leaveType.name,
-      code: leaveType.code,
-      description: leaveType.description ?? '',
-      requiresBalance: leaveType.requiresBalance,
-      defaultDays: leaveType.defaultDays,
-      active: leaveType.active,
-    });
-  }
-
-  function editLeaveRequest(request: LeaveRequestRecord) {
-    setEditingLeaveRequestId(request.id);
-    setLeaveRequestForm({
-      employeeId: request.employeeId,
-      leaveTypeId: request.leaveTypeId,
-      startDate: request.startDate,
-      endDate: request.endDate,
-      reason: request.reason ?? '',
-      approverUserId: request.approverUserId ?? '',
-      approverComments: request.approverComments ?? '',
-      status: request.status,
-    });
-  }
-
-  function resetLeaveForms() {
-    setEditingLeaveTypeId(null);
-    setEditingLeaveRequestId(null);
-    setLeaveTypeForm(defaultHrLeaveTypeForm());
-    setLeaveRequestForm(defaultHrLeaveRequestForm());
-    setError('');
-    setMessage('');
-  }
-
-  const pendingRequests = leaveRequests.filter(
-    (request) => request.status === 'PENDING_APPROVAL',
-  ).length;
-  const approvedRequests = leaveRequests.filter((request) => request.status === 'APPROVED').length;
-  const totalAvailableDays = leaveBalances.reduce(
-    (total, balance) => total + balance.availableDays,
-    0,
-  );
-
-  return (
-    <section className="branch-workspace hr-leave-workspace">
-      <PageHeader
-        eyebrow="Human resources"
-        title="Leave"
-        subtitle="Configure leave types, monitor balances, and manage leave requests with approval workflow."
-        action={
-          <div className="hr-employee-page-actions">
-            <HrBackButton />
-            <button
-              className="primary-action compact-action"
-              type="button"
-              onClick={resetLeaveForms}
-            >
-              <i className="bi bi-plus-lg" aria-hidden="true" />
-              New Leave Setup
-            </button>
-          </div>
-        }
-      />
-
-      <div className="hr-kpi-grid hr-attendance-summary-grid">
-        <HrDashboardMetricCard
-          icon="bi-calendar-week"
-          label="Leave Types"
-          value={String(leaveTypes.length)}
-          detail={`${branchScope.length} branches in scope`}
-          tone="blue"
-        />
-        <HrDashboardMetricCard
-          icon="bi-send-check"
-          label="Pending Approval"
-          value={String(pendingRequests)}
-          detail={`${approvedRequests} approved`}
-          tone="orange"
-        />
-        <HrDashboardMetricCard
-          icon="bi-wallet2"
-          label="Available Days"
-          value={String(totalAvailableDays)}
-          detail={`${leaveBalances.length} employee balances`}
-          tone="green"
-        />
-        <HrDashboardMetricCard
-          icon="bi-person-workspace"
-          label="Requests"
-          value={String(leaveRequests.length)}
-          detail="Active leave workflow records"
-          tone="purple"
-        />
-      </div>
-
-      <FormMessages error={error} message={message} />
-
-      <div className="management-grid hr-attendance-layout hr-leave-form-layout">
-        <section className="panel-card branch-form-panel hr-leave-type-panel">
-          <PanelHeader
-            icon={editingLeaveTypeId ? 'bi-pencil-square' : 'bi-calendar-plus'}
-            title={editingLeaveTypeId ? 'Edit Leave Type' : 'Leave Type'}
-          />
-          <form className="record-form hr-leave-type-form" onSubmit={handleLeaveTypeSubmit}>
-            <label className="field-stack">
-              <span>Name</span>
-              <input
-                required
-                maxLength={120}
-                value={leaveTypeForm.name}
-                onChange={(event) =>
-                  setLeaveTypeForm((current) => ({ ...current, name: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack">
-              <span>Code</span>
-              <input
-                required
-                maxLength={40}
-                value={leaveTypeForm.code}
-                onChange={(event) =>
-                  setLeaveTypeForm((current) => ({ ...current, code: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack">
-              <span>Description</span>
-              <textarea
-                rows={3}
-                maxLength={500}
-                value={leaveTypeForm.description}
-                onChange={(event) =>
-                  setLeaveTypeForm((current) => ({ ...current, description: event.target.value }))
-                }
-              />
-            </label>
-            <div className="report-date-grid hr-leave-rule-grid">
-              <label className="field-stack">
-                <span>Default Days</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="366"
-                  value={leaveTypeForm.defaultDays}
-                  onChange={(event) =>
-                    setLeaveTypeForm((current) => ({
-                      ...current,
-                      defaultDays: Number(event.target.value || 0),
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack inline-checkbox">
-                <input
-                  type="checkbox"
-                  checked={leaveTypeForm.requiresBalance}
-                  onChange={(event) =>
-                    setLeaveTypeForm((current) => ({
-                      ...current,
-                      requiresBalance: event.target.checked,
-                    }))
-                  }
-                />
-                <span>Requires balance validation</span>
-              </label>
-            </div>
-            <label className="field-stack inline-checkbox">
-              <input
-                type="checkbox"
-                checked={leaveTypeForm.active}
-                onChange={(event) =>
-                  setLeaveTypeForm((current) => ({ ...current, active: event.target.checked }))
-                }
-              />
-              <span>Leave type is active</span>
-            </label>
-            <div className="form-actions">
-              <button
-                className="primary-action compact-action"
-                type="submit"
-                disabled={saveLeaveTypeMutation.isPending}
-              >
-                <i className="bi bi-check2" aria-hidden="true" />
-                {saveLeaveTypeMutation.isPending ? 'Saving...' : 'Save Leave Type'}
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <section className="panel-card branch-form-panel hr-leave-request-panel">
-          <PanelHeader
-            icon={editingLeaveRequestId ? 'bi-pencil-square' : 'bi-send-plus'}
-            title={editingLeaveRequestId ? 'Update Leave Request' : 'Leave Request'}
-          />
-          <form className="record-form hr-leave-request-form" onSubmit={handleLeaveRequestSubmit}>
-            <label className="field-stack">
-              <span>Employee</span>
-              <select
-                required
-                value={leaveRequestForm.employeeId}
-                onChange={(event) =>
-                  setLeaveRequestForm((current) => ({ ...current, employeeId: event.target.value }))
-                }
-              >
-                <option value="">Select employee</option>
-                {employees.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.fullName} ({employee.employeeNumber})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Leave Type</span>
-              <select
-                required
-                value={leaveRequestForm.leaveTypeId}
-                onChange={(event) =>
-                  setLeaveRequestForm((current) => ({
-                    ...current,
-                    leaveTypeId: event.target.value,
-                  }))
-                }
-              >
-                <option value="">Select leave type</option>
-                {leaveTypes
-                  .filter((type) => type.active)
-                  .map((leaveType) => (
-                    <option key={leaveType.id} value={leaveType.id}>
-                      {leaveType.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Start Date</span>
-                <input
-                  type="date"
-                  required
-                  value={leaveRequestForm.startDate}
-                  onChange={(event) =>
-                    setLeaveRequestForm((current) => ({
-                      ...current,
-                      startDate: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>End Date</span>
-                <input
-                  type="date"
-                  required
-                  value={leaveRequestForm.endDate}
-                  onChange={(event) =>
-                    setLeaveRequestForm((current) => ({ ...current, endDate: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <label className="field-stack">
-              <span>Reason</span>
-              <textarea
-                rows={3}
-                maxLength={2000}
-                value={leaveRequestForm.reason}
-                onChange={(event) =>
-                  setLeaveRequestForm((current) => ({ ...current, reason: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack">
-              <span>Status</span>
-              <select
-                value={leaveRequestForm.status}
-                onChange={(event) =>
-                  setLeaveRequestForm((current) => ({
-                    ...current,
-                    status: event.target.value as LeaveRequestStatus,
-                  }))
-                }
-              >
-                {leaveStatusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Approver</span>
-              <select
-                value={leaveRequestForm.approverUserId}
-                onChange={(event) =>
-                  setLeaveRequestForm((current) => ({
-                    ...current,
-                    approverUserId: event.target.value,
-                  }))
-                }
-              >
-                <option value="">No approver</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.displayName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Approver Comments</span>
-              <textarea
-                rows={2}
-                maxLength={1000}
-                value={leaveRequestForm.approverComments}
-                onChange={(event) =>
-                  setLeaveRequestForm((current) => ({
-                    ...current,
-                    approverComments: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <div className="form-actions">
-              <button
-                className="primary-action compact-action"
-                type="submit"
-                disabled={saveLeaveRequestMutation.isPending}
-              >
-                <i className="bi bi-check2" aria-hidden="true" />
-                {saveLeaveRequestMutation.isPending ? 'Saving...' : 'Save Leave Request'}
-              </button>
-            </div>
-          </form>
-        </section>
-      </div>
-
-      <div className="management-grid hr-attendance-layout">
-        <section className="panel-card branch-list-panel">
-          <PanelHeader icon="bi-calendar-range" title="Leave Types" />
-          {leavePageQuery.isPending ? (
-            <LoadingPanel label="Loading leave types..." />
-          ) : leaveTypes.length === 0 ? (
-            <EmptyState
-              icon="bi-calendar-x"
-              title="No leave types"
-              detail="Create leave types to begin processing leave requests."
-            />
-          ) : (
-            <div className="user-directory-list">
-              {leaveTypes.map((leaveType) => (
-                <article className="user-directory-row" key={leaveType.id}>
-                  <div className="user-directory-identity">
-                    <span className="user-directory-icon">
-                      <i className="bi bi-calendar-week" aria-hidden="true" />
-                    </span>
-                    <span>
-                      <strong>{leaveType.name}</strong>
-                      <small>{leaveType.code}</small>
-                    </span>
-                  </div>
-                  <div className="user-directory-access">
-                    <div className="user-detail-block">
-                      <span className="user-detail-label">Default Days</span>
-                      <span>{leaveType.defaultDays}</span>
-                    </div>
-                    <div className="user-detail-block">
-                      <span className="user-detail-label">Balance Rule</span>
-                      <span>{leaveType.requiresBalance ? 'Required' : 'Flexible'}</span>
-                    </div>
-                  </div>
-                  <div className="user-directory-status">
-                    <StatusPill
-                      status={leaveType.active ? 'posted' : 'pending'}
-                      label={leaveType.active ? 'Active' : 'Inactive'}
-                    />
-                  </div>
-                  <div className="user-directory-actions">
-                    <button
-                      className="text-button"
-                      type="button"
-                      onClick={() => editLeaveType(leaveType)}
-                    >
-                      <i className="bi bi-pencil" aria-hidden="true" />
-                      Edit
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="panel-card branch-list-panel">
-          <PanelHeader icon="bi-wallet2" title="Leave Balances" />
-          {leavePageQuery.isPending ? (
-            <LoadingPanel label="Loading leave balances..." />
-          ) : leaveBalances.length === 0 ? (
-            <EmptyState
-              icon="bi-wallet2"
-              title="No leave balances"
-              detail="Balances will appear automatically when requests are created."
-            />
-          ) : (
-            <div className="responsive-table report-table hr-dashboard-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Employee</th>
-                    <th>Leave Type</th>
-                    <th>Balance</th>
-                    <th>Used</th>
-                    <th>Available</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leaveBalances.map((balance: LeaveBalance) => (
-                    <tr key={balance.id}>
-                      <td data-label="Employee">{balance.employeeName}</td>
-                      <td data-label="Leave Type">{balance.leaveTypeName}</td>
-                      <td data-label="Balance">{balance.balanceDays}</td>
-                      <td data-label="Used">{balance.usedDays}</td>
-                      <td data-label="Available">{balance.availableDays}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </div>
-
-      <section className="panel-card branch-list-panel">
-        <PanelHeader
-          icon="bi-send-check"
-          title="Leave Requests"
-          action={<span className="catalog-count-pill">{leaveRequests.length} requests</span>}
-        />
-        {leavePageQuery.isPending ? (
-          <LoadingPanel label="Loading leave requests..." />
-        ) : leaveRequests.length === 0 ? (
-          <EmptyState
-            icon="bi-envelope-open"
-            title="No leave requests"
-            detail="Submitted leave requests will appear here."
-          />
-        ) : (
-          <div className="user-directory-list">
-            {leaveRequests.map((request) => (
-              <article className="user-directory-row" key={request.id}>
-                <div className="user-directory-identity">
-                  <span className="user-directory-icon">
-                    <i className="bi bi-person-badge" aria-hidden="true" />
-                  </span>
-                  <span>
-                    <strong>{request.employeeName}</strong>
-                    <small>
-                      {request.leaveTypeName} • {formatDateOnly(request.startDate)} -{' '}
-                      {formatDateOnly(request.endDate)}
-                    </small>
-                  </span>
-                </div>
-                <div className="user-directory-access">
-                  <div className="user-detail-block">
-                    <span className="user-detail-label">Days</span>
-                    <span>{request.requestedDays}</span>
-                  </div>
-                  <div className="user-detail-block">
-                    <span className="user-detail-label">Approver</span>
-                    <span>{request.approverUserDisplayName ?? 'Pending assignment'}</span>
-                  </div>
-                </div>
-                <div className="user-directory-status">
-                  <div className="user-detail-block">
-                    <span className="user-detail-label">Branch</span>
-                    <span>{request.branchName}</span>
-                  </div>
-                  <StatusPill
-                    status={request.status === 'APPROVED' ? 'posted' : 'pending'}
-                    label={labelizeEnum(request.status)}
-                  />
-                </div>
-                <div className="user-directory-actions">
-                  <button
-                    className="text-button"
-                    type="button"
-                    onClick={() => editLeaveRequest(request)}
-                  >
-                    <i className="bi bi-pencil" aria-hidden="true" />
-                    Edit
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-    </section>
-  );
-}
-
-function HrSettingsPage({
-  branches,
-  currentUser,
-}: {
-  branches: Branch[];
-  currentUser: CurrentUser;
-}) {
-  const queryClient = useQueryClient();
-  const departmentsQuery = useQuery({ queryKey: ['hr', 'departments'], queryFn: getHrDepartments });
-  const jobTitlesQuery = useQuery({ queryKey: ['hr', 'job-titles'], queryFn: getHrJobTitles });
-  const canReadUsers = hasPermission(currentUser, 'admin:manage');
-  const usersQuery = useQuery({ queryKey: ['users'], queryFn: getUsers, enabled: canReadUsers });
-  const employeesQuery = useQuery({
-    queryKey: ['hr', 'employees', 'settings'],
-    queryFn: () =>
-      getHrEmployees(new URLSearchParams({ page: '0', size: '200', sort: 'lastName,asc' })),
-  });
-  const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null);
-  const [editingJobTitleId, setEditingJobTitleId] = useState<string | null>(null);
-  const [departmentForm, setDepartmentForm] = useState<HrDepartmentFormState>(() =>
-    defaultHrDepartmentForm(),
-  );
-  const [jobTitleForm, setJobTitleForm] = useState<HrJobTitleFormState>(() =>
-    defaultHrJobTitleForm(),
-  );
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const departments = departmentsQuery.data ?? [];
-  const jobTitles = jobTitlesQuery.data ?? [];
-  const users = usersQuery.data ?? [];
-  const employees = employeesQuery.data?.items ?? [];
-  const branchOptions =
-    currentUser.branchIds.length === 0
-      ? branches.filter((branch) => branch.status === 'ACTIVE')
-      : branches.filter(
-          (branch) => branch.status === 'ACTIVE' && currentUser.branchIds.includes(branch.id),
-        );
-  const activeDepartments = departments.filter((department) => department.active);
-  const activeJobTitles = jobTitles.filter((jobTitle) => jobTitle.active);
-  const assignedEmployees = employees.filter(
-    (employee) => employee.departmentId && employee.jobTitleId,
-  ).length;
-  const linkedEmployees = employees.filter((employee) => employee.linkedUserId).length;
-
-  const saveDepartmentMutation = useMutation({
-    mutationFn: (payload: DepartmentRequest) =>
-      editingDepartmentId
-        ? updateHrDepartment(editingDepartmentId, payload)
-        : createHrDepartment(payload),
-    onSuccess: async (department) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'departments'] });
-      setEditingDepartmentId(null);
-      setDepartmentForm(defaultHrDepartmentForm());
-      setMessage(`${department.name} saved.`);
-    },
-  });
-
-  const saveJobTitleMutation = useMutation({
-    mutationFn: (payload: JobTitleRequest) =>
-      editingJobTitleId ? updateHrJobTitle(editingJobTitleId, payload) : createHrJobTitle(payload),
-    onSuccess: async (jobTitle) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'job-titles'] });
-      setEditingJobTitleId(null);
-      setJobTitleForm(defaultHrJobTitleForm());
-      setMessage(`${jobTitle.title} saved.`);
-    },
-  });
-
-  async function handleDepartmentSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await saveDepartmentMutation.mutateAsync(departmentForm);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save department');
-    }
-  }
-
-  async function handleJobTitleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await saveJobTitleMutation.mutateAsync(jobTitleForm);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save job title');
-    }
-  }
-
-  function editDepartment(department: Department) {
-    setEditingDepartmentId(department.id);
-    setDepartmentForm({
-      name: department.name,
-      code: department.code,
-      description: department.description ?? '',
-      branchId: department.branchId ?? '',
-      managerUserId: department.managerUserId ?? '',
-      active: department.active,
-    });
-  }
-
-  function editJobTitle(jobTitle: JobTitle) {
-    setEditingJobTitleId(jobTitle.id);
-    setJobTitleForm({
-      title: jobTitle.title,
-      code: jobTitle.code,
-      departmentId: jobTitle.departmentId,
-      description: jobTitle.description ?? '',
-      active: jobTitle.active,
-    });
-  }
-
-  return (
-    <section className="branch-workspace settings-workspace">
-      <PageHeader
-        eyebrow="Human resources"
-        title="HR Settings"
-        subtitle="Configure departments, job titles, assignment coverage, and HR structure readiness."
-        action={<HrBackButton />}
-      />
-      <div className="hr-kpi-grid hr-attendance-summary-grid">
-        <HrDashboardMetricCard
-          icon="bi-diagram-3"
-          label="Active Departments"
-          value={String(activeDepartments.length)}
-          detail={`${departments.length} total department records`}
-          tone="blue"
-        />
-        <HrDashboardMetricCard
-          icon="bi-briefcase"
-          label="Active Job Titles"
-          value={String(activeJobTitles.length)}
-          detail={`${jobTitles.length} total job title records`}
-          tone="green"
-        />
-        <HrDashboardMetricCard
-          icon="bi-person-check"
-          label="Assigned Employees"
-          value={String(assignedEmployees)}
-          detail={`${employees.length} employee records checked`}
-          tone="orange"
-        />
-        <HrDashboardMetricCard
-          icon="bi-link-45deg"
-          label="Linked Users"
-          value={String(linkedEmployees)}
-          detail="employees connected to system users"
-          tone="purple"
-        />
-      </div>
-      <FormMessages error={error} message={message} />
-      <section className="panel-card branch-list-panel">
-        <PanelHeader icon="bi-shield-check" title="Configuration Health" />
-        <div className="user-directory-list">
-          <HrReadinessRow
-            icon="bi-shop"
-            title="Branch scope"
-            detail={`${branchOptions.length} active branches available for HR setup`}
-            ready={branchOptions.length > 0}
-          />
-          <HrReadinessRow
-            icon="bi-diagram-3"
-            title="Department structure"
-            detail={`${activeDepartments.length} active departments`}
-            ready={activeDepartments.length > 0}
-          />
-          <HrReadinessRow
-            icon="bi-briefcase"
-            title="Job title catalog"
-            detail={`${activeJobTitles.length} active job titles`}
-            ready={activeJobTitles.length > 0}
-          />
-          <HrReadinessRow
-            icon="bi-person-vcard"
-            title="Employee assignment coverage"
-            detail={`${assignedEmployees} employees have department and job title assignments`}
-            ready={employees.length === 0 || assignedEmployees === employees.length}
-          />
-        </div>
-      </section>
-      <div className="management-grid users-management-grid">
-        <section className="panel-card branch-form-panel">
-          <PanelHeader
-            icon="bi-diagram-3"
-            title={editingDepartmentId ? 'Edit Department' : 'Department'}
-          />
-          <form className="record-form" onSubmit={handleDepartmentSubmit}>
-            <label className="field-stack">
-              <span>Name</span>
-              <input
-                required
-                maxLength={120}
-                value={departmentForm.name}
-                onChange={(event) =>
-                  setDepartmentForm((current) => ({ ...current, name: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack">
-              <span>Code</span>
-              <input
-                required
-                maxLength={40}
-                value={departmentForm.code}
-                onChange={(event) =>
-                  setDepartmentForm((current) => ({ ...current, code: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack">
-              <span>Branch</span>
-              <select
-                value={departmentForm.branchId}
-                onChange={(event) =>
-                  setDepartmentForm((current) => ({ ...current, branchId: event.target.value }))
-                }
-              >
-                <option value="">All branches</option>
-                {branchOptions.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Manager User</span>
-              <select
-                value={departmentForm.managerUserId}
-                onChange={(event) =>
-                  setDepartmentForm((current) => ({
-                    ...current,
-                    managerUserId: event.target.value,
-                  }))
-                }
-              >
-                <option value="">No manager</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.displayName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Description</span>
-              <textarea
-                rows={3}
-                maxLength={500}
-                value={departmentForm.description}
-                onChange={(event) =>
-                  setDepartmentForm((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="field-stack inline-checkbox">
-              <input
-                type="checkbox"
-                checked={departmentForm.active}
-                onChange={(event) =>
-                  setDepartmentForm((current) => ({ ...current, active: event.target.checked }))
-                }
-              />
-              <span>Department is active</span>
-            </label>
-            <button
-              className="primary-action compact-action"
-              type="submit"
-              disabled={saveDepartmentMutation.isPending}
-            >
-              <i className="bi bi-check2" aria-hidden="true" />
-              {saveDepartmentMutation.isPending ? 'Saving...' : 'Save Department'}
-            </button>
-          </form>
-        </section>
-        <section className="panel-card branch-form-panel">
-          <PanelHeader
-            icon="bi-briefcase"
-            title={editingJobTitleId ? 'Edit Job Title' : 'Job Title'}
-          />
-          <form className="record-form" onSubmit={handleJobTitleSubmit}>
-            <label className="field-stack">
-              <span>Title</span>
-              <input
-                required
-                maxLength={120}
-                value={jobTitleForm.title}
-                onChange={(event) =>
-                  setJobTitleForm((current) => ({ ...current, title: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack">
-              <span>Code</span>
-              <input
-                required
-                maxLength={40}
-                value={jobTitleForm.code}
-                onChange={(event) =>
-                  setJobTitleForm((current) => ({ ...current, code: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack">
-              <span>Department</span>
-              <select
-                required
-                value={jobTitleForm.departmentId}
-                onChange={(event) =>
-                  setJobTitleForm((current) => ({
-                    ...current,
-                    departmentId: event.target.value,
-                  }))
-                }
-              >
-                <option value="">Select department</option>
-                {departments.map((department) => (
-                  <option key={department.id} value={department.id}>
-                    {department.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Description</span>
-              <textarea
-                rows={3}
-                maxLength={500}
-                value={jobTitleForm.description}
-                onChange={(event) =>
-                  setJobTitleForm((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="field-stack inline-checkbox">
-              <input
-                type="checkbox"
-                checked={jobTitleForm.active}
-                onChange={(event) =>
-                  setJobTitleForm((current) => ({ ...current, active: event.target.checked }))
-                }
-              />
-              <span>Job title is active</span>
-            </label>
-            <button
-              className="primary-action compact-action"
-              type="submit"
-              disabled={saveJobTitleMutation.isPending}
-            >
-              <i className="bi bi-check2" aria-hidden="true" />
-              {saveJobTitleMutation.isPending ? 'Saving...' : 'Save Job Title'}
-            </button>
-          </form>
-        </section>
-      </div>
-      <div className="management-grid users-management-grid hr-settings-structure-grid">
-        <section className="panel-card branch-list-panel hr-structure-list-panel">
-          <PanelHeader icon="bi-list-check" title="Departments" />
-          {departmentsQuery.isPending ? (
-            <LoadingPanel label="Loading departments..." />
-          ) : departments.length === 0 ? (
-            <EmptyState
-              icon="bi-diagram-3"
-              title="No departments"
-              detail="Departments created here can be assigned to employees and job titles."
-            />
-          ) : (
-            <div className="user-directory-list">
-              {departments.map((department) => (
-                <article className="user-directory-row hr-structure-row" key={department.id}>
-                  <div className="user-directory-identity">
-                    <span className="user-directory-icon">
-                      <i className="bi bi-diagram-3" aria-hidden="true" />
-                    </span>
-                    <span>
-                      <strong>{department.name}</strong>
-                      <small>{department.code}</small>
-                    </span>
-                  </div>
-                  <div className="user-directory-status">
-                    <div className="user-detail-block">
-                      <span className="user-detail-label">Branch</span>
-                      <span>{department.branchName ?? 'All branches'}</span>
-                    </div>
-                    <StatusPill
-                      status={department.active ? 'posted' : 'pending'}
-                      label={department.active ? 'Active' : 'Inactive'}
-                    />
-                  </div>
-                  <div className="user-directory-actions">
-                    <button
-                      className="text-button"
-                      type="button"
-                      onClick={() => editDepartment(department)}
-                    >
-                      <i className="bi bi-pencil" aria-hidden="true" />
-                      Edit
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-        <section className="panel-card branch-list-panel hr-structure-list-panel">
-          <PanelHeader icon="bi-briefcase" title="Job Titles" />
-          {jobTitlesQuery.isPending ? (
-            <LoadingPanel label="Loading job titles..." />
-          ) : jobTitles.length === 0 ? (
-            <EmptyState
-              icon="bi-briefcase"
-              title="No job titles"
-              detail="Job titles created here can be assigned to employees."
-            />
-          ) : (
-            <div className="user-directory-list">
-              {jobTitles.map((jobTitle) => (
-                <article className="user-directory-row hr-structure-row" key={jobTitle.id}>
-                  <div className="user-directory-identity">
-                    <span className="user-directory-icon">
-                      <i className="bi bi-briefcase" aria-hidden="true" />
-                    </span>
-                    <span>
-                      <strong>{jobTitle.title}</strong>
-                      <small>{jobTitle.code}</small>
-                    </span>
-                  </div>
-                  <div className="user-directory-status">
-                    <div className="user-detail-block">
-                      <span className="user-detail-label">Department</span>
-                      <span>{jobTitle.departmentName}</span>
-                    </div>
-                    <StatusPill
-                      status={jobTitle.active ? 'posted' : 'pending'}
-                      label={jobTitle.active ? 'Active' : 'Inactive'}
-                    />
-                  </div>
-                  <div className="user-directory-actions">
-                    <button
-                      className="text-button"
-                      type="button"
-                      onClick={() => editJobTitle(jobTitle)}
-                    >
-                      <i className="bi bi-pencil" aria-hidden="true" />
-                      Edit
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-    </section>
-  );
-}
-
-function HrPayrollPage({
-  branches,
-  currentUser,
-  organization,
-}: {
-  branches: Branch[];
-  currentUser: CurrentUser;
-  organization: Organization;
-}) {
-  const queryClient = useQueryClient();
-  const payrollQuery = useQuery({ queryKey: ['hr', 'payroll'], queryFn: getHrPayrollPage });
-  const [componentForm, setComponentForm] = useState<HrPayrollComponentFormState>(() =>
-    defaultHrPayrollComponentForm(),
-  );
-  const [periodForm, setPeriodForm] = useState<HrPayrollPeriodFormState>(() =>
-    defaultHrPayrollPeriodForm(),
-  );
-  const [runForm, setRunForm] = useState<HrPayrollRunFormState>(() => defaultHrPayrollRunForm());
-  const [adjustingPayrollEmployeeId, setAdjustingPayrollEmployeeId] = useState<string | null>(null);
-  const [payrollAdjustmentForm, setPayrollAdjustmentForm] = useState<HrPayrollAdjustmentFormState>(
-    () => defaultHrPayrollAdjustmentForm(),
-  );
-  const [salesBonusRuleForm, setSalesBonusRuleForm] = useState<HrPayrollSalesBonusRuleFormState>(
-    () => defaultHrPayrollSalesBonusRuleForm(),
-  );
-  const [selectedPayrollPeriodId, setSelectedPayrollPeriodId] = useState('');
-  const [payslipRunId, setPayslipRunId] = useState('');
-  const [payslipEmployeeId, setPayslipEmployeeId] = useState('');
-  const [activePayslip, setActivePayslip] = useState<HrPayslipRecord | null>(null);
-  const [payrollFocusInitialized, setPayrollFocusInitialized] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-
-  const components = payrollQuery.data?.components ?? [];
-  const periods = payrollQuery.data?.periods ?? [];
-  const runs = payrollQuery.data?.runs ?? [];
-  const salesBonusRule = payrollQuery.data?.salesBonusRule ?? defaultHrPayrollSalesBonusRuleForm();
-  const branchOptions =
-    currentUser.branchIds.length === 0
-      ? branches.filter((branch) => branch.status === 'ACTIVE')
-      : branches.filter(
-          (branch) => branch.status === 'ACTIVE' && currentUser.branchIds.includes(branch.id),
-        );
-  const selectedPeriod = periods.find((period) => period.id === selectedPayrollPeriodId) ?? null;
-  const payrollPerformanceQuery = useQuery({
-    queryKey: [
-      'hr',
-      'payroll',
-      'performance-preview',
-      selectedPeriod?.id ?? 'none',
-      selectedPeriod?.periodStart ?? '',
-      selectedPeriod?.periodEnd ?? '',
-      selectedPeriod?.branchId ?? '',
-    ],
-    queryFn: () => {
-      const period = selectedPeriod!;
-      const params = new URLSearchParams({
-        fromDate: period.periodStart,
-        toDate: period.periodEnd,
-      });
-      if (period.branchId) {
-        params.set('branchId', period.branchId);
-      }
-      return getHrPerformance(params);
-    },
-    enabled: Boolean(selectedPeriod),
-  });
-
-  function applyPayrollPeriodFocus(periodId: string) {
-    const period = periods.find((item) => item.id === periodId) ?? null;
-    setSelectedPayrollPeriodId(periodId);
-    setRunForm((current) => ({
-      ...current,
-      payrollPeriodId: periodId,
-      name:
-        period && (!current.name || periods.some((item) => current.name === `${item.name} payroll`))
-          ? `${period.name} payroll`
-          : current.name,
-      status: periodId ? 'CALCULATED' : 'DRAFT',
-    }));
-  }
-
-  const saveComponentMutation = useMutation({
-    mutationFn: createHrPayrollComponent,
-    onSuccess: async (component) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'payroll'] });
-      setComponentForm(defaultHrPayrollComponentForm());
-      setMessage(`${component.name} saved.`);
-    },
-  });
-
-  const saveSalesBonusRuleMutation = useMutation({
-    mutationFn: updateHrPayrollSalesBonusRule,
-    onSuccess: async (rule) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'payroll'] });
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'performance'] });
-      setSalesBonusRuleForm(rule);
-      setMessage('Sales bonus rule saved.');
-    },
-  });
-
-  const savePeriodMutation = useMutation({
-    mutationFn: createHrPayrollPeriod,
-    onSuccess: async (period) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'payroll'] });
-      setPeriodForm(defaultHrPayrollPeriodForm());
-      setSelectedPayrollPeriodId(period.id);
-      setRunForm((current) => ({
-        ...current,
-        payrollPeriodId: period.id,
-        name: current.name || `${period.name} payroll`,
-        status: current.status === 'DRAFT' ? 'CALCULATED' : current.status,
-      }));
-      setMessage(`${period.name} saved.`);
-    },
-  });
-
-  const saveRunMutation = useMutation({
-    mutationFn: createHrPayrollRun,
-    onSuccess: async (run) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'payroll'] });
-      setRunForm(defaultHrPayrollRunForm());
-      setSelectedPayrollPeriodId(run.payrollPeriodId);
-      setMessage(`${run.name} created.`);
-    },
-  });
-
-  const recalculateRunMutation = useMutation({
-    mutationFn: recalculateHrPayrollRun,
-    onSuccess: async (run) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'payroll'] });
-      setMessage(`${run.name} refreshed from sales and performance entries.`);
-    },
-  });
-
-  const saveAdjustmentMutation = useMutation({
-    mutationFn: ({
-      runId,
-      payrollEmployeeId,
-      adjustment,
-    }: {
-      runId: string;
-      payrollEmployeeId: string;
-      adjustment: HrPayrollAdjustmentFormState;
-    }) => updateHrPayrollEmployeeAdjustment(runId, payrollEmployeeId, adjustment),
-    onSuccess: async (employee) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'payroll'] });
-      setAdjustingPayrollEmployeeId(null);
-      setPayrollAdjustmentForm(defaultHrPayrollAdjustmentForm());
-      setMessage(`Payroll adjusted for ${employee.employeeName}.`);
-    },
-  });
-
-  async function handleComponentSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await saveComponentMutation.mutateAsync(componentForm);
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error ? caughtError.message : 'Unable to save payroll component',
-      );
-    }
-  }
-
-  async function handlePeriodSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await savePeriodMutation.mutateAsync(periodForm);
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error ? caughtError.message : 'Unable to save payroll period',
-      );
-    }
-  }
-
-  async function handleSalesBonusRuleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await saveSalesBonusRuleMutation.mutateAsync(salesBonusRuleForm);
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error ? caughtError.message : 'Unable to save sales bonus rule',
-      );
-    }
-  }
-
-  async function handleRunSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await saveRunMutation.mutateAsync(runForm);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to create payroll run');
-    }
-  }
-
-  async function handlePayrollRunRefresh(runId: string) {
-    setError('');
-    setMessage('');
-    try {
-      await recalculateRunMutation.mutateAsync(runId);
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error ? caughtError.message : 'Unable to refresh payroll run',
-      );
-    }
-  }
-
-  function startPayrollAdjustment(employee: PayrollRun['employees'][number]) {
-    setAdjustingPayrollEmployeeId(employee.id);
-    setPayrollAdjustmentForm(
-      defaultHrPayrollAdjustmentForm(
-        employee.bonusAmount,
-        employee.lossAmount,
-        employee.notes ?? '',
-      ),
-    );
-  }
-
-  async function handlePayrollAdjustmentSubmit(runId: string, payrollEmployeeId: string) {
-    setError('');
-    setMessage('');
-    try {
-      await saveAdjustmentMutation.mutateAsync({
-        runId,
-        payrollEmployeeId,
-        adjustment: payrollAdjustmentForm,
-      });
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error ? caughtError.message : 'Unable to save payroll adjustment',
-      );
-    }
-  }
-
-  function handlePayslipSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    if (!selectedPayslipRun || !selectedPayslipEmployee) {
-      setError('Select a pay run and employee before generating a payslip.');
-      return;
-    }
-
-    setActivePayslip({
-      run: selectedPayslipRun,
-      period: selectedPayslipPeriod,
-      employee: selectedPayslipEmployee,
-    });
-  }
-
-  const processedRuns = runs.filter(
-    (run) => run.status === 'PROCESSED' || run.status === 'LOCKED',
-  ).length;
-  const visibleRuns = selectedPayrollPeriodId
-    ? runs.filter((run) => run.payrollPeriodId === selectedPayrollPeriodId)
-    : runs;
-  const visibleRunEmployees = visibleRuns.flatMap((run) => run.employees);
-  const payslipRuns = visibleRuns.filter((run) => run.employees.length > 0);
-  const selectedPayslipRun =
-    payslipRuns.find((run) => run.id === payslipRunId) ?? payslipRuns[0] ?? null;
-  const payslipEmployees = (selectedPayslipRun?.employees ?? [])
-    .slice()
-    .sort((left, right) => left.employeeName.localeCompare(right.employeeName));
-  const selectedPayslipEmployee =
-    payslipEmployees.find((employee) => employee.id === payslipEmployeeId) ??
-    payslipEmployees[0] ??
-    null;
-  const selectedPayslipPeriod = selectedPayslipRun
-    ? (periods.find((period) => period.id === selectedPayslipRun.payrollPeriodId) ?? null)
-    : null;
-  const currentPeriod = selectedPayrollPeriodId ? selectedPeriod : null;
-  const runPeriod = periods.find((period) => period.id === runForm.payrollPeriodId) ?? null;
-  const reviewRuns = visibleRuns.filter(
-    (run) => !['APPROVED', 'PROCESSED', 'LOCKED'].includes(run.status),
-  );
-  const employeeCount = new Set(visibleRunEmployees.map((employee) => employee.employeeId)).size;
-  const livePayrollRows = (payrollPerformanceQuery.data?.summaries ?? [])
-    .slice()
-    .sort(
-      (left, right) =>
-        right.projectedNetPay - left.projectedNetPay ||
-        right.totalSalesAmount - left.totalSalesAmount ||
-        left.employeeName.localeCompare(right.employeeName),
-    );
-  const liveEmployeeCount = livePayrollRows.length;
-  const liveBasicSalary = livePayrollRows.reduce((sum, employee) => sum + employee.basicSalary, 0);
-  const liveActualSales = livePayrollRows.reduce(
-    (sum, employee) => sum + employee.actualSalesAmount,
-    0,
-  );
-  const liveManualSales = livePayrollRows.reduce(
-    (sum, employee) => sum + employee.manualSalesAmount,
-    0,
-  );
-  const liveAutomaticBonuses = livePayrollRows.reduce(
-    (sum, employee) => sum + employee.automaticBonusAmount,
-    0,
-  );
-  const liveManualBonuses = livePayrollRows.reduce(
-    (sum, employee) => sum + employee.manualBonusAmount,
-    0,
-  );
-  const liveBonuses = livePayrollRows.reduce((sum, employee) => sum + employee.bonusAmount, 0);
-  const liveLosses = livePayrollRows.reduce((sum, employee) => sum + employee.lossAmount, 0);
-  const liveProjectedNetPay = livePayrollRows.reduce(
-    (sum, employee) => sum + employee.projectedNetPay,
-    0,
-  );
-  const liveQualifyingDays = livePayrollRows.reduce(
-    (sum, employee) => sum + employee.qualifyingSalesDays,
-    0,
-  );
-  const liveReceiptDays = livePayrollRows.reduce(
-    (sum, employee) => sum + employee.salesDays.length,
-    0,
-  );
-
-  useEffect(() => {
-    if (payrollFocusInitialized || payrollQuery.isPending || periods.length === 0) {
-      return;
-    }
-
-    const preferredPeriod = periods.find((period) => period.status === 'OPEN') ?? periods[0];
-    setPayrollFocusInitialized(true);
-    setSelectedPayrollPeriodId(preferredPeriod.id);
-    setRunForm((current) => ({
-      ...current,
-      payrollPeriodId: current.payrollPeriodId || preferredPeriod.id,
-      name: current.name || `${preferredPeriod.name} payroll`,
-      status: current.status === 'DRAFT' ? 'CALCULATED' : current.status,
-    }));
-  }, [payrollFocusInitialized, payrollQuery.isPending, periods]);
-
-  useEffect(() => {
-    if (!payrollQuery.data?.salesBonusRule) {
-      return;
-    }
-    setSalesBonusRuleForm(payrollQuery.data.salesBonusRule);
-  }, [
-    payrollQuery.data?.salesBonusRule?.active,
-    payrollQuery.data?.salesBonusRule?.bonusPerTargetDay,
-    payrollQuery.data?.salesBonusRule?.dailySalesTarget,
-  ]);
-
-  useEffect(() => {
-    if (payslipRuns.length === 0) {
-      if (payslipRunId) {
-        setPayslipRunId('');
-      }
-      if (payslipEmployeeId) {
-        setPayslipEmployeeId('');
-      }
-      return;
-    }
-
-    const nextRun = payslipRuns.find((run) => run.id === payslipRunId) ?? payslipRuns[0];
-    if (payslipRunId !== nextRun.id) {
-      setPayslipRunId(nextRun.id);
-    }
-
-    const nextEmployee =
-      nextRun.employees
-        .slice()
-        .sort((left, right) => left.employeeName.localeCompare(right.employeeName))
-        .find((employee) => employee.id === payslipEmployeeId) ??
-      nextRun.employees
-        .slice()
-        .sort((left, right) => left.employeeName.localeCompare(right.employeeName))[0] ??
-      null;
-    const nextEmployeeId = nextEmployee?.id ?? '';
-    if (payslipEmployeeId !== nextEmployeeId) {
-      setPayslipEmployeeId(nextEmployeeId);
-    }
-  }, [payslipEmployeeId, payslipRunId, payslipRuns]);
-
-  useEffect(() => {
-    if (!activePayslip) {
-      return undefined;
-    }
-
-    function handlePayslipKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setActivePayslip(null);
-      }
-    }
-
-    window.addEventListener('keydown', handlePayslipKeyDown);
-    return () => window.removeEventListener('keydown', handlePayslipKeyDown);
-  }, [activePayslip]);
-
-  return (
-    <section className="branch-workspace">
-      <PageHeader
-        eyebrow="Human resources"
-        title="Payroll"
-        subtitle="Create, review, and adjust staff pay for a selected period."
-        action={
-          <div className="hr-employee-page-actions payroll-page-actions">
-            <label className="payroll-period-switch">
-              <span>Period</span>
-              <select
-                value={selectedPayrollPeriodId}
-                onChange={(event) => applyPayrollPeriodFocus(event.target.value)}
-              >
-                <option value="">All periods</option>
-                {periods.map((period) => (
-                  <option key={period.id} value={period.id}>
-                    {period.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <HrBackButton />
-          </div>
-        }
-      />
-
-      <div className="hr-kpi-grid hr-attendance-summary-grid">
-        <HrDashboardMetricCard
-          icon="bi-calendar3"
-          label="Pay Period"
-          value={currentPeriod?.name ?? (periods.length > 0 ? 'All Periods' : 'Not Set')}
-          detail={
-            currentPeriod
-              ? `${formatDateOnly(currentPeriod.periodStart)} - ${formatDateOnly(
-                  currentPeriod.periodEnd,
-                )}`
-              : periods.length > 0
-                ? `${periods.length} period${periods.length === 1 ? '' : 's'} in view`
-                : 'Create a period'
-          }
-          tone="blue"
-        />
-        <HrDashboardMetricCard
-          icon="bi-receipt"
-          label="Live POS Sales"
-          value={formatMoney(liveActualSales, organization.currencyCode)}
-          detail={`${liveReceiptDays} sales day${liveReceiptDays === 1 ? '' : 's'} / ${formatMoney(
-            liveManualSales,
-            organization.currencyCode,
-          )} manual sales`}
-          tone="green"
-        />
-        <HrDashboardMetricCard
-          icon="bi-cash-stack"
-          label="Projected Payout"
-          value={formatMoney(liveProjectedNetPay, organization.currencyCode)}
-          detail={`${formatMoney(liveBasicSalary, organization.currencyCode)} basic + ${formatMoney(
-            liveBonuses,
-            organization.currencyCode,
-          )} bonuses - ${formatMoney(liveLosses, organization.currencyCode)} losses`}
-          tone="orange"
-        />
-        <HrDashboardMetricCard
-          icon="bi-people"
-          label="Staff Tracked"
-          value={String(liveEmployeeCount || employeeCount)}
-          detail={`${liveQualifyingDays} target day${liveQualifyingDays === 1 ? '' : 's'} / ${
-            reviewRuns.length
-          } run${reviewRuns.length === 1 ? '' : 's'} to review`}
-          tone="purple"
-        />
-      </div>
-
-      <FormMessages error={error} message={message} />
-
-      <section className="panel-card branch-list-panel payroll-live-preview-panel">
-        <PanelHeader
-          icon="bi-calculator"
-          title="Live Staff Payouts"
-          action={
-            <StatusPill
-              status={selectedPeriod ? 'posted' : 'pending'}
-              label={selectedPeriod ? 'Live from POS' : 'Select period'}
-            />
-          }
-        />
-        {!selectedPeriod ? (
-          <EmptyState
-            icon="bi-calendar3"
-            title="Select a pay period"
-            detail="Payroll will show live staff payouts for the selected period."
-          />
-        ) : payrollPerformanceQuery.isPending ? (
-          <LoadingPanel label="Loading live staff payouts..." />
-        ) : livePayrollRows.length === 0 ? (
-          <EmptyState
-            icon="bi-people"
-            title="No staff payouts yet"
-            detail="Employee salary settings and POS sales will populate this view."
-          />
-        ) : (
-          <>
-            <div className="payroll-equation-strip">
-              <span>
-                <strong>{formatMoney(liveBasicSalary, organization.currencyCode)}</strong>
-                Basic salary
-              </span>
-              <i className="bi bi-plus-lg" aria-hidden="true" />
-              <span>
-                <strong>{formatMoney(liveAutomaticBonuses, organization.currencyCode)}</strong>
-                Target bonus
-              </span>
-              <i className="bi bi-plus-lg" aria-hidden="true" />
-              <span>
-                <strong>{formatMoney(liveManualBonuses, organization.currencyCode)}</strong>
-                Admin bonus
-              </span>
-              <i className="bi bi-dash-lg" aria-hidden="true" />
-              <span>
-                <strong>{formatMoney(liveLosses, organization.currencyCode)}</strong>
-                Losses
-              </span>
-              <i className="bi bi-equals" aria-hidden="true" />
-              <span className="payroll-equation-total">
-                <strong>{formatMoney(liveProjectedNetPay, organization.currencyCode)}</strong>
-                Projected payout
-              </span>
-            </div>
-
-            <div className="responsive-table report-table hr-dashboard-table payroll-live-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Staff</th>
-                    <th>Sales Recorded</th>
-                    <th>Basic Salary</th>
-                    <th>Target Bonus</th>
-                    <th>Admin Bonus</th>
-                    <th>Losses</th>
-                    <th>Projected Payout</th>
-                    <th>Pay To</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {livePayrollRows.map((employee) => (
-                    <tr key={employee.employeeId}>
-                      <td data-label="Staff">
-                        <strong>{employee.employeeName}</strong>
-                        <br />
-                        <small>
-                          {employee.employeeNumber} - {employee.branchName}
-                        </small>
                       </td>
-                      <td data-label="Sales Recorded">
-                        <strong>
-                          {formatMoney(employee.actualSalesAmount, organization.currencyCode)}
-                        </strong>
-                        <br />
-                        <small>
-                          {employee.salesDays.length} sale day
-                          {employee.salesDays.length === 1 ? '' : 's'} /{' '}
-                          {employee.qualifyingSalesDays} target day
-                          {employee.qualifyingSalesDays === 1 ? '' : 's'}
-                        </small>
-                      </td>
-                      <td data-label="Basic Salary">
-                        {formatMoney(employee.basicSalary, organization.currencyCode)}
-                      </td>
-                      <td data-label="Target Bonus">
-                        {formatMoney(employee.automaticBonusAmount, organization.currencyCode)}
-                        <br />
-                        <small>
-                          {formatMoney(employee.salesBonusTarget, organization.currencyCode)} target
-                        </small>
-                      </td>
-                      <td data-label="Admin Bonus">
-                        {formatMoney(employee.manualBonusAmount, organization.currencyCode)}
-                      </td>
-                      <td data-label="Losses">
-                        {formatMoney(employee.lossAmount, organization.currencyCode)}
-                      </td>
-                      <td data-label="Projected Payout">
-                        <strong>
-                          {formatMoney(employee.projectedNetPay, organization.currencyCode)}
-                        </strong>
-                      </td>
-                      <td data-label="Pay To">
-                        {labelizeEnum(employee.salaryPaymentMethod)}
-                        <br />
-                        <small>{employee.paymentDestination || 'Not configured'}</small>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <p className="payroll-live-note">
-              Create or recalculate a pay run to save this live payout snapshot.
-            </p>
-          </>
-        )}
-      </section>
-
-      <section className="panel-card payroll-run-panel payroll-start-panel">
-        <PanelHeader
-          icon="bi-play-circle"
-          title="New Pay Run"
-          action={
-            runPeriod ? (
-              <StatusPill
-                status={runPeriod.status === 'OPEN' ? 'posted' : 'pending'}
-                label={labelizeEnum(runPeriod.status)}
-              />
-            ) : null
-          }
-        />
-        <div className="payroll-start-grid">
-          <form className="record-form payroll-run-form" onSubmit={handleRunSubmit}>
-            <div className="payroll-run-form-grid">
-              <label className="field-stack">
-                <span>Pay Period</span>
-                <select
-                  required
-                  value={runForm.payrollPeriodId}
-                  onChange={(event) => applyPayrollPeriodFocus(event.target.value)}
-                >
-                  <option value="">Select pay period</option>
-                  {periods.map((period) => (
-                    <option key={period.id} value={period.id}>
-                      {period.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Run Name</span>
-                <input
-                  required
-                  maxLength={120}
-                  value={runForm.name}
-                  onChange={(event) =>
-                    setRunForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                  placeholder={runPeriod ? `${runPeriod.name} payroll` : 'Monthly payroll'}
-                />
-              </label>
-            </div>
-            <button
-              className="primary-action compact-action"
-              type="submit"
-              disabled={saveRunMutation.isPending || !runForm.payrollPeriodId}
-            >
-              <i className="bi bi-check2" aria-hidden="true" />
-              {periods.length === 0
-                ? 'Add Pay Period First'
-                : !runForm.payrollPeriodId
-                  ? 'Select Pay Period'
-                  : saveRunMutation.isPending
-                    ? 'Saving...'
-                    : 'Create Pay Run'}
-            </button>
-          </form>
-
-          <div className="payroll-readiness-list payroll-readiness-list-compact">
-            <div className="payroll-readiness-item">
-              <i className="bi bi-calendar3" aria-hidden="true" />
-              <span>
-                <strong>{periods.length} pay periods</strong>
-                <small>{periods.filter((period) => period.status === 'OPEN').length} open</small>
-              </span>
-            </div>
-            <div className="payroll-readiness-item">
-              <i className="bi bi-cash-coin" aria-hidden="true" />
-              <span>
-                <strong>{components.length} earnings/deductions</strong>
-                <small>{components.filter((component) => component.active).length} active</small>
-              </span>
-            </div>
-            <div className="payroll-readiness-item">
-              <i className="bi bi-trophy" aria-hidden="true" />
-              <span>
-                <strong>
-                  {formatMoney(salesBonusRule.dailySalesTarget, organization.currencyCode)} target
-                </strong>
-                <small>
-                  {formatMoney(salesBonusRule.bonusPerTargetDay, organization.currencyCode)} bonus
-                  per qualifying day
-                </small>
-              </span>
-            </div>
-            <div className="payroll-readiness-item">
-              <i className="bi bi-wallet2" aria-hidden="true" />
-              <span>
-                <strong>{runs.length} pay runs</strong>
-                <small>{processedRuns} processed or locked</small>
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="panel-card branch-list-panel payroll-payslip-panel">
-        <PanelHeader
-          icon="bi-file-earmark-person"
-          title="Payslip Generator"
-          action={<span className="catalog-count-pill">{payslipRuns.length} runs ready</span>}
-        />
-        {payrollQuery.isPending ? (
-          <LoadingPanel label="Loading payslip data..." />
-        ) : payslipRuns.length === 0 ? (
-          <EmptyState
-            icon="bi-receipt"
-            title="No payslips ready"
-            detail="Create a pay run first so employee payslips can use a saved payroll snapshot."
-          />
-        ) : (
-          <form className="record-form payroll-payslip-form" onSubmit={handlePayslipSubmit}>
-            <label className="field-stack">
-              <span>Pay Run</span>
-              <select
-                required
-                value={selectedPayslipRun?.id ?? ''}
-                onChange={(event) => {
-                  const nextRun = payslipRuns.find((run) => run.id === event.target.value) ?? null;
-                  setPayslipRunId(event.target.value);
-                  setPayslipEmployeeId(
-                    nextRun?.employees
-                      .slice()
-                      .sort((left, right) => left.employeeName.localeCompare(right.employeeName))[0]
-                      ?.id ?? '',
-                  );
-                }}
-              >
-                <option value="">Select pay run</option>
-                {payslipRuns.map((run) => (
-                  <option key={run.id} value={run.id}>
-                    {run.name} - {run.payrollPeriodName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Employee</span>
-              <select
-                required
-                value={selectedPayslipEmployee?.id ?? ''}
-                onChange={(event) => setPayslipEmployeeId(event.target.value)}
-              >
-                <option value="">Select employee</option>
-                {payslipEmployees.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.employeeName} - {employee.employeeNumber}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="payroll-payslip-summary">
-              <span>
-                <strong>
-                  {selectedPayslipEmployee
-                    ? formatMoney(selectedPayslipEmployee.basicSalary, organization.currencyCode)
-                    : formatMoney(0, organization.currencyCode)}
-                </strong>
-                Basic salary
-              </span>
-              <span>
-                <strong>
-                  {selectedPayslipEmployee
-                    ? formatMoney(selectedPayslipEmployee.bonusAmount, organization.currencyCode)
-                    : formatMoney(0, organization.currencyCode)}
-                </strong>
-                Bonuses
-              </span>
-              <span>
-                <strong>
-                  {selectedPayslipEmployee
-                    ? formatMoney(
-                        selectedPayslipEmployee.totalDeductions ||
-                          selectedPayslipEmployee.lossAmount,
-                        organization.currencyCode,
-                      )
-                    : formatMoney(0, organization.currencyCode)}
-                </strong>
-                Deductions
-              </span>
-              <span className="payroll-payslip-summary-total">
-                <strong>
-                  {selectedPayslipEmployee
-                    ? formatMoney(selectedPayslipEmployee.netPay, organization.currencyCode)
-                    : formatMoney(0, organization.currencyCode)}
-                </strong>
-                Net pay
-              </span>
-            </div>
-            <button
-              className="primary-action compact-action"
-              type="submit"
-              disabled={!selectedPayslipRun || !selectedPayslipEmployee}
-            >
-              <i className="bi bi-file-earmark-text" aria-hidden="true" />
-              Generate Payslip
-            </button>
-          </form>
-        )}
-      </section>
-
-      <section className="panel-card branch-list-panel payroll-runs-panel">
-        <PanelHeader
-          icon="bi-wallet2"
-          title="Pay Runs"
-          action={<span className="catalog-count-pill">{visibleRuns.length} runs</span>}
-        />
-        {payrollQuery.isPending ? (
-          <LoadingPanel label="Loading pay runs..." />
-        ) : visibleRuns.length === 0 ? (
-          <EmptyState
-            icon="bi-wallet2"
-            title="No pay runs"
-            detail="Create a pay run to calculate staff pay."
-          />
-        ) : (
-          <div className="payroll-run-list">
-            {visibleRuns.map((run: PayrollRun) => {
-              const runEditable = run.status !== 'PROCESSED' && run.status !== 'LOCKED';
-              const grossPay = run.employees.reduce((sum, employee) => sum + employee.grossPay, 0);
-              const netPay = run.employees.reduce((sum, employee) => sum + employee.netPay, 0);
-              const bonusPay = run.employees.reduce(
-                (sum, employee) => sum + employee.bonusAmount,
-                0,
-              );
-              const lossPay = run.employees.reduce((sum, employee) => sum + employee.lossAmount, 0);
-
-              return (
-                <article className="payroll-run-card" key={run.id}>
-                  <div className="payroll-run-card-main">
-                    <div className="user-directory-identity">
-                      <span className="user-directory-icon">
-                        <i className="bi bi-play-circle" aria-hidden="true" />
-                      </span>
-                      <span>
-                        <strong>{run.name}</strong>
-                        <small>
-                          {run.payrollPeriodName} - {run.branchName ?? 'All branches'}
-                        </small>
-                      </span>
-                    </div>
-                    <div className="payroll-run-card-totals">
-                      <div>
-                        <span>Employees</span>
-                        <strong>{run.employees.length}</strong>
-                      </div>
-                      <div>
-                        <span>Gross</span>
-                        <strong>{formatMoney(grossPay, organization.currencyCode)}</strong>
-                      </div>
-                      <div>
-                        <span>Net</span>
-                        <strong>{formatMoney(netPay, organization.currencyCode)}</strong>
-                      </div>
-                    </div>
-                    <div className="payroll-run-card-actions">
-                      <StatusPill
-                        status={payrollRunPillStatus(run.status)}
-                        label={labelizeEnum(run.status)}
-                      />
-                      <button
-                        className="text-button"
-                        type="button"
-                        disabled={!runEditable || recalculateRunMutation.isPending}
-                        onClick={() => handlePayrollRunRefresh(run.id)}
-                      >
-                        <i className="bi bi-arrow-clockwise" aria-hidden="true" />
-                        Recalculate
-                      </button>
-                    </div>
-                  </div>
-                  <div className="payroll-run-impact">
-                    <span>
-                      Bonuses <strong>{formatMoney(bonusPay, organization.currencyCode)}</strong>
-                    </span>
-                    <span>
-                      Deductions <strong>{formatMoney(lossPay, organization.currencyCode)}</strong>
-                    </span>
-                    <span>
-                      Status <strong>{labelizeEnum(run.status)}</strong>
-                    </span>
-                  </div>
-                  {run.employees.length > 0 ? (
-                    <details className="payroll-run-details">
-                      <summary>
-                        <span>Staff pay details</span>
-                        <small>{run.employees.length} staff</small>
-                      </summary>
-                      <div className="responsive-table report-table hr-dashboard-table payroll-employee-table">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Employee</th>
-                              <th>Base Pay</th>
-                              <th>Bonus</th>
-                              <th>Deductions</th>
-                              <th>Sales</th>
-                              <th>Take-Home</th>
-                              <th>Pay To</th>
-                              <th>Edit</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {run.employees.map((employee) => {
-                              const isAdjusting = adjustingPayrollEmployeeId === employee.id;
-
-                              return (
-                                <tr key={employee.id}>
-                                  <td data-label="Employee">
-                                    <strong>{employee.employeeName}</strong>
-                                    <br />
-                                    <small>{employee.employeeNumber}</small>
-                                  </td>
-                                  <td data-label="Base Pay">
-                                    {formatMoney(employee.basicSalary, organization.currencyCode)}
-                                  </td>
-                                  <td data-label="Bonus">
-                                    {isAdjusting ? (
-                                      <input
-                                        className="payroll-adjustment-input"
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={payrollAdjustmentForm.bonusAmount}
-                                        onChange={(event) =>
-                                          setPayrollAdjustmentForm((current) => ({
-                                            ...current,
-                                            bonusAmount: Number(event.target.value || 0),
-                                          }))
-                                        }
-                                      />
-                                    ) : (
-                                      <>
-                                        <strong>
-                                          {formatMoney(
-                                            employee.bonusAmount,
-                                            organization.currencyCode,
-                                          )}
-                                        </strong>
-                                        <br />
-                                        <small>
-                                          Auto{' '}
-                                          {formatMoney(
-                                            employee.automaticBonusAmount,
-                                            organization.currencyCode,
-                                          )}{' '}
-                                          / Admin{' '}
-                                          {formatMoney(
-                                            employee.manualBonusAmount,
-                                            organization.currencyCode,
-                                          )}
-                                        </small>
-                                      </>
-                                    )}
-                                  </td>
-                                  <td data-label="Deductions">
-                                    {isAdjusting ? (
-                                      <input
-                                        className="payroll-adjustment-input"
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={payrollAdjustmentForm.lossAmount}
-                                        onChange={(event) =>
-                                          setPayrollAdjustmentForm((current) => ({
-                                            ...current,
-                                            lossAmount: Number(event.target.value || 0),
-                                          }))
-                                        }
-                                      />
-                                    ) : (
-                                      formatMoney(employee.lossAmount, organization.currencyCode)
-                                    )}
-                                  </td>
-                                  <td data-label="Sales">
-                                    {formatMoney(employee.salesAmount, organization.currencyCode)}
-                                    <br />
-                                    <small>{employee.qualifyingSalesDays} target day(s)</small>
-                                  </td>
-                                  <td data-label="Take-Home">
-                                    <strong>
-                                      {formatMoney(employee.netPay, organization.currencyCode)}
-                                    </strong>
-                                  </td>
-                                  <td data-label="Pay To">
-                                    {labelizeEnum(employee.paymentMethod)}
-                                    <br />
-                                    <small>{employee.paymentDestination ?? 'Not configured'}</small>
-                                  </td>
-                                  <td data-label="Edit">
-                                    {isAdjusting ? (
-                                      <div className="payroll-adjustment-actions">
-                                        <textarea
-                                          className="payroll-adjustment-notes"
-                                          rows={2}
-                                          maxLength={1000}
-                                          value={payrollAdjustmentForm.notes}
-                                          onChange={(event) =>
-                                            setPayrollAdjustmentForm((current) => ({
-                                              ...current,
-                                              notes: event.target.value,
-                                            }))
-                                          }
-                                        />
-                                        <button
-                                          className="text-button"
-                                          type="button"
-                                          disabled={saveAdjustmentMutation.isPending}
-                                          onClick={() =>
-                                            handlePayrollAdjustmentSubmit(run.id, employee.id)
-                                          }
-                                        >
-                                          <i className="bi bi-check2" aria-hidden="true" />
-                                          Save
-                                        </button>
-                                        <button
-                                          className="text-button"
-                                          type="button"
-                                          onClick={() => setAdjustingPayrollEmployeeId(null)}
-                                        >
-                                          <i className="bi bi-x-lg" aria-hidden="true" />
-                                          Cancel
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <button
-                                        className="text-button"
-                                        type="button"
-                                        disabled={!runEditable}
-                                        onClick={() => startPayrollAdjustment(employee)}
-                                      >
-                                        <i className="bi bi-pencil" aria-hidden="true" />
-                                        Edit
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </details>
-                  ) : null}
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <section className="panel-card branch-list-panel payroll-settings-panel">
-        <PanelHeader
-          icon="bi-sliders"
-          title="Settings"
-          action={<span className="catalog-count-pill">Pay setup</span>}
-        />
-        <div className="payroll-settings-drawers">
-          <details
-            className="payroll-settings-drawer"
-            open={periods.length === 0 ? true : undefined}
-          >
-            <summary>
-              <span className="payroll-settings-summary-icon">
-                <i className="bi bi-calendar-plus" aria-hidden="true" />
-              </span>
-              <span>
-                <strong>Add Pay Period</strong>
-                <small>{periods.length} saved</small>
-              </span>
-            </summary>
-            <form className="record-form payroll-compact-form" onSubmit={handlePeriodSubmit}>
-              <label className="field-stack">
-                <span>Pay Period Name</span>
-                <input
-                  required
-                  maxLength={120}
-                  value={periodForm.name}
-                  onChange={(event) =>
-                    setPeriodForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Branch</span>
-                <select
-                  value={periodForm.branchId}
-                  onChange={(event) =>
-                    setPeriodForm((current) => ({ ...current, branchId: event.target.value }))
-                  }
-                >
-                  <option value="">All branches</option>
-                  {branchOptions.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="report-date-grid">
-                <label className="field-stack">
-                  <span>Start Date</span>
-                  <input
-                    type="date"
-                    required
-                    value={periodForm.periodStart}
-                    onChange={(event) =>
-                      setPeriodForm((current) => ({ ...current, periodStart: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>End Date</span>
-                  <input
-                    type="date"
-                    required
-                    value={periodForm.periodEnd}
-                    onChange={(event) =>
-                      setPeriodForm((current) => ({ ...current, periodEnd: event.target.value }))
-                    }
-                  />
-                </label>
-              </div>
-              <div className="report-date-grid">
-                <label className="field-stack">
-                  <span>Pay Date</span>
-                  <input
-                    type="date"
-                    value={periodForm.paymentDate}
-                    onChange={(event) =>
-                      setPeriodForm((current) => ({ ...current, paymentDate: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Status</span>
-                  <select
-                    value={periodForm.status}
-                    onChange={(event) =>
-                      setPeriodForm((current) => ({
-                        ...current,
-                        status: event.target.value as PayrollPeriodStatus,
-                      }))
-                    }
-                  >
-                    {payrollPeriodStatusOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <button
-                className="primary-action compact-action"
-                type="submit"
-                disabled={savePeriodMutation.isPending}
-              >
-                <i className="bi bi-check2" aria-hidden="true" />
-                {savePeriodMutation.isPending ? 'Saving...' : 'Save Pay Period'}
-              </button>
-            </form>
-          </details>
-
-          <details
-            className="payroll-settings-drawer"
-            open={components.length === 0 ? true : undefined}
-          >
-            <summary>
-              <span className="payroll-settings-summary-icon">
-                <i className="bi bi-cash-coin" aria-hidden="true" />
-              </span>
-              <span>
-                <strong>Add Earning or Deduction</strong>
-                <small>{components.length} saved</small>
-              </span>
-            </summary>
-            <form className="record-form payroll-compact-form" onSubmit={handleComponentSubmit}>
-              <label className="field-stack">
-                <span>Name</span>
-                <input
-                  required
-                  maxLength={120}
-                  value={componentForm.name}
-                  onChange={(event) =>
-                    setComponentForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Code</span>
-                <input
-                  required
-                  maxLength={40}
-                  value={componentForm.code}
-                  onChange={(event) =>
-                    setComponentForm((current) => ({ ...current, code: event.target.value }))
-                  }
-                />
-              </label>
-              <div className="report-date-grid">
-                <label className="field-stack">
-                  <span>Type</span>
-                  <select
-                    value={componentForm.componentType}
-                    onChange={(event) =>
-                      setComponentForm((current) => ({
-                        ...current,
-                        componentType: event.target.value as PayrollComponentType,
-                      }))
-                    }
-                  >
-                    {payrollComponentTypeOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field-stack">
-                  <span>Default Amount</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={componentForm.defaultAmount}
-                    onChange={(event) =>
-                      setComponentForm((current) => ({
-                        ...current,
-                        defaultAmount: Number(event.target.value || 0),
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-              <label className="field-stack inline-checkbox">
-                <input
-                  type="checkbox"
-                  checked={componentForm.taxable}
-                  onChange={(event) =>
-                    setComponentForm((current) => ({ ...current, taxable: event.target.checked }))
-                  }
-                />
-                <span>Taxable</span>
-              </label>
-              <button
-                className="primary-action compact-action"
-                type="submit"
-                disabled={saveComponentMutation.isPending}
-              >
-                <i className="bi bi-check2" aria-hidden="true" />
-                {saveComponentMutation.isPending ? 'Saving...' : 'Save Earning/Deduction'}
-              </button>
-            </form>
-          </details>
-
-          <details
-            className="payroll-settings-drawer"
-            open={salesBonusRule.dailySalesTarget <= 0 ? true : undefined}
-          >
-            <summary>
-              <span className="payroll-settings-summary-icon">
-                <i className="bi bi-trophy" aria-hidden="true" />
-              </span>
-              <span>
-                <strong>Sales Bonus Automation</strong>
-                <small>
-                  {formatMoney(salesBonusRule.dailySalesTarget, organization.currencyCode)} target /{' '}
-                  {formatMoney(salesBonusRule.bonusPerTargetDay, organization.currencyCode)} per day
-                </small>
-              </span>
-            </summary>
-            <form
-              className="record-form payroll-compact-form"
-              onSubmit={handleSalesBonusRuleSubmit}
-            >
-              <div className="report-date-grid">
-                <label className="field-stack">
-                  <span>Daily Sales Target</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={salesBonusRuleForm.dailySalesTarget}
-                    onChange={(event) =>
-                      setSalesBonusRuleForm((current) => ({
-                        ...current,
-                        dailySalesTarget: Number(event.target.value || 0),
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Bonus Per Target Day</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={salesBonusRuleForm.bonusPerTargetDay}
-                    onChange={(event) =>
-                      setSalesBonusRuleForm((current) => ({
-                        ...current,
-                        bonusPerTargetDay: Number(event.target.value || 0),
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-              <label className="field-stack inline-checkbox">
-                <input
-                  type="checkbox"
-                  checked={salesBonusRuleForm.active}
-                  onChange={(event) =>
-                    setSalesBonusRuleForm((current) => ({
-                      ...current,
-                      active: event.target.checked,
-                    }))
-                  }
-                />
-                <span>Apply this rule automatically in performance and payroll</span>
-              </label>
-              <button
-                className="primary-action compact-action"
-                type="submit"
-                disabled={saveSalesBonusRuleMutation.isPending}
-              >
-                <i className="bi bi-check2" aria-hidden="true" />
-                {saveSalesBonusRuleMutation.isPending ? 'Saving...' : 'Save Sales Bonus Rule'}
-              </button>
-            </form>
-          </details>
-
-          <details className="payroll-settings-drawer">
-            <summary>
-              <span className="payroll-settings-summary-icon">
-                <i className="bi bi-calendar-range" aria-hidden="true" />
-              </span>
-              <span>
-                <strong>Saved Pay Periods</strong>
-                <small>{periods.length} total</small>
-              </span>
-            </summary>
-            {payrollQuery.isPending ? (
-              <LoadingPanel label="Loading pay periods..." />
-            ) : periods.length === 0 ? (
-              <EmptyState
-                icon="bi-calendar-range"
-                title="No pay periods"
-                detail="Add a pay period before creating a pay run."
-              />
-            ) : (
-              <div className="user-directory-list">
-                {periods.map((period: PayrollPeriod) => (
-                  <article className="user-directory-row" key={period.id}>
-                    <div className="user-directory-identity">
-                      <span className="user-directory-icon">
-                        <i className="bi bi-calendar3" aria-hidden="true" />
-                      </span>
-                      <span>
-                        <strong>{period.name}</strong>
-                        <small>
-                          {formatDateOnly(period.periodStart)} - {formatDateOnly(period.periodEnd)}
-                        </small>
-                      </span>
-                    </div>
-                    <div className="user-directory-status">
-                      <StatusPill
-                        status={period.status === 'OPEN' ? 'posted' : 'pending'}
-                        label={labelizeEnum(period.status)}
-                      />
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </details>
-
-          <details className="payroll-settings-drawer">
-            <summary>
-              <span className="payroll-settings-summary-icon">
-                <i className="bi bi-list-check" aria-hidden="true" />
-              </span>
-              <span>
-                <strong>Saved Earnings and Deductions</strong>
-                <small>{components.length} total</small>
-              </span>
-            </summary>
-            {payrollQuery.isPending ? (
-              <LoadingPanel label="Loading earnings and deductions..." />
-            ) : components.length === 0 ? (
-              <EmptyState
-                icon="bi-cash-coin"
-                title="No earnings or deductions"
-                detail="Add one before creating detailed pay runs."
-              />
-            ) : (
-              <div className="responsive-table report-table hr-dashboard-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Code</th>
-                      <th>Type</th>
-                      <th>Default Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {components.map((component: PayrollComponent) => (
-                      <tr key={component.id}>
-                        <td data-label="Name">{component.name}</td>
-                        <td data-label="Code">{component.code}</td>
-                        <td data-label="Type">{labelizeEnum(component.componentType)}</td>
-                        <td data-label="Default Amount">
-                          {formatMoney(component.defaultAmount, organization.currencyCode)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </details>
-        </div>
-      </section>
-
-      {activePayslip ? (
-        <PayrollPayslipDialog
-          employee={activePayslip.employee}
-          organization={organization}
-          period={activePayslip.period}
-          run={activePayslip.run}
-          onClose={() => setActivePayslip(null)}
-        />
-      ) : null}
-    </section>
-  );
-}
-
-function PayrollPayslipDialog({
-  employee,
-  organization,
-  period,
-  run,
-  onClose,
-}: {
-  employee: PayrollRun['employees'][number];
-  organization: Organization;
-  period: PayrollPeriod | null;
-  run: PayrollRun;
-  onClose: () => void;
-}) {
-  const deductionAmount = employee.totalDeductions || employee.lossAmount;
-  const periodLabel = period
-    ? `${formatDateOnly(period.periodStart)} - ${formatDateOnly(period.periodEnd)}`
-    : run.payrollPeriodName;
-  const generatedAt = formatDateTime(new Date().toISOString());
-  const payDate = period?.paymentDate ? formatDateOnly(period.paymentDate) : 'Not set';
-  const paymentHeading = `${labelizeEnum(employee.paymentMethod)}${
-    employee.paymentDestination ? ` - ${employee.paymentDestination}` : ''
-  }`;
-  const earningLines = [
-    { label: 'Basic Salary', amount: employee.basicSalary },
-    { label: 'Automatic Sales Bonus', amount: employee.automaticBonusAmount },
-    { label: 'Admin Bonus', amount: employee.manualBonusAmount },
-  ].filter((line) => line.amount > 0 || line.label === 'Basic Salary');
-  const deductionLines =
-    deductionAmount > 0
-      ? [{ label: 'Deductions / Losses', amount: -deductionAmount }]
-      : [{ label: 'Deductions / Losses', amount: 0 }];
-
-  return (
-    <div
-      className="dialog-backdrop payslip-backdrop"
-      role="presentation"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <section
-        className="payroll-payslip-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="payslip-title"
-      >
-        <div className="dialog-header payslip-dialog-actions">
-          <div>
-            <p className="eyebrow">Employee payroll</p>
-            <h2 id="payslip-title">Payslip</h2>
-          </div>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label="Close payslip"
-            onClick={onClose}
-          >
-            <i className="bi bi-x-lg" aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="payslip-print-area">
-          <header className="payslip-slip-header">
-            <img src={keenLogoUrl} alt="" aria-hidden="true" />
-            <strong>{organization.name}</strong>
-            <em>Pay-Slip({run.payrollPeriodName})</em>
-            <span>{generatedAt}</span>
-            {organization.taxRegistrationNumber ? (
-              <span>PIN: {organization.taxRegistrationNumber}</span>
-            ) : null}
-          </header>
-
-          <section className="payslip-staff-lines" aria-label="Payslip details">
-            <div>
-              <span>PF-Num: {employee.employeeNumber}</span>
-              <span>Name: {employee.employeeName}</span>
-            </div>
-            <div>
-              <span>Station: {employee.branchName}</span>
-              <span>Pay Date: {payDate}</span>
-            </div>
-            <div>
-              <span>Pay Run: {run.name}</span>
-              <span>Status: {labelizeEnum(run.status)}</span>
-            </div>
-            <div>
-              <span>Period: {periodLabel}</span>
-              <span>Tax-PIN: {organization.taxRegistrationNumber ?? 'N/A'}</span>
-            </div>
-          </section>
-
-          <section className="payslip-payment-heading">
-            {paymentHeading || 'Payment not set'}
-          </section>
-
-          <section className="payslip-slip-body">
-            <img className="payslip-watermark" src={keenLogoUrl} alt="" aria-hidden="true" />
-
-            <div className="payslip-slip-lines">
-              {earningLines.map((line) => (
-                <div className="payslip-slip-line" key={line.label}>
-                  <span>{line.label}</span>
-                  <strong>{formatPayslipAmount(line.amount)}</strong>
-                </div>
-              ))}
-              <div className="payslip-slip-line payslip-slip-total">
-                <span>TOTAL Earnings</span>
-                <strong>{formatPayslipAmount(employee.grossPay)}</strong>
-              </div>
-            </div>
-
-            <div className="payslip-slip-lines payslip-deduction-lines">
-              {deductionLines.map((line) => (
-                <div className="payslip-slip-line" key={line.label}>
-                  <span>{line.label}</span>
-                  <strong>{formatPayslipAmount(line.amount)}</strong>
-                </div>
-              ))}
-              <div className="payslip-slip-line">
-                <span>Sales Recorded</span>
-                <strong>{formatPayslipAmount(employee.salesAmount)}</strong>
-              </div>
-              <div className="payslip-slip-line">
-                <span>Qualifying Target Days</span>
-                <strong>{employee.qualifyingSalesDays}</strong>
-              </div>
-              <div className="payslip-slip-line payslip-slip-total">
-                <span>TOTAL Deductions</span>
-                <strong>{formatPayslipAmount(-deductionAmount)}</strong>
-              </div>
-            </div>
-
-            <div className="payslip-nett-line">
-              <span>NETT Pay: {run.payrollPeriodName}</span>
-              <strong>{formatPayslipAmount(employee.netPay)}</strong>
-            </div>
-          </section>
-
-          {employee.notes ? (
-            <section className="payslip-notes">
-              <span>Notes</span>
-              <p>{employee.notes}</p>
-            </section>
-          ) : null}
-
-          <footer className="payslip-slip-footer">
-            Report all anomalies to your HR Department.
-          </footer>
-        </div>
-
-        <div className="receipt-actions receipt-footer-actions payslip-dialog-actions">
-          <button className="secondary-action compact-action" type="button" onClick={onClose}>
-            Close
-          </button>
-          <button
-            className="primary-action compact-action"
-            type="button"
-            onClick={() => window.print()}
-          >
-            <i className="bi bi-printer" aria-hidden="true" />
-            Print / Save PDF
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function HrRecruitmentPage({
-  branches,
-  currentUser,
-}: {
-  branches: Branch[];
-  currentUser: CurrentUser;
-}) {
-  const [branchFilter, setBranchFilter] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState('');
-  const [stageFilter, setStageFilter] = useState('');
-  const departmentsQuery = useQuery({ queryKey: ['hr', 'departments'], queryFn: getHrDepartments });
-  const jobTitlesQuery = useQuery({ queryKey: ['hr', 'job-titles'], queryFn: getHrJobTitles });
-  const employeesQuery = useQuery({
-    queryKey: ['hr', 'employees', 'recruitment'],
-    queryFn: () =>
-      getHrEmployees(new URLSearchParams({ page: '0', size: '200', sort: 'joiningDate,desc' })),
-  });
-
-  const departments = departmentsQuery.data ?? [];
-  const jobTitles = jobTitlesQuery.data ?? [];
-  const employees = employeesQuery.data?.items ?? [];
-  const branchOptions = scopedActiveBranches(branches, currentUser);
-  const departmentById = new Map(departments.map((department) => [department.id, department]));
-  const recruitmentRows = buildRecruitmentRows(jobTitles, departments, employees)
-    .filter((row) => !branchFilter || row.branchId === branchFilter || !row.branchId)
-    .filter((row) => !departmentFilter || row.departmentId === departmentFilter)
-    .filter((row) => !stageFilter || row.stage === stageFilter);
-  const openRows = recruitmentRows.filter((row) => row.headcount === 0);
-  const thinCoverageRows = recruitmentRows.filter((row) => row.headcount > 0 && row.headcount < 2);
-  const probationEmployees = employees.filter(
-    (employee) => employee.employmentStatus === 'PROBATION',
-  );
-  const onboardingEmployees = employees
-    .filter(
-      (employee) =>
-        daysSince(employee.joiningDate) <= 45 || employee.employmentStatus === 'PROBATION',
-    )
-    .slice(0, 8);
-  const pipelineStages = [
-    {
-      label: 'Sourcing',
-      icon: 'bi-search',
-      count: openRows.length,
-      detail: 'job titles with no active employees',
-      status: 'pending' as const,
-    },
-    {
-      label: 'Screening',
-      icon: 'bi-funnel',
-      count: thinCoverageRows.length,
-      detail: 'roles with thin bench coverage',
-      status: 'review' as const,
-    },
-    {
-      label: 'Onboarding',
-      icon: 'bi-person-check',
-      count: onboardingEmployees.length,
-      detail: 'recent or probation employees',
-      status: 'posted' as const,
-    },
-  ];
-  const isLoading =
-    departmentsQuery.isPending || jobTitlesQuery.isPending || employeesQuery.isPending;
-
-  return (
-    <section className="branch-workspace">
-      <PageHeader
-        eyebrow="Human resources"
-        title="Recruitment"
-        subtitle="Plan hiring needs from your live employee structure, open role coverage, and onboarding queue."
-        action={
-          <div className="hr-employee-page-actions">
-            <HrBackButton />
-            <NavLink className="primary-action compact-action" to="/hr/employees">
-              <i className="bi bi-person-plus" aria-hidden="true" />
-              Add Employee
-            </NavLink>
-          </div>
-        }
-      />
-
-      <div className="hr-kpi-grid hr-attendance-summary-grid">
-        <HrDashboardMetricCard
-          icon="bi-briefcase"
-          label="Role Templates"
-          value={String(jobTitles.filter((jobTitle) => jobTitle.active).length)}
-          detail={`${departments.filter((department) => department.active).length} active departments`}
-          tone="blue"
-        />
-        <HrDashboardMetricCard
-          icon="bi-person-plus"
-          label="Open Hiring Needs"
-          value={String(openRows.length)}
-          detail="active job titles without headcount"
-          tone="orange"
-        />
-        <HrDashboardMetricCard
-          icon="bi-person-check"
-          label="Onboarding"
-          value={String(onboardingEmployees.length)}
-          detail={`${probationEmployees.length} employees on probation`}
-          tone="green"
-        />
-        <HrDashboardMetricCard
-          icon="bi-shop"
-          label="Branch Scope"
-          value={String(branchOptions.length)}
-          detail="active branches available to this user"
-          tone="purple"
-        />
-      </div>
-
-      <div className="catalog-filter-bar hr-filter-bar">
-        <label className="select-shell catalog-filter-select">
-          <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-            <option value="">All branches</option>
-            {branchOptions.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select
-            value={departmentFilter}
-            onChange={(event) => setDepartmentFilter(event.target.value)}
-          >
-            <option value="">All departments</option>
-            {departments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}>
-            <option value="">All stages</option>
-            <option value="Sourcing">Sourcing</option>
-            <option value="Screening">Screening</option>
-            <option value="Pipeline Ready">Pipeline Ready</option>
-          </select>
-        </label>
-      </div>
-
-      <div className="management-grid hr-attendance-layout">
-        <section className="panel-card branch-list-panel">
-          <PanelHeader icon="bi-kanban" title="Recruitment Pipeline" />
-          {isLoading ? (
-            <LoadingPanel label="Loading recruitment pipeline..." />
-          ) : (
-            <div className="user-directory-list">
-              {pipelineStages.map((stage) => (
-                <article className="user-directory-row" key={stage.label}>
-                  <div className="user-directory-identity">
-                    <span className="user-directory-icon">
-                      <i className={`bi ${stage.icon}`} aria-hidden="true" />
-                    </span>
-                    <span>
-                      <strong>{stage.label}</strong>
-                      <small>{stage.detail}</small>
-                    </span>
-                  </div>
-                  <div className="user-directory-status">
-                    <StatusPill status={stage.status} label={`${stage.count} items`} />
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="panel-card branch-list-panel">
-          <PanelHeader icon="bi-clipboard2-check" title="Recruitment Readiness" />
-          {isLoading ? (
-            <LoadingPanel label="Checking recruitment readiness..." />
-          ) : (
-            <div className="user-directory-list">
-              <HrReadinessRow
-                icon="bi-diagram-3"
-                title="Departments configured"
-                detail={`${departments.filter((department) => department.active).length} active departments`}
-                ready={departments.some((department) => department.active)}
-              />
-              <HrReadinessRow
-                icon="bi-briefcase"
-                title="Job titles configured"
-                detail={`${jobTitles.filter((jobTitle) => jobTitle.active).length} active job titles`}
-                ready={jobTitles.some((jobTitle) => jobTitle.active)}
-              />
-              <HrReadinessRow
-                icon="bi-person-lines-fill"
-                title="Managers and users linked"
-                detail={`${employees.filter((employee) => employee.linkedUserId).length} employees linked to users`}
-                ready={employees.some((employee) => employee.linkedUserId)}
-              />
-              <HrReadinessRow
-                icon="bi-person-plus"
-                title="Open role list ready"
-                detail={`${openRows.length} roles need recruitment attention`}
-                ready={openRows.length > 0}
-              />
-            </div>
-          )}
-        </section>
-      </div>
-
-      <div className="management-grid hr-attendance-layout">
-        <section className="panel-card branch-list-panel">
-          <PanelHeader
-            icon="bi-list-check"
-            title="Role Coverage"
-            action={<span className="catalog-count-pill">{recruitmentRows.length} roles</span>}
-          />
-          {isLoading ? (
-            <LoadingPanel label="Loading role coverage..." />
-          ) : recruitmentRows.length === 0 ? (
-            <EmptyState
-              icon="bi-briefcase"
-              title="No roles match"
-              detail="Create job titles in HR Settings or adjust the filters."
-            />
-          ) : (
-            <div className="responsive-table report-table hr-dashboard-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Role</th>
-                    <th>Department</th>
-                    <th>Branch</th>
-                    <th>Headcount</th>
-                    <th>Stage</th>
-                    <th>Priority</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recruitmentRows.map((row) => (
-                    <tr key={row.jobTitleId}>
-                      <td data-label="Role">
-                        <strong>{row.title}</strong>
-                      </td>
-                      <td data-label="Department">{row.departmentName}</td>
-                      <td data-label="Branch">{row.branchName}</td>
-                      <td data-label="Headcount">{row.headcount}</td>
-                      <td data-label="Stage">{row.stage}</td>
-                      <td data-label="Priority">
+                      <td data-label="Status">
                         <StatusPill
-                          status={
-                            row.priority === 'High'
-                              ? 'pending'
-                              : row.priority === 'Medium'
-                                ? 'review'
-                                : 'posted'
-                          }
-                          label={row.priority}
+                          status={user.status === 'ACTIVE' ? 'posted' : 'pending'}
+                          label={user.status === 'ACTIVE' ? 'Active' : 'Disabled'}
                         />
                       </td>
+                      <td data-label="Roles and permissions">
+                        <span>{user.roleNames.join(', ') || 'No roles assigned'}</span>
+                        <div>
+                          <PermissionCodeList codes={user.permissionCodes} />
+                        </div>
+                      </td>
+                      <td data-label="Actions">
+                        <span className="table-actions">
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => editUser(user)}
+                          >
+                            <i className="bi bi-pencil" aria-hidden="true" />
+                            Edit
+                          </button>
+                          <button
+                            className={
+                              user.status === 'ACTIVE' ? 'text-button danger-text' : 'text-button'
+                            }
+                            type="button"
+                            disabled={disableUserMutation.isPending}
+                            onClick={() => void handleStatusChange(user)}
+                          >
+                            {user.status === 'ACTIVE' ? 'Disable' : 'Reactivate'}
+                          </button>
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -18731,2641 +14655,75 @@ function HrRecruitmentPage({
             </div>
           )}
         </section>
-
-        <section className="panel-card branch-list-panel">
-          <PanelHeader icon="bi-person-check" title="Onboarding Queue" />
-          {employeesQuery.isPending ? (
-            <LoadingPanel label="Loading onboarding queue..." />
-          ) : onboardingEmployees.length === 0 ? (
-            <EmptyState
-              icon="bi-person-check"
-              title="No onboarding items"
-              detail="Recent hires and probation employees will appear here."
-            />
-          ) : (
-            <div className="user-directory-list">
-              {onboardingEmployees.map((employee) => {
-                const department = employee.departmentId
-                  ? departmentById.get(employee.departmentId)
-                  : undefined;
-                return (
-                  <article className="user-directory-row" key={employee.id}>
-                    <div className="user-directory-identity">
-                      <span className="user-directory-icon">
-                        <i className="bi bi-person-vcard" aria-hidden="true" />
-                      </span>
-                      <span>
-                        <strong>{employee.fullName}</strong>
-                        <small>{employee.employeeNumber}</small>
-                      </span>
-                    </div>
-                    <div className="user-directory-access">
-                      <div className="user-detail-block">
-                        <span className="user-detail-label">Department</span>
-                        <span>{department?.name ?? employee.departmentName ?? 'Unassigned'}</span>
-                      </div>
-                      <div className="user-detail-block">
-                        <span className="user-detail-label">Joined</span>
-                        <span>{formatDateOnly(employee.joiningDate)}</span>
-                      </div>
-                    </div>
-                    <div className="user-directory-actions">
-                      <NavLink className="text-button" to={`/hr/employees/${employee.id}`}>
-                        <i className="bi bi-eye" aria-hidden="true" />
-                        View
-                      </NavLink>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
       </div>
     </section>
   );
 }
 
-function HrPerformancePage({
-  branches,
-  currentUser,
-  organization,
-}: {
-  branches: Branch[];
-  currentUser: CurrentUser;
-  organization: Organization;
-}) {
-  const queryClient = useQueryClient();
-  const [branchFilter, setBranchFilter] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState('');
-  const [fromDate, setFromDate] = useState(
-    dateInputValue(new Date(Date.now() - 29 * 24 * 60 * 60 * 1000)),
-  );
-  const [toDate, setToDate] = useState(dateInputValue(new Date()));
-  const performanceFormRef = useRef<HTMLFormElement | null>(null);
-  const [performanceForm, setPerformanceForm] = useState<HrPerformanceEntryFormState>(() =>
-    defaultHrPerformanceEntryForm(),
-  );
-  const [salesBonusRuleForm, setSalesBonusRuleForm] = useState<HrPayrollSalesBonusRuleFormState>(
-    () => defaultHrPayrollSalesBonusRuleForm(),
-  );
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const departmentsQuery = useQuery({ queryKey: ['hr', 'departments'], queryFn: getHrDepartments });
-  const employeesQuery = useQuery({
-    queryKey: ['hr', 'employees', 'performance'],
-    queryFn: () =>
-      getHrEmployees(new URLSearchParams({ page: '0', size: '200', sort: 'lastName,asc' })),
-  });
-  const performanceQuery = useQuery({
-    queryKey: ['hr', 'performance', fromDate, toDate, branchFilter],
-    queryFn: () => {
-      const params = new URLSearchParams({
-        fromDate,
-        toDate,
-      });
-      if (branchFilter) params.set('branchId', branchFilter);
-      return getHrPerformance(params);
-    },
-  });
-  const attendanceQuery = useQuery({
-    queryKey: ['hr', 'attendance', 'performance', fromDate, toDate],
-    queryFn: () =>
-      getHrAttendance(
-        new URLSearchParams({
-          page: '0',
-          size: '200',
-          fromDate,
-          toDate,
-        }),
-      ),
-  });
-  const leavePageQuery = useQuery({
-    queryKey: ['hr', 'leave', 'performance'],
-    queryFn: getHrLeavePage,
-  });
+type ProductFormState = ProductRequest;
 
-  const employees = employeesQuery.data?.items ?? [];
-  const departments = departmentsQuery.data ?? [];
-  const attendance = attendanceQuery.data?.items ?? [];
-  const leaveRequests = leavePageQuery.data?.requests ?? [];
-  const performanceSummaries = performanceQuery.data?.summaries ?? [];
-  const performanceEntries = performanceQuery.data?.entries ?? [];
-  const salesBonusRule =
-    performanceQuery.data?.salesBonusRule ?? defaultHrPayrollSalesBonusRuleForm();
-  const performanceSummaryByEmployee = new Map(
-    performanceSummaries.map((summary) => [summary.employeeId, summary]),
-  );
-  const branchOptions = scopedActiveBranches(branches, currentUser);
-  const employeeOptions = employees.filter(
-    (employee) => !branchFilter || employee.branchId === branchFilter,
-  );
-  const performanceRows = buildPerformanceRows(
-    employees,
-    attendance,
-    leaveRequests,
-    performanceSummaryByEmployee,
-  )
-    .filter((row) => !branchFilter || row.branchId === branchFilter)
-    .filter((row) => !departmentFilter || row.departmentId === departmentFilter);
-  const periodSales = performanceRows.reduce((sum, row) => sum + row.actualSalesAmount, 0);
-  const totalSalesForPay = performanceRows.reduce((sum, row) => sum + row.totalSalesAmount, 0);
-  const basicSalaryTotal = performanceRows.reduce((sum, row) => sum + row.basicSalary, 0);
-  const projectedNetPay = performanceRows.reduce((sum, row) => sum + row.projectedNetPay, 0);
-  const totalBonuses = performanceRows.reduce((sum, row) => sum + row.bonusAmount, 0);
-  const adminBonuses = performanceRows.reduce((sum, row) => sum + row.manualBonusAmount, 0);
-  const automaticBonuses = performanceRows.reduce((sum, row) => sum + row.automaticBonusAmount, 0);
-  const totalLosses = performanceRows.reduce((sum, row) => sum + row.lossAmount, 0);
-  const qualifyingCashiers = performanceRows.filter((row) => row.qualifyingSalesDays > 0).length;
-  const targetRuleConfigured =
-    salesBonusRule.active &&
-    salesBonusRule.dailySalesTarget > 0 &&
-    salesBonusRule.bonusPerTargetDay > 0;
-  const reviewQueue = performanceRows
-    .filter((row) => row.score < 70 || row.employmentStatus === 'PROBATION')
-    .sort((left, right) => left.score - right.score)
-    .slice(0, 8);
-  const departmentScores = departments
-    .map((department) => {
-      const rows = performanceRows.filter((row) => row.departmentId === department.id);
-      return {
-        name: department.name,
-        score:
-          rows.length === 0
-            ? 0
-            : Math.round(rows.reduce((sum, row) => sum + row.score, 0) / rows.length),
-        employees: rows.length,
-      };
-    })
-    .filter((row) => row.employees > 0);
-  const savePerformanceMutation = useMutation({
-    mutationFn: createHrPerformanceEntry,
-    onSuccess: async (entry) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'performance'] });
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'payroll'] });
-      setPerformanceForm(defaultHrPerformanceEntryForm(entry.employeeId));
-      setMessage(`${labelizeEnum(entry.entryType)} saved for ${entry.employeeName}.`);
-    },
-  });
-  const saveSalesBonusRuleMutation = useMutation({
-    mutationFn: updateHrPayrollSalesBonusRule,
-    onSuccess: async (rule) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'performance'] });
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'payroll'] });
-      setSalesBonusRuleForm(rule);
-      setMessage('Cashier target bonus rule saved.');
-    },
-  });
-  const syncUsersMutation = useMutation({
-    mutationFn: syncHrEmployeesFromUsers,
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'employees'] });
-      await queryClient.invalidateQueries({ queryKey: ['hr', 'performance'] });
-      setMessage(userSyncMessage(result.createdCount, result.skippedCount));
-      setError('');
-    },
-  });
-  const isLoading =
-    employeesQuery.isPending ||
-    attendanceQuery.isPending ||
-    leavePageQuery.isPending ||
-    performanceQuery.isPending;
-
-  useEffect(() => {
-    if (!performanceQuery.data?.salesBonusRule) {
-      return;
-    }
-    setSalesBonusRuleForm(performanceQuery.data.salesBonusRule);
-  }, [
-    performanceQuery.data?.salesBonusRule?.active,
-    performanceQuery.data?.salesBonusRule?.bonusPerTargetDay,
-    performanceQuery.data?.salesBonusRule?.dailySalesTarget,
-  ]);
-
-  async function handlePerformanceSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await savePerformanceMutation.mutateAsync({
-        ...performanceForm,
-        amount: performanceForm.entryType === 'PERFORMANCE_REVIEW' ? 0 : performanceForm.amount,
-        score:
-          performanceForm.entryType === 'PERFORMANCE_REVIEW' ? performanceForm.score : undefined,
-      });
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error ? caughtError.message : 'Unable to save performance entry',
-      );
-    }
-  }
-
-  async function handleSalesBonusRuleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    try {
-      await saveSalesBonusRuleMutation.mutateAsync(salesBonusRuleForm);
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : 'Unable to save cashier target bonus rule',
-      );
-    }
-  }
-
-  function setPerformanceEntryType(entryType: EmployeePerformanceEntryType) {
-    setPerformanceForm((current) => ({
-      ...current,
-      entryType,
-      title:
-        entryType === 'BONUS' && !current.title
-          ? 'Admin bonus'
-          : entryType === 'LOSS' && !current.title
-            ? 'Loss'
-            : current.title,
-      amount: entryType === 'PERFORMANCE_REVIEW' ? 0 : current.amount,
-      score: entryType === 'PERFORMANCE_REVIEW' ? (current.score ?? 80) : undefined,
-    }));
-  }
-
-  function startNormalBonus(row: HrPerformanceRow) {
-    setPerformanceForm({
-      ...defaultHrPerformanceEntryForm(row.employeeId),
-      entryType: 'BONUS',
-      title: 'Admin bonus',
-      amount: 0,
-      score: undefined,
-    });
-    performanceFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  async function handleSyncUsers() {
-    setError('');
-    setMessage('');
-    try {
-      await syncUsersMutation.mutateAsync();
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to add system users');
-    }
-  }
-
-  return (
-    <section className="branch-workspace">
-      <PageHeader
-        eyebrow="Human resources"
-        title="Performance"
-        subtitle="Review staff sales, target bonuses, losses, attendance reliability, and payroll impact."
-        action={
-          <div className="hr-employee-page-actions">
-            <HrBackButton />
-            <button
-              className="secondary-action compact-action"
-              type="button"
-              disabled={syncUsersMutation.isPending}
-              onClick={handleSyncUsers}
-            >
-              <i className="bi bi-arrow-repeat" aria-hidden="true" />
-              {syncUsersMutation.isPending ? 'Adding...' : 'Add System Users'}
-            </button>
-          </div>
-        }
-      />
-
-      <div className="hr-kpi-grid hr-attendance-summary-grid">
-        <HrDashboardMetricCard
-          icon="bi-receipt"
-          label="POS Sales"
-          value={formatMoney(periodSales, organization.currencyCode)}
-          detail={`${formatMoney(totalSalesForPay, organization.currencyCode)} total sales used for pay`}
-          tone="blue"
-        />
-        <HrDashboardMetricCard
-          icon="bi-person-vcard"
-          label="Basic Salary"
-          value={formatMoney(basicSalaryTotal, organization.currencyCode)}
-          detail={`${performanceRows.length} staff in this view`}
-          tone="green"
-        />
-        <HrDashboardMetricCard
-          icon="bi-trophy"
-          label="Bonuses"
-          value={formatMoney(totalBonuses, organization.currencyCode)}
-          detail={`${formatMoney(automaticBonuses, organization.currencyCode)} target / ${formatMoney(
-            adminBonuses,
-            organization.currencyCode,
-          )} admin`}
-          tone="orange"
-        />
-        <HrDashboardMetricCard
-          icon="bi-cash-stack"
-          label="Projected Payout"
-          value={formatMoney(projectedNetPay, organization.currencyCode)}
-          detail={`${formatMoney(basicSalaryTotal, organization.currencyCode)} + ${formatMoney(
-            totalBonuses,
-            organization.currencyCode,
-          )} - ${formatMoney(totalLosses, organization.currencyCode)}`}
-          tone="purple"
-        />
-      </div>
-
-      <div className="catalog-filter-bar hr-filter-bar">
-        <label className="select-shell catalog-filter-select">
-          <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-            <option value="">All branches</option>
-            {branchOptions.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select
-            value={departmentFilter}
-            onChange={(event) => setDepartmentFilter(event.target.value)}
-          >
-            <option value="">All departments</option>
-            {departments.map((department) => (
-              <option key={department.id} value={department.id}>
-                {department.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="inventory-filter-field">
-          <span>From</span>
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(event) => setFromDate(event.target.value)}
-          />
-        </label>
-        <label className="inventory-filter-field">
-          <span>To</span>
-          <input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
-        </label>
-      </div>
-
-      <FormMessages error={error} message={message} />
-
-      <section className="panel-card branch-list-panel performance-pay-focus-panel">
-        <PanelHeader
-          icon="bi-calculator"
-          title="Performance to Payroll"
-          action={<span className="catalog-count-pill">{performanceRows.length} staff</span>}
-        />
-        {isLoading ? (
-          <LoadingPanel label="Loading staff payout performance..." />
-        ) : performanceRows.length === 0 ? (
-          <EmptyState
-            icon="bi-people"
-            title="No staff performance yet"
-            detail="Employee salaries and POS sales will populate this payout view."
-          />
-        ) : (
-          <>
-            <div className="payroll-equation-strip">
-              <span>
-                <strong>{formatMoney(basicSalaryTotal, organization.currencyCode)}</strong>
-                Basic salary
-              </span>
-              <i className="bi bi-plus-lg" aria-hidden="true" />
-              <span>
-                <strong>{formatMoney(automaticBonuses, organization.currencyCode)}</strong>
-                Target bonus
-              </span>
-              <i className="bi bi-plus-lg" aria-hidden="true" />
-              <span>
-                <strong>{formatMoney(adminBonuses, organization.currencyCode)}</strong>
-                Admin bonus
-              </span>
-              <i className="bi bi-dash-lg" aria-hidden="true" />
-              <span>
-                <strong>{formatMoney(totalLosses, organization.currencyCode)}</strong>
-                Losses
-              </span>
-              <i className="bi bi-equals" aria-hidden="true" />
-              <span className="payroll-equation-total">
-                <strong>{formatMoney(projectedNetPay, organization.currencyCode)}</strong>
-                Projected payout
-              </span>
-            </div>
-
-            <div className="performance-payout-list">
-              {performanceRows.map((row) => (
-                <article className="performance-payout-row" key={row.employeeId}>
-                  <div className="performance-payout-identity">
-                    <span className="user-directory-icon">
-                      {employeeInitials(row.employeeName)}
-                    </span>
-                    <span>
-                      <strong>{row.employeeName}</strong>
-                      <small>
-                        {row.employeeNumber} - {row.branchName} -{' '}
-                        {row.jobTitleTitle ?? row.departmentName ?? 'Unassigned'}
-                      </small>
-                    </span>
-                  </div>
-                  <div className="performance-payout-sales">
-                    <span>POS sales</span>
-                    <strong>{formatMoney(row.actualSalesAmount, organization.currencyCode)}</strong>
-                    <small>
-                      {row.salesDays.length} sale day{row.salesDays.length === 1 ? '' : 's'} /{' '}
-                      {row.qualifyingSalesDays} target day
-                      {row.qualifyingSalesDays === 1 ? '' : 's'}
-                    </small>
-                  </div>
-                  <div className="performance-payout-equation">
-                    <span>
-                      Basic{' '}
-                      <strong>{formatMoney(row.basicSalary, organization.currencyCode)}</strong>
-                    </span>
-                    <span>
-                      Target{' '}
-                      <strong>
-                        {formatMoney(row.automaticBonusAmount, organization.currencyCode)}
-                      </strong>
-                    </span>
-                    <span>
-                      Admin{' '}
-                      <strong>
-                        {formatMoney(row.manualBonusAmount, organization.currencyCode)}
-                      </strong>
-                    </span>
-                    <span>
-                      Loss <strong>{formatMoney(row.lossAmount, organization.currencyCode)}</strong>
-                    </span>
-                  </div>
-                  <div className="performance-payout-net">
-                    <span>Pay this month</span>
-                    <strong>{formatMoney(row.projectedNetPay, organization.currencyCode)}</strong>
-                    <small>{row.paymentDestination}</small>
-                  </div>
-                  <div className="performance-row-actions">
-                    <button
-                      className="text-button"
-                      type="button"
-                      onClick={() => startNormalBonus(row)}
-                    >
-                      <i className="bi bi-plus-circle" aria-hidden="true" />
-                      Admin Bonus
-                    </button>
-                    <NavLink className="text-button" to={`/hr/employees/${row.employeeId}`}>
-                      <i className="bi bi-eye" aria-hidden="true" />
-                      View
-                    </NavLink>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </>
-        )}
-      </section>
-
-      <section className="panel-card performance-bonus-panel">
-        <PanelHeader
-          icon="bi-trophy"
-          title="Cashier Target Bonuses"
-          action={
-            <StatusPill
-              status={targetRuleConfigured ? 'posted' : 'pending'}
-              label={targetRuleConfigured ? 'Active Rule' : 'Needs Setup'}
-            />
-          }
-        />
-        <div className="performance-bonus-grid">
-          <form
-            className="record-form payroll-compact-form performance-bonus-rule-form"
-            onSubmit={handleSalesBonusRuleSubmit}
-          >
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Daily Sales Target</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={salesBonusRuleForm.dailySalesTarget}
-                  onChange={(event) =>
-                    setSalesBonusRuleForm((current) => ({
-                      ...current,
-                      dailySalesTarget: Number(event.target.value || 0),
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Bonus Per Target Day</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={salesBonusRuleForm.bonusPerTargetDay}
-                  onChange={(event) =>
-                    setSalesBonusRuleForm((current) => ({
-                      ...current,
-                      bonusPerTargetDay: Number(event.target.value || 0),
-                    }))
-                  }
-                />
-              </label>
-            </div>
-            <label className="field-stack inline-checkbox">
-              <input
-                type="checkbox"
-                checked={salesBonusRuleForm.active}
-                onChange={(event) =>
-                  setSalesBonusRuleForm((current) => ({
-                    ...current,
-                    active: event.target.checked,
-                  }))
-                }
-              />
-              <span>Automatically add this bonus when cashier sales meet or pass target</span>
-            </label>
-            <button
-              className="primary-action compact-action"
-              type="submit"
-              disabled={saveSalesBonusRuleMutation.isPending}
-            >
-              <i className="bi bi-check2" aria-hidden="true" />
-              {saveSalesBonusRuleMutation.isPending ? 'Saving...' : 'Save Target Bonus'}
-            </button>
-          </form>
-
-          <div className="payroll-readiness-list performance-bonus-readiness">
-            <div className="payroll-readiness-item">
-              <i className="bi bi-graph-up-arrow" aria-hidden="true" />
-              <span>
-                <strong>
-                  {formatMoney(salesBonusRule.dailySalesTarget, organization.currencyCode)} target
-                </strong>
-                <small>Daily sales threshold used for cashier bonus checks</small>
-              </span>
-            </div>
-            <div className="payroll-readiness-item">
-              <i className="bi bi-cash-coin" aria-hidden="true" />
-              <span>
-                <strong>
-                  {formatMoney(salesBonusRule.bonusPerTargetDay, organization.currencyCode)} bonus
-                </strong>
-                <small>Added for each target day in this performance period</small>
-              </span>
-            </div>
-            <div className="payroll-readiness-item">
-              <i className="bi bi-people" aria-hidden="true" />
-              <span>
-                <strong>{qualifyingCashiers} qualifying cashier(s)</strong>
-                <small>
-                  {formatMoney(automaticBonuses, organization.currencyCode)} automatic bonuses in
-                  view
-                </small>
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div className="management-grid hr-attendance-layout">
-        <section className="panel-card branch-form-panel">
-          <PanelHeader
-            icon="bi-clipboard2-plus"
-            title="Record Review, Admin Bonus, or Loss"
-            action={
-              <span className="catalog-count-pill">
-                {formatMoney(adminBonuses, organization.currencyCode)} admin bonuses
-              </span>
-            }
-          />
-          <div className="performance-entry-mode-actions">
-            <button
-              className={
-                performanceForm.entryType === 'PERFORMANCE_REVIEW'
-                  ? 'primary-action compact-action'
-                  : 'secondary-action compact-action'
-              }
-              type="button"
-              onClick={() => setPerformanceEntryType('PERFORMANCE_REVIEW')}
-            >
-              <i className="bi bi-star" aria-hidden="true" />
-              Review
-            </button>
-            <button
-              className={
-                performanceForm.entryType === 'BONUS'
-                  ? 'primary-action compact-action'
-                  : 'secondary-action compact-action'
-              }
-              type="button"
-              onClick={() => setPerformanceEntryType('BONUS')}
-            >
-              <i className="bi bi-plus-circle" aria-hidden="true" />
-              Admin Bonus
-            </button>
-            <button
-              className={
-                performanceForm.entryType === 'LOSS'
-                  ? 'primary-action compact-action'
-                  : 'secondary-action compact-action'
-              }
-              type="button"
-              onClick={() => setPerformanceEntryType('LOSS')}
-            >
-              <i className="bi bi-dash-circle" aria-hidden="true" />
-              Loss
-            </button>
-            <button
-              className={
-                performanceForm.entryType === 'MANUAL_SALE'
-                  ? 'primary-action compact-action'
-                  : 'secondary-action compact-action'
-              }
-              type="button"
-              onClick={() => setPerformanceEntryType('MANUAL_SALE')}
-            >
-              <i className="bi bi-receipt" aria-hidden="true" />
-              Manual Sale
-            </button>
-          </div>
-          <form
-            ref={performanceFormRef}
-            className="record-form hr-employee-form"
-            onSubmit={handlePerformanceSubmit}
-          >
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Employee</span>
-                <select
-                  required
-                  value={performanceForm.employeeId}
-                  onChange={(event) =>
-                    setPerformanceForm((current) => ({
-                      ...current,
-                      employeeId: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="">Select employee</option>
-                  {employeeOptions.map((employee) => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.fullName} ({employee.employeeNumber})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Type</span>
-                <select
-                  value={performanceForm.entryType}
-                  onChange={(event) =>
-                    setPerformanceEntryType(event.target.value as EmployeePerformanceEntryType)
-                  }
-                >
-                  {performanceEntryTypeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-stack">
-                <span>Date</span>
-                <input
-                  type="date"
-                  required
-                  value={performanceForm.entryDate}
-                  onChange={(event) =>
-                    setPerformanceForm((current) => ({ ...current, entryDate: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
-            <div className="report-date-grid">
-              <label className="field-stack">
-                <span>Title</span>
-                <input
-                  maxLength={160}
-                  value={performanceForm.title}
-                  onChange={(event) =>
-                    setPerformanceForm((current) => ({ ...current, title: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Amount</span>
-                <input
-                  name="performance-amount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  disabled={performanceForm.entryType === 'PERFORMANCE_REVIEW'}
-                  value={performanceForm.amount}
-                  onChange={(event) =>
-                    setPerformanceForm((current) => ({
-                      ...current,
-                      amount: Number(event.target.value || 0),
-                    }))
-                  }
-                />
-              </label>
-              <label className="field-stack">
-                <span>Score</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  disabled={performanceForm.entryType !== 'PERFORMANCE_REVIEW'}
-                  value={performanceForm.score ?? 0}
-                  onChange={(event) =>
-                    setPerformanceForm((current) => ({
-                      ...current,
-                      score: Number(event.target.value || 0),
-                    }))
-                  }
-                />
-              </label>
-            </div>
-            <label className="field-stack">
-              <span>Notes</span>
-              <textarea
-                rows={3}
-                maxLength={1000}
-                value={performanceForm.notes}
-                onChange={(event) =>
-                  setPerformanceForm((current) => ({ ...current, notes: event.target.value }))
-                }
-              />
-            </label>
-            <button
-              className="primary-action compact-action"
-              type="submit"
-              disabled={savePerformanceMutation.isPending}
-            >
-              <i className="bi bi-check2" aria-hidden="true" />
-              {savePerformanceMutation.isPending ? 'Saving...' : 'Save Entry'}
-            </button>
-          </form>
-        </section>
-
-        <section className="panel-card branch-list-panel">
-          <PanelHeader
-            icon="bi-clock-history"
-            title="Recent Staff Entries"
-            action={<span className="catalog-count-pill">{performanceEntries.length} entries</span>}
-          />
-          {performanceQuery.isPending ? (
-            <LoadingPanel label="Loading staff entries..." />
-          ) : performanceEntries.length === 0 ? (
-            <EmptyState
-              icon="bi-clipboard2"
-              title="No staff entries"
-              detail="Bonuses, losses, reviews, and manual sales will appear here."
-            />
-          ) : (
-            <div className="user-directory-list">
-              {performanceEntries.slice(0, 8).map((entry) => (
-                <article className="user-directory-row" key={entry.id}>
-                  <div className="user-directory-identity">
-                    <span className="user-directory-icon">
-                      <i className="bi bi-clipboard2-pulse" aria-hidden="true" />
-                    </span>
-                    <span>
-                      <strong>{entry.employeeName}</strong>
-                      <small>
-                        {labelizeEnum(entry.entryType)} - {formatDateOnly(entry.entryDate)}
-                      </small>
-                    </span>
-                  </div>
-                  <div className="user-directory-access">
-                    <div className="user-detail-block">
-                      <span className="user-detail-label">Title</span>
-                      <span>{entry.title}</span>
-                    </div>
-                    <div className="user-detail-block">
-                      <span className="user-detail-label">
-                        {entry.entryType === 'PERFORMANCE_REVIEW' ? 'Score' : 'Amount'}
-                      </span>
-                      <span>
-                        {entry.entryType === 'PERFORMANCE_REVIEW'
-                          ? `${entry.score ?? 0}%`
-                          : formatMoney(entry.amount ?? 0, organization.currencyCode)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="user-directory-status">
-                    <StatusPill
-                      status={entry.entryType === 'LOSS' ? 'pending' : 'posted'}
-                      label={labelizeEnum(entry.entryType)}
-                    />
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
-      <div className="management-grid hr-attendance-layout">
-        <section className="panel-card branch-list-panel">
-          <PanelHeader icon="bi-bar-chart-line" title="Department Performance" />
-          {isLoading ? (
-            <LoadingPanel label="Loading performance chart..." />
-          ) : departmentScores.length === 0 ? (
-            <EmptyState
-              icon="bi-bar-chart-line"
-              title="No performance chart yet"
-              detail="Attendance and employee assignments will populate this chart."
-            />
-          ) : (
-            <div className="chart-wrap hr-dashboard-chart-wrap">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart
-                  data={departmentScores}
-                  margin={{ left: 0, right: 12, top: 8, bottom: 0 }}
-                >
-                  <CartesianGrid stroke="#e7eef8" strokeDasharray="4 4" vertical={false} />
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fill: '#49607a', fontSize: 12 }}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis
-                    domain={[0, 100]}
-                    tick={{ fill: '#49607a', fontSize: 12 }}
-                    tickLine={false}
-                    axisLine={false}
-                    width={36}
-                  />
-                  <Tooltip />
-                  <Bar
-                    dataKey="score"
-                    fill="#2878f0"
-                    radius={[10, 10, 0, 0]}
-                    maxBarSize={52}
-                    isAnimationActive={false}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </section>
-
-        <section className="panel-card branch-list-panel">
-          <PanelHeader icon="bi-eye" title="Review Queue" />
-          {isLoading ? (
-            <LoadingPanel label="Loading review queue..." />
-          ) : reviewQueue.length === 0 ? (
-            <EmptyState
-              icon="bi-check2-circle"
-              title="No reviews flagged"
-              detail="Low score and probation employees will appear here."
-            />
-          ) : (
-            <div className="user-directory-list">
-              {reviewQueue.map((row) => (
-                <article className="user-directory-row" key={row.employeeId}>
-                  <div className="user-directory-identity">
-                    <span className="user-directory-icon">
-                      <i className="bi bi-person-lines-fill" aria-hidden="true" />
-                    </span>
-                    <span>
-                      <strong>{row.employeeName}</strong>
-                      <small>{row.jobTitleTitle ?? 'Unassigned role'}</small>
-                    </span>
-                  </div>
-                  <div className="user-directory-access">
-                    <div className="user-detail-block">
-                      <span className="user-detail-label">Score</span>
-                      <span>{row.score}%</span>
-                    </div>
-                    <div className="user-detail-block">
-                      <span className="user-detail-label">Attendance</span>
-                      <span>{row.attendanceRate}%</span>
-                    </div>
-                  </div>
-                  <div className="user-directory-actions">
-                    <NavLink className="text-button" to={`/hr/employees/${row.employeeId}`}>
-                      <i className="bi bi-eye" aria-hidden="true" />
-                      View
-                    </NavLink>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
-      <section className="panel-card branch-list-panel">
-        <PanelHeader
-          icon="bi-table"
-          title="Employee Performance Matrix"
-          action={<span className="catalog-count-pill">{performanceRows.length} employees</span>}
-        />
-        {isLoading ? (
-          <LoadingPanel label="Loading employee performance..." />
-        ) : performanceRows.length === 0 ? (
-          <EmptyState
-            icon="bi-people"
-            title="No performance rows"
-            detail="Add employees and attendance records to build the matrix."
-          />
-        ) : (
-          <div className="responsive-table report-table hr-dashboard-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Department</th>
-                  <th>Actual Sales</th>
-                  <th>Manual Sales</th>
-                  <th>Target Days</th>
-                  <th>Bonuses</th>
-                  <th>Losses</th>
-                  <th>Net Pay</th>
-                  <th>Attendance</th>
-                  <th>Score</th>
-                  <th>Rating</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {performanceRows.map((row) => (
-                  <tr key={row.employeeId}>
-                    <td data-label="Employee">
-                      <strong>{row.employeeName}</strong>
-                    </td>
-                    <td data-label="Department">{row.departmentName ?? 'Unassigned'}</td>
-                    <td data-label="Actual Sales">
-                      {formatMoney(row.actualSalesAmount, organization.currencyCode)}
-                      <br />
-                      <small>{row.salesDays.length} sales day(s)</small>
-                    </td>
-                    <td data-label="Manual Sales">
-                      {formatMoney(row.manualSalesAmount, organization.currencyCode)}
-                    </td>
-                    <td data-label="Target Days">
-                      <strong>{row.qualifyingSalesDays}</strong>
-                      <br />
-                      <small>
-                        {formatMoney(row.salesBonusTarget, organization.currencyCode)} target /
-                        {formatMoney(row.salesBonusPerDay, organization.currencyCode)} bonus
-                      </small>
-                    </td>
-                    <td data-label="Bonuses">
-                      <strong>{formatMoney(row.bonusAmount, organization.currencyCode)}</strong>
-                      <br />
-                      <small>
-                        Auto {formatMoney(row.automaticBonusAmount, organization.currencyCode)} /
-                        Admin {formatMoney(row.manualBonusAmount, organization.currencyCode)}
-                      </small>
-                    </td>
-                    <td data-label="Losses">
-                      {formatMoney(row.lossAmount, organization.currencyCode)}
-                    </td>
-                    <td data-label="Net Pay">
-                      <strong>{formatMoney(row.projectedNetPay, organization.currencyCode)}</strong>
-                      <br />
-                      <small>{row.paymentDestination}</small>
-                    </td>
-                    <td data-label="Attendance">{row.attendanceRate}%</td>
-                    <td data-label="Score">{row.score}%</td>
-                    <td data-label="Rating">
-                      <StatusPill
-                        status={row.score >= 85 ? 'posted' : row.score >= 70 ? 'review' : 'pending'}
-                        label={row.rating}
-                      />
-                    </td>
-                    <td data-label="Actions">
-                      <div className="performance-row-actions">
-                        <button
-                          className="text-button"
-                          type="button"
-                          onClick={() => startNormalBonus(row)}
-                        >
-                          <i className="bi bi-plus-circle" aria-hidden="true" />
-                          Bonus
-                        </button>
-                        <NavLink className="text-button" to={`/hr/employees/${row.employeeId}`}>
-                          <i className="bi bi-eye" aria-hidden="true" />
-                          View
-                        </NavLink>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </section>
-  );
+function generatedBarcode() {
+  const digits = Math.floor(Math.random() * 10_000_000_000)
+    .toString()
+    .padStart(10, '0');
+  return `200${digits}`;
 }
 
-function HrDocumentsPage({
-  branches,
-  currentUser,
-}: {
-  branches: Branch[];
-  currentUser: CurrentUser;
-}) {
-  const queryClient = useQueryClient();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const fileInputId = useId();
-  const [branchFilter, setBranchFilter] = useState('');
-  const [employeeFilter, setEmployeeFilter] = useState('');
-  const [documentTypeFilter, setDocumentTypeFilter] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [uploadError, setUploadError] = useState('');
-  const [uploadMessage, setUploadMessage] = useState('');
-  const [previewError, setPreviewError] = useState('');
-  const [previewUrl, setPreviewUrl] = useState('');
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [selectedDocument, setSelectedDocument] = useState<EmployeeDocument | null>(null);
-  const [uploadForm, setUploadForm] = useState<{
-    employeeId: string;
-    documentType: string;
-    title: string;
-    notes: string;
-    file: File | null;
-  }>(() => ({
-    employeeId: '',
-    documentType: 'Employment Contract',
-    title: '',
-    notes: '',
-    file: null,
-  }));
-  const employeesQuery = useQuery({
-    queryKey: ['hr', 'employees', 'documents'],
-    queryFn: () =>
-      getHrEmployees(new URLSearchParams({ page: '0', size: '200', sort: 'lastName,asc' })),
-  });
-  const documentsQuery = useQuery({
-    queryKey: ['hr', 'documents', branchFilter, employeeFilter, documentTypeFilter, searchTerm],
-    queryFn: () => {
-      const params = new URLSearchParams();
-      if (branchFilter) {
-        params.set('branchId', branchFilter);
-      }
-      if (employeeFilter) {
-        params.set('employeeId', employeeFilter);
-      }
-      if (documentTypeFilter) {
-        params.set('documentType', documentTypeFilter);
-      }
-      if (searchTerm.trim()) {
-        params.set('search', searchTerm.trim());
-      }
-      return getHrDocuments(params);
-    },
-  });
-  const uploadDocumentMutation = useMutation({
-    mutationFn: uploadHrDocument,
-    onSuccess: (document) => {
-      queryClient.invalidateQueries({ queryKey: ['hr', 'documents'] });
-      setSelectedDocument(document);
-      setPreviewUrl('');
-      setPreviewError('');
-      setPreviewLoading(false);
-      setUploadMessage(`Stored ${document.title} for ${document.employeeName}.`);
-      setUploadError('');
-      setUploadForm((current) => ({ ...current, title: '', notes: '', file: null }));
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    },
-    onError: (error: Error) => {
-      setUploadMessage('');
-      setUploadError(error.message);
-    },
-  });
-  const employees = employeesQuery.data?.items ?? [];
-  const documents = documentsQuery.data ?? [];
-  const branchOptions = scopedActiveBranches(branches, currentUser);
-  const employeeOptions = employees.filter(
-    (employee) => !branchFilter || employee.branchId === branchFilter,
-  );
-  const coveredEmployeeIds = new Set(documents.map((document) => document.employeeId));
-  const identityDocumentCount = documents.filter((document) =>
-    ['national id', 'kra pin', 'passport photo'].includes(document.documentType.toLowerCase()),
-  ).length;
-  const contractDocumentCount = documents.filter((document) =>
-    document.documentType.toLowerCase().includes('contract'),
-  ).length;
-  const totalStoredBytes = documents.reduce((sum, document) => sum + document.sizeBytes, 0);
-  const isUploading = uploadDocumentMutation.isPending;
-
-  useEffect(() => {
-    if (branchFilter && employeeFilter) {
-      const selectedEmployee = employees.find((employee) => employee.id === employeeFilter);
-      if (selectedEmployee && selectedEmployee.branchId !== branchFilter) {
-        setEmployeeFilter('');
-      }
-    }
-  }, [branchFilter, employeeFilter, employees]);
-
-  useEffect(() => {
-    return () => {
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-      }
-    };
-  }, [previewUrl]);
-
-  function handleExportDocuments() {
-    exportHrDocumentsCsv(documents);
-  }
-
-  function handleUploadSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setUploadError('');
-    setUploadMessage('');
-
-    if (!uploadForm.employeeId) {
-      setUploadError('Select an employee before uploading a document.');
-      return;
-    }
-    if (!uploadForm.documentType) {
-      setUploadError('Select a document type.');
-      return;
-    }
-    if (!uploadForm.file) {
-      setUploadError('Choose a file to upload.');
-      return;
-    }
-
-    uploadDocumentMutation.mutate({
-      employeeId: uploadForm.employeeId,
-      documentType: uploadForm.documentType,
-      title: uploadForm.title,
-      notes: uploadForm.notes,
-      file: uploadForm.file,
-    });
-  }
-
-  async function handleViewDocument(document: EmployeeDocument) {
-    setSelectedDocument(document);
-    setPreviewLoading(true);
-    setPreviewError('');
-    try {
-      const blob = await downloadHrDocument(document.id);
-      const nextUrl = URL.createObjectURL(blob);
-      setPreviewUrl(nextUrl);
-    } catch (error) {
-      setPreviewUrl('');
-      setPreviewError(error instanceof Error ? error.message : 'Document could not be opened.');
-    } finally {
-      setPreviewLoading(false);
-    }
-  }
-
-  async function handleDownloadDocument(document: EmployeeDocument) {
-    setPreviewError('');
-    try {
-      const blob = await downloadHrDocument(document.id);
-      downloadBlob(document.fileName, blob);
-    } catch (error) {
-      setPreviewError(error instanceof Error ? error.message : 'Document could not be downloaded.');
-    }
-  }
-
-  return (
-    <section className="branch-workspace">
-      <PageHeader
-        eyebrow="Human resources"
-        title="Documents"
-        subtitle="Upload, store, preview, and download employee contracts, IDs, payroll evidence, and related HR files."
-        action={
-          <div className="hr-employee-page-actions">
-            <HrBackButton />
-            <button
-              className="primary-action compact-action"
-              type="button"
-              disabled={documents.length === 0}
-              onClick={handleExportDocuments}
-            >
-              <i className="bi bi-download" aria-hidden="true" />
-              Export List
-            </button>
-          </div>
-        }
-      />
-
-      <div className="hr-kpi-grid hr-attendance-summary-grid">
-        <HrDashboardMetricCard
-          icon="bi-folder-check"
-          label="Stored Files"
-          value={String(documents.length)}
-          detail="uploaded HR documents"
-          tone="green"
-        />
-        <HrDashboardMetricCard
-          icon="bi-people"
-          label="Employees Covered"
-          value={String(coveredEmployeeIds.size)}
-          detail={`${employees.length} employee records loaded`}
-          tone="blue"
-        />
-        <HrDashboardMetricCard
-          icon="bi-person-vcard"
-          label="IDs Stored"
-          value={String(identityDocumentCount)}
-          detail="ID, PIN, or photo files"
-          tone="orange"
-        />
-        <HrDashboardMetricCard
-          icon="bi-file-earmark-text"
-          label="Contracts"
-          value={String(contractDocumentCount)}
-          detail={`${formatFileSize(totalStoredBytes)} total storage`}
-          tone="purple"
-        />
-      </div>
-
-      <div className="catalog-filter-bar hr-filter-bar">
-        <label className="inventory-filter-field">
-          <span>Search</span>
-          <input
-            placeholder="Employee, title, or file"
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-          />
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-            <option value="">All branches</option>
-            {branchOptions.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select
-            value={employeeFilter}
-            onChange={(event) => setEmployeeFilter(event.target.value)}
-          >
-            <option value="">All employees</option>
-            {employeeOptions.map((employee) => (
-              <option key={employee.id} value={employee.id}>
-                {employee.fullName}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select
-            value={documentTypeFilter}
-            onChange={(event) => setDocumentTypeFilter(event.target.value)}
-          >
-            <option value="">All document types</option>
-            {hrDocumentTypeOptions.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <div className="management-grid hr-attendance-layout hr-documents-layout">
-        <section className="panel-card branch-form-panel">
-          <PanelHeader icon="bi-cloud-arrow-up" title="Upload Employee Document" />
-          {uploadError ? (
-            <p className="message-banner error" role="alert">
-              <i className="bi bi-exclamation-circle-fill" aria-hidden="true" />
-              {uploadError}
-            </p>
-          ) : null}
-          {uploadMessage ? (
-            <p className="message-banner success" role="status">
-              <i className="bi bi-check-circle-fill" aria-hidden="true" />
-              {uploadMessage}
-            </p>
-          ) : null}
-          <form className="record-form hr-document-upload-form" onSubmit={handleUploadSubmit}>
-            <label className="field-stack wide-field">
-              <span>Employee</span>
-              <select
-                value={uploadForm.employeeId}
-                onChange={(event) =>
-                  setUploadForm((current) => ({ ...current, employeeId: event.target.value }))
-                }
-              >
-                <option value="">Select employee</option>
-                {employees.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.fullName} - {employee.employeeNumber}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Document Type</span>
-              <select
-                value={uploadForm.documentType}
-                onChange={(event) =>
-                  setUploadForm((current) => ({ ...current, documentType: event.target.value }))
-                }
-              >
-                {hrDocumentTypeOptions.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Title</span>
-              <input
-                maxLength={160}
-                placeholder="Signed contract, National ID copy..."
-                value={uploadForm.title}
-                onChange={(event) =>
-                  setUploadForm((current) => ({ ...current, title: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack wide-field" htmlFor={fileInputId}>
-              <span>File</span>
-              <input
-                id={fileInputId}
-                ref={fileInputRef}
-                accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.doc,.docx,.xls,.xlsx"
-                type="file"
-                onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                  setUploadForm((current) => ({
-                    ...current,
-                    file: event.target.files?.[0] ?? null,
-                  }))
-                }
-              />
-              <small>PDF, images, text, Word, and Excel files up to 10 MB.</small>
-            </label>
-            <label className="field-stack wide-field">
-              <span>Notes</span>
-              <textarea
-                maxLength={1000}
-                rows={3}
-                value={uploadForm.notes}
-                onChange={(event) =>
-                  setUploadForm((current) => ({ ...current, notes: event.target.value }))
-                }
-              />
-            </label>
-            <div className="form-actions wide-field">
-              <button
-                className="primary-action compact-action"
-                type="submit"
-                disabled={isUploading}
-              >
-                <i className="bi bi-cloud-arrow-up" aria-hidden="true" />
-                {isUploading ? 'Uploading...' : 'Upload Document'}
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <section className="panel-card branch-list-panel hr-document-preview-panel">
-          <PanelHeader
-            icon="bi-file-earmark-richtext"
-            title={selectedDocument ? selectedDocument.title : 'Document Preview'}
-          />
-          {previewError ? (
-            <p className="message-banner error" role="alert">
-              <i className="bi bi-exclamation-circle-fill" aria-hidden="true" />
-              {previewError}
-            </p>
-          ) : null}
-          {!selectedDocument ? (
-            <EmptyState
-              icon="bi-file-earmark"
-              title="No document selected"
-              detail="Choose View on a stored employee document to preview it here."
-            />
-          ) : previewLoading ? (
-            <LoadingPanel label="Opening document..." />
-          ) : previewUrl && isPreviewableHrDocument(selectedDocument) ? (
-            <div className="hr-document-preview">
-              {isImageHrDocument(selectedDocument) ? (
-                <img src={previewUrl} alt={selectedDocument.title} />
-              ) : (
-                <iframe src={previewUrl} title={selectedDocument.title} />
-              )}
-            </div>
-          ) : (
-            <div className="user-directory-list">
-              <HrReadinessRow
-                icon="bi-file-earmark-lock"
-                title={selectedDocument.fileName}
-                detail="This file is stored securely and can be downloaded for viewing."
-                ready
-              />
-            </div>
-          )}
-          {selectedDocument ? (
-            <div className="hr-document-preview-meta">
-              <ProfileFact label="Employee" value={selectedDocument.employeeName} />
-              <ProfileFact label="Type" value={selectedDocument.documentType} />
-              <ProfileFact label="Size" value={formatFileSize(selectedDocument.sizeBytes)} />
-              <ProfileFact label="Uploaded" value={formatDateTime(selectedDocument.uploadedAt)} />
-              <button
-                className="secondary-action compact-action"
-                type="button"
-                onClick={() => handleDownloadDocument(selectedDocument)}
-              >
-                <i className="bi bi-download" aria-hidden="true" />
-                Download
-              </button>
-            </div>
-          ) : null}
-        </section>
-      </div>
-
-      <section className="panel-card branch-list-panel">
-        <PanelHeader
-          icon="bi-folder2-open"
-          title="Stored Employee Documents"
-          action={<span className="catalog-count-pill">{documents.length} files</span>}
-        />
-        {documentsQuery.isPending || employeesQuery.isPending ? (
-          <LoadingPanel label="Loading employee documents..." />
-        ) : documentsQuery.isError ? (
-          <EmptyState
-            icon="bi-exclamation-circle"
-            title="Documents could not be loaded"
-            detail="Refresh the page or try again after the API is available."
-          />
-        ) : documents.length === 0 ? (
-          <EmptyState
-            icon="bi-folder2-open"
-            title="No employee documents"
-            detail="Upload contracts, IDs, or supporting records to build the employee file archive."
-          />
-        ) : (
-          <div className="responsive-table report-table hr-dashboard-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Document</th>
-                  <th>File</th>
-                  <th>Uploaded</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {documents.map((document) => (
-                  <tr key={document.id}>
-                    <td data-label="Employee">
-                      <span className="table-label">
-                        <i className="bi bi-person" aria-hidden="true" />
-                        <span>
-                          <strong>{document.employeeName}</strong>
-                          <small>
-                            {document.employeeNumber} - {document.branchName}
-                          </small>
-                        </span>
-                      </span>
-                    </td>
-                    <td data-label="Document">
-                      <strong>{document.title}</strong>
-                      <small>{document.documentType}</small>
-                      {document.notes ? <small>{document.notes}</small> : null}
-                    </td>
-                    <td data-label="File">
-                      <strong>{document.fileName}</strong>
-                      <small>
-                        {document.contentType} - {formatFileSize(document.sizeBytes)}
-                      </small>
-                    </td>
-                    <td data-label="Uploaded">
-                      <strong>{formatDateTime(document.uploadedAt)}</strong>
-                      <small>{document.uploadedByUserDisplayName ?? 'HR user'}</small>
-                    </td>
-                    <td data-label="Actions">
-                      <span className="table-actions">
-                        <button
-                          className="text-button"
-                          type="button"
-                          onClick={() => handleViewDocument(document)}
-                        >
-                          <i className="bi bi-eye" aria-hidden="true" />
-                          View
-                        </button>
-                        <button
-                          className="text-button"
-                          type="button"
-                          onClick={() => handleDownloadDocument(document)}
-                        >
-                          <i className="bi bi-download" aria-hidden="true" />
-                          Download
-                        </button>
-                        <NavLink
-                          className="text-button"
-                          to={`/hr/employees/${document.employeeId}`}
-                        >
-                          <i className="bi bi-eye" aria-hidden="true" />
-                          Profile
-                        </NavLink>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </section>
-  );
-}
-
-function HrReportsPage({
-  branches,
-  currentUser,
-  organization,
-}: {
-  branches: Branch[];
-  currentUser: CurrentUser;
-  organization: Organization;
-}) {
-  const [branchFilter, setBranchFilter] = useState('');
-  const [reportScope, setReportScope] = useState<'summary' | 'detail'>('summary');
-  const fromDate = dateInputValue(new Date(Date.now() - 29 * 24 * 60 * 60 * 1000));
-  const toDate = dateInputValue(new Date());
-  const departmentsQuery = useQuery({ queryKey: ['hr', 'departments'], queryFn: getHrDepartments });
-  const jobTitlesQuery = useQuery({ queryKey: ['hr', 'job-titles'], queryFn: getHrJobTitles });
-  const employeesQuery = useQuery({
-    queryKey: ['hr', 'employees', 'reports'],
-    queryFn: () =>
-      getHrEmployees(new URLSearchParams({ page: '0', size: '200', sort: 'lastName,asc' })),
-  });
-  const attendanceQuery = useQuery({
-    queryKey: ['hr', 'attendance', 'reports', fromDate, toDate],
-    queryFn: () =>
-      getHrAttendance(
-        new URLSearchParams({
-          page: '0',
-          size: '200',
-          fromDate,
-          toDate,
-        }),
-      ),
-  });
-  const leavePageQuery = useQuery({
-    queryKey: ['hr', 'leave', 'reports'],
-    queryFn: getHrLeavePage,
-  });
-  const payrollQuery = useQuery({
-    queryKey: ['hr', 'payroll', 'reports'],
-    queryFn: getHrPayrollPage,
-  });
-
-  const branchOptions = scopedActiveBranches(branches, currentUser);
-  const summary = buildHrReportSummary({
-    branches: branchOptions,
-    branchFilter,
-    employees: employeesQuery.data?.items ?? [],
-    attendance: attendanceQuery.data?.items ?? [],
-    leavePage: leavePageQuery.data,
-    payrollPage: payrollQuery.data,
-    departments: departmentsQuery.data ?? [],
-    jobTitles: jobTitlesQuery.data ?? [],
-  });
-  const reportCards = [
-    {
-      type: 'workforce' as const,
-      icon: 'bi-people',
-      title: 'Workforce Census',
-      detail: `${summary.scopedEmployees.length} employees across ${summary.branchCount} branches`,
-      count: summary.scopedEmployees.length,
-    },
-    {
-      type: 'attendance' as const,
-      icon: 'bi-calendar2-check',
-      title: 'Attendance Register',
-      detail: `${summary.attendance.length} records from ${formatReportDateInput(fromDate)} to ${formatReportDateInput(toDate)}`,
-      count: summary.attendance.length,
-    },
-    {
-      type: 'leave' as const,
-      icon: 'bi-calendar-week',
-      title: 'Leave Liability',
-      detail: `${summary.leaveRequests.length} requests and ${summary.leaveBalances.length} balances`,
-      count: summary.leaveRequests.length,
-    },
-    {
-      type: 'payroll' as const,
-      icon: 'bi-wallet2',
-      title: 'Payroll Summary',
-      detail: `${summary.payrollRuns.length} payroll runs`,
-      count: summary.payrollRuns.length,
-    },
-    {
-      type: 'structure' as const,
-      icon: 'bi-diagram-3',
-      title: 'Org Structure',
-      detail: `${summary.departments.length} departments and ${summary.jobTitles.length} job titles`,
-      count: summary.departments.length + summary.jobTitles.length,
-    },
-  ];
-  const isLoading =
-    departmentsQuery.isPending ||
-    jobTitlesQuery.isPending ||
-    employeesQuery.isPending ||
-    attendanceQuery.isPending ||
-    leavePageQuery.isPending ||
-    payrollQuery.isPending;
-
-  return (
-    <section className="branch-workspace reports-center">
-      <PageHeader
-        eyebrow="Human resources"
-        title="HR Reports"
-        subtitle="Export workforce, attendance, leave, payroll, and organization structure reports from live HR data."
-        action={
-          <div className="hr-employee-page-actions">
-            <HrBackButton />
-            <button
-              className="primary-action compact-action"
-              type="button"
-              disabled={isLoading}
-              onClick={() => exportHrReportsWorkbook(summary, organization)}
-            >
-              <i className="bi bi-download" aria-hidden="true" />
-              Export Workbook
-            </button>
-          </div>
-        }
-      />
-
-      <div className="hr-kpi-grid hr-attendance-summary-grid">
-        <HrDashboardMetricCard
-          icon="bi-people"
-          label="Employees"
-          value={String(summary.scopedEmployees.length)}
-          detail={`${summary.activeEmployees} active`}
-          tone="blue"
-        />
-        <HrDashboardMetricCard
-          icon="bi-calendar2-check"
-          label="Attendance Rate"
-          value={`${summary.attendanceRate}%`}
-          detail={`${summary.lateCount} late records`}
-          tone="green"
-        />
-        <HrDashboardMetricCard
-          icon="bi-calendar-week"
-          label="Pending Leave"
-          value={String(summary.pendingLeave)}
-          detail={`${summary.availableLeaveDays} available days`}
-          tone="orange"
-        />
-        <HrDashboardMetricCard
-          icon="bi-cash-stack"
-          label="Net Payroll"
-          value={formatMoney(summary.netPayroll, organization.currencyCode)}
-          detail={`${summary.payrollRuns.length} runs`}
-          tone="purple"
-        />
-      </div>
-
-      <div className="catalog-filter-bar hr-filter-bar">
-        <label className="select-shell catalog-filter-select">
-          <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-            <option value="">All branches</option>
-            {branchOptions.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="select-shell catalog-filter-select">
-          <select
-            value={reportScope}
-            onChange={(event) => setReportScope(event.target.value as 'summary' | 'detail')}
-          >
-            <option value="summary">Summary view</option>
-            <option value="detail">Detailed view</option>
-          </select>
-        </label>
-      </div>
-
-      <div className="management-grid hr-attendance-layout">
-        <section className="panel-card branch-list-panel">
-          <PanelHeader icon="bi-pie-chart" title="Headcount by Department" />
-          {isLoading ? (
-            <LoadingPanel label="Loading department report..." />
-          ) : summary.departmentDistribution.length === 0 ? (
-            <EmptyState
-              icon="bi-pie-chart"
-              title="No department data"
-              detail="Assign employees to departments to populate this report."
-            />
-          ) : (
-            <DonutChart
-              centerValue={String(summary.scopedEmployees.length)}
-              centerLabel="Employees"
-              currencyCode={organization.currencyCode}
-              data={summary.departmentDistribution}
-              valueFormatter={(value) => `${value} employees`}
-            />
-          )}
-        </section>
-
-        <section className="panel-card branch-list-panel">
-          <PanelHeader icon="bi-bar-chart" title="Report Library" />
-          {isLoading ? (
-            <LoadingPanel label="Loading report library..." />
-          ) : (
-            <div className="user-directory-list">
-              {reportCards.map((card) => (
-                <article className="user-directory-row" key={card.type}>
-                  <div className="user-directory-identity">
-                    <span className="user-directory-icon">
-                      <i className={`bi ${card.icon}`} aria-hidden="true" />
-                    </span>
-                    <span>
-                      <strong>{card.title}</strong>
-                      <small>{card.detail}</small>
-                    </span>
-                  </div>
-                  <div className="user-directory-status">
-                    <span className="catalog-count-pill">{card.count}</span>
-                  </div>
-                  <div className="user-directory-actions">
-                    <button
-                      className="text-button"
-                      type="button"
-                      onClick={() => exportHrReportCsv(card.type, summary, organization)}
-                    >
-                      <i className="bi bi-download" aria-hidden="true" />
-                      CSV
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-
-      <section className="panel-card branch-list-panel">
-        <PanelHeader
-          icon="bi-table"
-          title={reportScope === 'summary' ? 'Executive HR Summary' : 'Detailed Employee Register'}
-          action={
-            <span className="catalog-count-pill">{summary.scopedEmployees.length} employees</span>
-          }
-        />
-        {isLoading ? (
-          <LoadingPanel label="Loading HR report..." />
-        ) : summary.scopedEmployees.length === 0 ? (
-          <EmptyState
-            icon="bi-table"
-            title="No HR report rows"
-            detail="Add employees or adjust filters to view report data."
-          />
-        ) : reportScope === 'summary' ? (
-          <div className="responsive-table report-table hr-dashboard-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Metric</th>
-                  <th>Value</th>
-                  <th>Context</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summaryRowsForHrReports(summary, organization).map((row) => (
-                  <tr key={row.metric}>
-                    <td data-label="Metric">
-                      <strong>{row.metric}</strong>
-                    </td>
-                    <td data-label="Value">{row.value}</td>
-                    <td data-label="Context">{row.context}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="responsive-table report-table hr-dashboard-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Number</th>
-                  <th>Branch</th>
-                  <th>Department</th>
-                  <th>Job Title</th>
-                  <th>Status</th>
-                  <th>Joined</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.scopedEmployees.map((employee) => (
-                  <tr key={employee.id}>
-                    <td data-label="Employee">
-                      <strong>{employee.fullName}</strong>
-                    </td>
-                    <td data-label="Number">{employee.employeeNumber}</td>
-                    <td data-label="Branch">{employee.branchName}</td>
-                    <td data-label="Department">{employee.departmentName ?? 'Unassigned'}</td>
-                    <td data-label="Job Title">{employee.jobTitleTitle ?? 'Unassigned'}</td>
-                    <td data-label="Status">{labelizeEnum(employee.employmentStatus)}</td>
-                    <td data-label="Joined">{formatDateOnly(employee.joiningDate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </section>
-  );
-}
-
-type HrRecruitmentStage = 'Sourcing' | 'Screening' | 'Pipeline Ready';
-type HrRecruitmentPriority = 'High' | 'Medium' | 'Covered';
-
-type HrRecruitmentRow = {
-  jobTitleId: string;
-  title: string;
-  departmentId: string;
-  departmentName: string;
-  branchId?: string;
-  branchName: string;
-  headcount: number;
-  stage: HrRecruitmentStage;
-  priority: HrRecruitmentPriority;
-};
-
-type HrPerformanceRow = {
-  employeeId: string;
-  employeeName: string;
-  employeeNumber: string;
-  branchId: string;
-  branchName: string;
-  departmentId?: string;
-  departmentName?: string;
-  jobTitleTitle?: string;
-  employmentStatus: EmployeeEmploymentStatus;
-  attendanceRate: number;
-  lateCount: number;
-  leaveDays: number;
-  overtimeMinutes: number;
-  basicSalary: number;
-  actualSalesAmount: number;
-  manualSalesAmount: number;
-  bonusAmount: number;
-  automaticBonusAmount: number;
-  manualBonusAmount: number;
-  lossAmount: number;
-  totalSalesAmount: number;
-  salesDays: EmployeePerformanceSummary['salesDays'];
-  qualifyingSalesDays: number;
-  salesBonusTarget: number;
-  salesBonusPerDay: number;
-  projectedNetPay: number;
-  paymentDestination: string;
-  score: number;
-  rating: string;
-};
-
-type HrReportType = 'workforce' | 'attendance' | 'leave' | 'payroll' | 'structure';
-
-type HrReportSummary = {
-  branchCount: number;
-  scopedEmployees: EmployeeSummary[];
-  activeEmployees: number;
-  attendance: AttendanceRecord[];
-  attendanceRate: number;
-  lateCount: number;
-  leaveTypes: LeaveType[];
-  leaveBalances: LeaveBalance[];
-  leaveRequests: LeaveRequestRecord[];
-  pendingLeave: number;
-  availableLeaveDays: number;
-  payrollComponents: PayrollComponent[];
-  payrollPeriods: PayrollPeriod[];
-  payrollRuns: PayrollRun[];
-  grossPayroll: number;
-  netPayroll: number;
-  departments: Department[];
-  jobTitles: JobTitle[];
-  departmentDistribution: { name: string; value: number; percent: number; color: string }[];
-};
-
-function scopedActiveBranches(branches: Branch[], currentUser: CurrentUser) {
-  return currentUser.branchIds.length === 0
-    ? branches.filter((branch) => branch.status === 'ACTIVE')
-    : branches.filter(
-        (branch) => branch.status === 'ACTIVE' && currentUser.branchIds.includes(branch.id),
-      );
-}
-
-function buildRecruitmentRows(
-  jobTitles: JobTitle[],
-  departments: Department[],
-  employees: EmployeeSummary[],
-): HrRecruitmentRow[] {
-  const departmentById = new Map(departments.map((department) => [department.id, department]));
-
-  return jobTitles
-    .filter((jobTitle) => jobTitle.active)
-    .map((jobTitle) => {
-      const department = departmentById.get(jobTitle.departmentId);
-      const activeEmployees = employees.filter(
-        (employee) => employee.active && employee.jobTitleId === jobTitle.id,
-      );
-      const headcount = activeEmployees.length;
-      const stage: HrRecruitmentStage =
-        headcount === 0 ? 'Sourcing' : headcount < 2 ? 'Screening' : 'Pipeline Ready';
-      const priority: HrRecruitmentPriority =
-        headcount === 0 ? 'High' : headcount < 2 ? 'Medium' : 'Covered';
-
-      return {
-        jobTitleId: jobTitle.id,
-        title: jobTitle.title,
-        departmentId: jobTitle.departmentId,
-        departmentName: department?.name ?? jobTitle.departmentName,
-        branchId: department?.branchId,
-        branchName: department?.branchName ?? 'All branches',
-        headcount,
-        stage,
-        priority,
-      };
-    })
-    .sort(
-      (left, right) =>
-        left.departmentName.localeCompare(right.departmentName) ||
-        left.title.localeCompare(right.title),
-    );
-}
-
-function daysSince(dateValue: string) {
-  const timestamp = new Date(dateValue).getTime();
-  if (Number.isNaN(timestamp)) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  return Math.floor((Date.now() - timestamp) / (24 * 60 * 60 * 1000));
-}
-
-function HrReadinessRow({
-  icon,
-  title,
-  detail,
-  ready,
-}: {
-  icon: string;
-  title: string;
-  detail: string;
-  ready: boolean;
-}) {
-  return (
-    <article className="user-directory-row">
-      <div className="user-directory-identity">
-        <span className="user-directory-icon">
-          <i className={`bi ${icon}`} aria-hidden="true" />
-        </span>
-        <span>
-          <strong>{title}</strong>
-          <small>{detail}</small>
-        </span>
-      </div>
-      <div className="user-directory-status">
-        <StatusPill status={ready ? 'posted' : 'pending'} label={ready ? 'Ready' : 'Needs setup'} />
-      </div>
-    </article>
-  );
-}
-
-function buildPerformanceRows(
-  employees: EmployeeSummary[],
-  attendance: AttendanceRecord[],
-  leaveRequests: LeaveRequestRecord[],
-  performanceSummaryByEmployee: Map<string, EmployeePerformanceSummary>,
-): HrPerformanceRow[] {
-  const attendanceByEmployee = new Map<string, AttendanceRecord[]>();
-  attendance.forEach((record) => {
-    const rows = attendanceByEmployee.get(record.employeeId) ?? [];
-    rows.push(record);
-    attendanceByEmployee.set(record.employeeId, rows);
-  });
-
-  const leaveDaysByEmployee = new Map<string, number>();
-  leaveRequests
-    .filter((request) => request.status === 'APPROVED')
-    .forEach((request) => {
-      leaveDaysByEmployee.set(
-        request.employeeId,
-        (leaveDaysByEmployee.get(request.employeeId) ?? 0) + request.requestedDays,
-      );
-    });
-
-  return employees
-    .map((employee) => {
-      const summary = performanceSummaryByEmployee.get(employee.id);
-      const employeeAttendance = attendanceByEmployee.get(employee.id) ?? [];
-      const presentRecords = employeeAttendance.filter((record) =>
-        ['PRESENT', 'LATE', 'HALF_DAY'].includes(record.status),
-      ).length;
-      const lateCount = employeeAttendance.filter((record) => record.status === 'LATE').length;
-      const attendanceRate =
-        employeeAttendance.length === 0
-          ? employee.active
-            ? 100
-            : 0
-          : Math.round((presentRecords / employeeAttendance.length) * 100);
-      const punctualityRate =
-        employeeAttendance.length === 0
-          ? 100
-          : Math.round(((employeeAttendance.length - lateCount) / employeeAttendance.length) * 100);
-      const leaveDays = leaveDaysByEmployee.get(employee.id) ?? 0;
-      const overtimeMinutes = employeeAttendance.reduce(
-        (sum, record) => sum + record.overtimeMinutes,
-        0,
-      );
-      const attendanceScore = clampPercent(
-        Math.round(
-          attendanceRate * 0.55 +
-            punctualityRate * 0.25 +
-            (employee.active ? 20 : 8) -
-            Math.min(leaveDays, 15),
-        ),
-      );
-      const score = summary?.averagePerformanceScore ?? attendanceScore;
-      const rating = score >= 85 ? 'Exceeds' : score >= 70 ? 'Meets' : 'Needs Support';
-
-      return {
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        employeeNumber: employee.employeeNumber,
-        branchId: employee.branchId,
-        branchName: employee.branchName,
-        departmentId: employee.departmentId,
-        departmentName: employee.departmentName,
-        jobTitleTitle: employee.jobTitleTitle,
-        employmentStatus: employee.employmentStatus,
-        attendanceRate,
-        lateCount,
-        leaveDays,
-        overtimeMinutes,
-        basicSalary: summary?.basicSalary ?? employee.basicSalary ?? 0,
-        actualSalesAmount: summary?.actualSalesAmount ?? 0,
-        manualSalesAmount: summary?.manualSalesAmount ?? 0,
-        bonusAmount: summary?.bonusAmount ?? 0,
-        automaticBonusAmount: summary?.automaticBonusAmount ?? 0,
-        manualBonusAmount: summary?.manualBonusAmount ?? 0,
-        lossAmount: summary?.lossAmount ?? 0,
-        totalSalesAmount: summary?.totalSalesAmount ?? 0,
-        salesDays: summary?.salesDays ?? [],
-        qualifyingSalesDays: summary?.qualifyingSalesDays ?? 0,
-        salesBonusTarget: summary?.salesBonusTarget ?? 0,
-        salesBonusPerDay: summary?.salesBonusPerDay ?? 0,
-        projectedNetPay: summary?.projectedNetPay ?? employee.basicSalary ?? 0,
-        paymentDestination: summary?.paymentDestination ?? 'Not configured',
-        score,
-        rating,
-      };
-    })
-    .sort(
-      (left, right) =>
-        right.score - left.score || left.employeeName.localeCompare(right.employeeName),
-    );
-}
-
-function buildHrReportSummary({
-  branches,
-  branchFilter,
-  employees,
-  attendance,
-  leavePage,
-  payrollPage,
-  departments,
-  jobTitles,
-}: {
-  branches: Branch[];
-  branchFilter: string;
-  employees: EmployeeSummary[];
-  attendance: AttendanceRecord[];
-  leavePage?: LeavePage;
-  payrollPage?: PayrollPage;
-  departments: Department[];
-  jobTitles: JobTitle[];
-}): HrReportSummary {
-  const scopedEmployees = employees.filter(
-    (employee) => !branchFilter || employee.branchId === branchFilter,
-  );
-  const scopedEmployeeIds = new Set(scopedEmployees.map((employee) => employee.id));
-  const scopedAttendance = attendance.filter((record) => scopedEmployeeIds.has(record.employeeId));
-  const leaveTypes = leavePage?.leaveTypes ?? [];
-  const leaveBalances = (leavePage?.balances ?? []).filter((balance) =>
-    scopedEmployeeIds.has(balance.employeeId),
-  );
-  const leaveRequests = (leavePage?.requests ?? []).filter((request) =>
-    scopedEmployeeIds.has(request.employeeId),
-  );
-  const payrollRuns = (payrollPage?.runs ?? []).filter(
-    (run) => !branchFilter || run.branchId === branchFilter || !run.branchId,
-  );
-  const grossPayroll = payrollRuns
-    .flatMap((run) => run.employees)
-    .reduce((sum, employee) => sum + employee.grossPay, 0);
-  const netPayroll = payrollRuns
-    .flatMap((run) => run.employees)
-    .reduce((sum, employee) => sum + employee.netPay, 0);
-  const presentRecords = scopedAttendance.filter((record) =>
-    ['PRESENT', 'LATE', 'HALF_DAY'].includes(record.status),
-  ).length;
-  const attendanceRate =
-    scopedAttendance.length === 0
-      ? 0
-      : Math.round((presentRecords / scopedAttendance.length) * 100);
-  const colors = ['#2878f0', '#22c55e', '#fb923c', '#8b5cf6', '#ec4899', '#0ea5e9'];
-  const departmentDistribution = departments
-    .map((department, index) => {
-      const value = scopedEmployees.filter(
-        (employee) => employee.departmentId === department.id,
-      ).length;
-      return {
-        name: department.name,
-        value,
-        percent:
-          scopedEmployees.length === 0 ? 0 : Math.round((value / scopedEmployees.length) * 100),
-        color: colors[index % colors.length],
-      };
-    })
-    .filter((entry) => entry.value > 0);
-  const unassignedEmployees = scopedEmployees.filter((employee) => !employee.departmentId).length;
-  if (unassignedEmployees > 0) {
-    departmentDistribution.push({
-      name: 'Unassigned',
-      value: unassignedEmployees,
-      percent:
-        scopedEmployees.length === 0
-          ? 0
-          : Math.round((unassignedEmployees / scopedEmployees.length) * 100),
-      color: '#64748b',
-    });
-  }
-
-  return {
-    branchCount: branchFilter ? 1 : branches.length,
-    scopedEmployees,
-    activeEmployees: scopedEmployees.filter((employee) => employee.active).length,
-    attendance: scopedAttendance,
-    attendanceRate,
-    lateCount: scopedAttendance.filter((record) => record.status === 'LATE').length,
-    leaveTypes,
-    leaveBalances,
-    leaveRequests,
-    pendingLeave: leaveRequests.filter((request) => request.status === 'PENDING_APPROVAL').length,
-    availableLeaveDays: leaveBalances.reduce((sum, balance) => sum + balance.availableDays, 0),
-    payrollComponents: payrollPage?.components ?? [],
-    payrollPeriods: payrollPage?.periods ?? [],
-    payrollRuns,
-    grossPayroll,
-    netPayroll,
-    departments,
-    jobTitles,
-    departmentDistribution,
-  };
-}
-
-function summaryRowsForHrReports(summary: HrReportSummary, organization: Organization) {
-  return [
-    {
-      metric: 'Employees',
-      value: String(summary.scopedEmployees.length),
-      context: `${summary.activeEmployees} active employees`,
-    },
-    {
-      metric: 'Attendance rate',
-      value: `${summary.attendanceRate}%`,
-      context: `${summary.attendance.length} records, ${summary.lateCount} late`,
-    },
-    {
-      metric: 'Leave requests',
-      value: String(summary.leaveRequests.length),
-      context: `${summary.pendingLeave} pending approvals`,
-    },
-    {
-      metric: 'Available leave days',
-      value: String(summary.availableLeaveDays),
-      context: `${summary.leaveBalances.length} leave balance rows`,
-    },
-    {
-      metric: 'Gross payroll',
-      value: formatMoney(summary.grossPayroll, organization.currencyCode),
-      context: `${summary.payrollRuns.length} payroll runs`,
-    },
-    {
-      metric: 'Net payroll',
-      value: formatMoney(summary.netPayroll, organization.currencyCode),
-      context: `${summary.payrollComponents.length} payroll components`,
-    },
-    {
-      metric: 'Structure',
-      value: `${summary.departments.length} departments`,
-      context: `${summary.jobTitles.length} job titles`,
-    },
-  ];
-}
-
-function exportHrDocumentsCsv(documents: EmployeeDocument[]) {
-  downloadCsv('keen-hr-documents.csv', [
-    [
-      'Employee',
-      'Employee Number',
-      'Branch',
-      'Document Type',
-      'Title',
-      'File Name',
-      'Content Type',
-      'Size Bytes',
-      'Uploaded At',
-      'Uploaded By',
-      'Notes',
-    ],
-    ...documents.map((document) => [
-      document.employeeName,
-      document.employeeNumber,
-      document.branchName,
-      document.documentType,
-      document.title,
-      document.fileName,
-      document.contentType,
-      document.sizeBytes,
-      formatDateTime(document.uploadedAt),
-      document.uploadedByUserDisplayName ?? '',
-      document.notes ?? '',
-    ]),
-  ]);
-}
-
-function exportHrReportsWorkbook(summary: HrReportSummary, organization: Organization) {
-  downloadWorkbookRows('keen-hr-reports.xlsx', 'HR Reports', [
-    ['Executive Summary'],
-    ['Metric', 'Value', 'Context'],
-    ...summaryRowsForHrReports(summary, organization).map((row) => [
-      row.metric,
-      row.value,
-      row.context,
-    ]),
-    [],
-    ['Employee Register'],
-    ['Employee', 'Number', 'Branch', 'Department', 'Job Title', 'Status', 'Joined'],
-    ...summary.scopedEmployees.map((employee) => [
-      employee.fullName,
-      employee.employeeNumber,
-      employee.branchName,
-      employee.departmentName ?? 'Unassigned',
-      employee.jobTitleTitle ?? 'Unassigned',
-      labelizeEnum(employee.employmentStatus),
-      employee.joiningDate,
-    ]),
-    [],
-    ['Attendance Register'],
-    ['Employee', 'Date', 'Branch', 'Status', 'Worked Minutes', 'Overtime Minutes', 'Late Minutes'],
-    ...summary.attendance.map((record) => [
-      record.employeeName,
-      record.attendanceDate,
-      record.branchName,
-      labelizeEnum(record.status),
-      record.workedMinutes,
-      record.overtimeMinutes,
-      record.lateMinutes,
-    ]),
-  ]);
-}
-
-function exportHrReportCsv(
-  reportType: HrReportType,
-  summary: HrReportSummary,
-  organization: Organization,
-) {
-  switch (reportType) {
-    case 'workforce':
-      downloadCsv('keen-hr-workforce.csv', [
-        [
-          'Employee',
-          'Number',
-          'Branch',
-          'Department',
-          'Job Title',
-          'Employment Type',
-          'Status',
-          'Joined',
-        ],
-        ...summary.scopedEmployees.map((employee) => [
-          employee.fullName,
-          employee.employeeNumber,
-          employee.branchName,
-          employee.departmentName ?? 'Unassigned',
-          employee.jobTitleTitle ?? 'Unassigned',
-          labelizeEnum(employee.employmentType),
-          labelizeEnum(employee.employmentStatus),
-          employee.joiningDate,
-        ]),
-      ]);
-      break;
-    case 'attendance':
-      downloadCsv('keen-hr-attendance.csv', [
-        [
-          'Employee',
-          'Number',
-          'Date',
-          'Branch',
-          'Status',
-          'Worked Minutes',
-          'Overtime Minutes',
-          'Late Minutes',
-        ],
-        ...summary.attendance.map((record) => [
-          record.employeeName,
-          record.employeeNumber,
-          record.attendanceDate,
-          record.branchName,
-          labelizeEnum(record.status),
-          record.workedMinutes,
-          record.overtimeMinutes,
-          record.lateMinutes,
-        ]),
-      ]);
-      break;
-    case 'leave':
-      downloadCsv('keen-hr-leave.csv', [
-        ['Employee', 'Leave Type', 'Start', 'End', 'Days', 'Status', 'Approver'],
-        ...summary.leaveRequests.map((request) => [
-          request.employeeName,
-          request.leaveTypeName,
-          request.startDate,
-          request.endDate,
-          request.requestedDays,
-          labelizeEnum(request.status),
-          request.approverUserDisplayName ?? '',
-        ]),
-      ]);
-      break;
-    case 'payroll':
-      downloadCsv('keen-hr-payroll.csv', [
-        ['Run', 'Period', 'Branch', 'Status', 'Employees', 'Gross Pay', 'Net Pay'],
-        ...summary.payrollRuns.map((run) => [
-          run.name,
-          run.payrollPeriodName,
-          run.branchName ?? 'All branches',
-          labelizeEnum(run.status),
-          run.employees.length,
-          run.employees.reduce((sum, employee) => sum + employee.grossPay, 0),
-          run.employees.reduce((sum, employee) => sum + employee.netPay, 0),
-        ]),
-        ['Total', '', '', '', '', summary.grossPayroll, summary.netPayroll],
-        ['Currency', organization.currencyCode, '', '', '', '', ''],
-      ]);
-      break;
-    case 'structure':
-      downloadCsv('keen-hr-structure.csv', [
-        ['Type', 'Name', 'Code', 'Department', 'Branch', 'Active'],
-        ...summary.departments.map((department) => [
-          'Department',
-          department.name,
-          department.code,
-          '',
-          department.branchName ?? 'All branches',
-          department.active ? 'Yes' : 'No',
-        ]),
-        ...summary.jobTitles.map((jobTitle) => [
-          'Job Title',
-          jobTitle.title,
-          jobTitle.code,
-          jobTitle.departmentName,
-          '',
-          jobTitle.active ? 'Yes' : 'No',
-        ]),
-      ]);
-      break;
-    default:
-      break;
-  }
-}
-
-function clampPercent(value: number) {
-  return Math.max(0, Math.min(100, value));
-}
-
-type ProductCategoryFormState = ProductCategoryRequest;
-
-type ProductFormState = {
-  name: string;
-  sku: string;
-  barcode: string;
-  categoryId: string;
-  department: string;
-  description: string;
-  imageUrl: string;
-  unitPrice: string;
-  costPrice: string;
-  vatCategory: ProductVatCategory;
-  sizes: string;
-  colors: string;
-  status: Product['status'];
-};
-
-type ProductIdentity = Pick<ProductFormState, 'sku' | 'barcode'>;
-
-type CatalogDialog = 'category' | 'product' | null;
-type ProductStatusFilter = 'all' | Product['status'];
-
-function defaultCategoryForm(): ProductCategoryFormState {
+function defaultProductForm(categories: ProductCategory[], productCount: number): ProductFormState {
   return {
     name: '',
-    code: '',
-    status: 'ACTIVE',
-  };
-}
-
-function defaultProductForm(
-  categoryId = '',
-  vatCategory: ProductVatCategory = 'A',
-  identity: Partial<ProductIdentity> = {},
-): ProductFormState {
-  return {
-    name: '',
-    sku: identity.sku ?? '',
-    barcode: identity.barcode ?? '',
-    categoryId,
+    sku: `SKU-${String(productCount + 1).padStart(4, '0')}`,
+    barcode: generatedBarcode(),
+    categoryId: categories.find((category) => category.status === 'ACTIVE')?.id ?? '',
     department: '',
     description: '',
     imageUrl: '',
-    unitPrice: '',
-    costPrice: '',
-    vatCategory,
-    sizes: '',
-    colors: '',
+    unitPrice: 0,
+    costPrice: 0,
+    vatCategory: 'A',
+    sizes: [],
+    colors: [],
     status: 'ACTIVE',
   };
 }
 
-function generateProductIdentity(products: Product[]): ProductIdentity {
-  const usedSkus = new Set(products.map((product) => product.sku.trim().toUpperCase()));
-  const usedBarcodes = new Set(
-    products
-      .map((product) => product.barcode?.trim())
-      .filter((barcode): barcode is string => Boolean(barcode)),
-  );
-
-  for (let sequence = products.length + 1; sequence < 1_000_000_000; sequence += 1) {
-    const sku = buildGeneratedSku(sequence);
-    const barcode = buildGeneratedBarcode(sequence);
-    if (!usedSkus.has(sku.toUpperCase()) && !usedBarcodes.has(barcode)) {
-      return { sku, barcode };
-    }
-  }
-
-  const fallbackSequence = Date.now() % 1_000_000_000;
-  return {
-    sku: buildGeneratedSku(fallbackSequence),
-    barcode: buildGeneratedBarcode(fallbackSequence),
-  };
-}
-
-function buildGeneratedSku(sequence: number) {
-  return `SKU-${String(sequence).padStart(4, '0')}`;
-}
-
-function buildGeneratedBarcode(sequence: number) {
-  return withEan13CheckDigit(`200${String(sequence).padStart(9, '0').slice(-9)}`);
-}
-
-function withEan13CheckDigit(firstTwelveDigits: string) {
-  const sum = firstTwelveDigits
-    .split('')
-    .reduce((total, digit, index) => total + Number(digit) * (index % 2 === 0 ? 1 : 3), 0);
-  return `${firstTwelveDigits}${(10 - (sum % 10)) % 10}`;
-}
-
-function ProductsPage({ organization }: { organization: Organization }) {
+function ProductsPage({
+  organization,
+  view = 'products',
+}: {
+  organization: Organization;
+  view?: 'products' | 'categories';
+}) {
   const queryClient = useQueryClient();
+  const productsQuery = useQuery({ queryKey: ['products'], queryFn: getProducts });
   const categoriesQuery = useQuery({
     queryKey: ['product-categories'],
     queryFn: getProductCategories,
   });
-  const productsQuery = useQuery({ queryKey: ['products'], queryFn: getProducts });
-  const categories = categoriesQuery.data ?? [];
   const products = productsQuery.data ?? [];
-  const activeCategories = categories.filter((category) => category.status === 'ACTIVE');
-  const firstActiveCategoryId = activeCategories[0]?.id ?? '';
-  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const categories = categoriesQuery.data ?? [];
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  const [categoryForm, setCategoryForm] = useState<ProductCategoryFormState>(() =>
-    defaultCategoryForm(),
-  );
-  const [productForm, setProductForm] = useState<ProductFormState>(() =>
-    defaultProductForm('', organization.defaultProductVatCategory),
-  );
-  const [message, setMessage] = useState('');
+  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
+  const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [form, setForm] = useState<ProductFormState>(() => defaultProductForm([], 0));
+  const [categoryName, setCategoryName] = useState('');
+  const [categoryCode, setCategoryCode] = useState('');
   const [error, setError] = useState('');
-  const [isCatalogImporting, setIsCatalogImporting] = useState(false);
-  const [catalogDialog, setCatalogDialog] = useState<CatalogDialog>(null);
-  const [productSearch, setProductSearch] = useState('');
-  const [productCategoryFilter, setProductCategoryFilter] = useState('all');
-  const [productStatusFilter, setProductStatusFilter] = useState<ProductStatusFilter>('all');
-  const editingCategory = categories.find((category) => category.id === editingCategoryId);
+  const [message, setMessage] = useState('');
   const editingProduct = products.find((product) => product.id === editingProductId);
-  const generatedProductIdentity = useMemo(() => generateProductIdentity(products), [products]);
-  const productFormCategoryName =
-    activeCategories.find((category) => category.id === productForm.categoryId)?.name ??
-    editingProduct?.categoryName ??
-    'Products';
-  const normalizedProductSearch = productSearch.trim().toLowerCase();
-  const filteredProducts = products.filter((product) => {
-    const matchesSearch =
-      !normalizedProductSearch ||
-      [
-        product.name,
-        product.sku,
-        product.barcode ?? '',
-        product.categoryName,
-        product.department ?? '',
-        product.description ?? '',
-        product.sizes.join(' '),
-        product.colors.join(' '),
-      ]
-        .join(' ')
-        .toLowerCase()
-        .includes(normalizedProductSearch);
-    const matchesCategory =
-      productCategoryFilter === 'all' || product.categoryId === productCategoryFilter;
-    const matchesStatus = productStatusFilter === 'all' || product.status === productStatusFilter;
-
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
-  const productFormPreview = {
-    name: productForm.name.trim() || 'Product image',
-    categoryName: productFormCategoryName,
-    imageUrl: productForm.imageUrl,
-  };
-  const productImageUrlInputValue = isInlineProductImage(productForm.imageUrl)
-    ? ''
-    : productForm.imageUrl;
 
   useEffect(() => {
-    if (!productForm.categoryId && firstActiveCategoryId) {
-      setProductForm((current) => ({
-        ...current,
-        categoryId: firstActiveCategoryId,
-        vatCategory: current.vatCategory || organization.defaultProductVatCategory,
-      }));
-    }
-  }, [firstActiveCategoryId, organization.defaultProductVatCategory, productForm.categoryId]);
-
-  const saveCategoryMutation = useMutation({
-    mutationFn: (payload: ProductCategoryRequest) =>
-      editingCategoryId
-        ? updateProductCategory(editingCategoryId, payload)
-        : createProductCategory(payload),
-    onSuccess: async (category) => {
-      await queryClient.invalidateQueries({ queryKey: ['product-categories'] });
-      setEditingCategoryId(null);
-      setCatalogDialog(null);
-      setCategoryForm(defaultCategoryForm());
-      setProductForm((current) =>
-        current.categoryId ? current : { ...current, categoryId: category.id },
-      );
-      setMessage(`${category.name} category saved.`);
-    },
-  });
-
-  const deactivateCategoryMutation = useMutation({
-    mutationFn: deactivateProductCategory,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['product-categories'] });
-      setMessage('Category deactivated.');
-    },
-  });
-
-  const reactivateCategoryMutation = useMutation({
-    mutationFn: (category: ProductCategory) =>
-      updateProductCategory(category.id, {
-        name: category.name,
-        code: category.code,
-        status: 'ACTIVE',
-      }),
-    onSuccess: async (category) => {
-      await queryClient.invalidateQueries({ queryKey: ['product-categories'] });
-      setMessage(`${category.name} category reactivated.`);
-    },
-  });
+    if (!isProductDialogOpen && !isCategoryDialogOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsProductDialogOpen(false);
+        setIsCategoryDialogOpen(false);
+      }
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [isProductDialogOpen, isCategoryDialogOpen]);
 
   const saveProductMutation = useMutation({
     mutationFn: (payload: ProductRequest) =>
@@ -21373,116 +14731,129 @@ function ProductsPage({ organization }: { organization: Organization }) {
     onSuccess: async (product) => {
       await queryClient.invalidateQueries({ queryKey: ['products'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      setIsProductDialogOpen(false);
       setEditingProductId(null);
-      setCatalogDialog(null);
-      setProductForm(
-        defaultProductForm(product.categoryId, organization.defaultProductVatCategory),
-      );
       setMessage(`${product.name} saved.`);
     },
   });
-
-  const deactivateProductMutation = useMutation({
-    mutationFn: deactivateProduct,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
-      setMessage('Product deactivated.');
-    },
-  });
-  const reactivateProductMutation = useMutation({
-    mutationFn: (product: Product) =>
-      updateProduct(product.id, {
-        name: product.name,
-        sku: product.sku,
-        barcode: product.barcode ?? '',
-        categoryId: product.categoryId,
-        department: product.department ?? '',
-        description: product.description ?? '',
-        imageUrl: product.imageUrl ?? '',
-        unitPrice: product.unitPrice,
-        costPrice: product.costPrice ?? 0,
-        vatCategory: product.vatCategory,
-        sizes: product.sizes,
-        colors: product.colors,
+  const saveCategoryMutation = useMutation({
+    mutationFn: () =>
+      createProductCategory({
+        name: categoryName.trim(),
+        code: categoryCode.trim().toUpperCase(),
         status: 'ACTIVE',
       }),
-    onSuccess: async (product) => {
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
-      setMessage(`${product.name} reactivated.`);
+    onSuccess: async (category) => {
+      await queryClient.invalidateQueries({ queryKey: ['product-categories'] });
+      setCategoryName('');
+      setCategoryCode('');
+      setIsCategoryDialogOpen(false);
+      setMessage(`${category.name} category saved.`);
     },
   });
-  const isCategoryStatusBusy =
-    deactivateCategoryMutation.isPending || reactivateCategoryMutation.isPending;
-  const isProductStatusBusy =
-    deactivateProductMutation.isPending || reactivateProductMutation.isPending;
-  const isProductBusy = saveProductMutation.isPending || isCatalogImporting;
 
-  function editCategory(category: ProductCategory) {
-    setEditingCategoryId(category.id);
-    setCategoryForm({ name: category.name, code: category.code, status: category.status });
+  function resetProductForm() {
+    setEditingProductId(null);
+    setForm(defaultProductForm(categories, products.length));
     setError('');
     setMessage('');
-    setCatalogDialog('category');
+    setIsProductDialogOpen(true);
   }
 
   function editProduct(product: Product) {
     setEditingProductId(product.id);
-    setProductForm({
-      name: product.name,
+    setForm({
+      name: product.variantName ?? product.name,
+      productType: product.productType ?? 'SIMPLE',
+      parentProductId: product.parentProductId,
+      variantAttributes: product.variantAttributes ?? {},
+      reorderLevel: product.reorderLevel ?? 0,
       sku: product.sku,
-      barcode: product.barcode?.trim() || generatedProductIdentity.barcode,
+      barcode: product.barcode || generatedBarcode(),
       categoryId: product.categoryId,
       department: product.department ?? '',
       description: product.description ?? '',
       imageUrl: product.imageUrl ?? '',
-      unitPrice: String(product.unitPrice),
-      costPrice: product.costPrice == null ? '' : String(product.costPrice),
+      unitPrice: product.unitPrice,
+      costPrice: product.costPrice ?? 0,
       vatCategory: product.vatCategory ?? organization.defaultProductVatCategory,
-      sizes: product.sizes.join(', '),
-      colors: product.colors.join(', '),
+      sizes: product.sizes,
+      colors: product.colors,
       status: product.status,
     });
     setError('');
     setMessage('');
-    setCatalogDialog('product');
+    setIsProductDialogOpen(true);
   }
 
-  function resetProductForm() {
-    setEditingProductId(null);
-    setProductForm(
-      defaultProductForm(
-        firstActiveCategoryId,
-        organization.defaultProductVatCategory,
-        generatedProductIdentity,
-      ),
-    );
+  async function handleProductSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setError('');
     setMessage('');
+    try {
+      await saveProductMutation.mutateAsync({
+        ...form,
+        name: form.name.trim(),
+        sku: form.sku.trim().toUpperCase(),
+        barcode: form.barcode.trim(),
+        department: form.department.trim(),
+        description: form.description.trim(),
+        imageUrl: form.imageUrl.trim(),
+        sizes: form.sizes.map((value) => value.trim()).filter(Boolean),
+        colors: form.colors.map((value) => value.trim()).filter(Boolean),
+      });
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save product');
+    }
   }
 
-  function openNewCategory() {
-    setEditingCategoryId(null);
-    setCategoryForm(defaultCategoryForm());
+  async function handleProductStatus(product: Product) {
     setError('');
     setMessage('');
-    setCatalogDialog('category');
+    try {
+      if (product.status === 'ACTIVE') {
+        await deactivateProduct(product.id);
+        await queryClient.invalidateQueries({ queryKey: ['products'] });
+        setMessage(`${product.name} deactivated.`);
+        return;
+      }
+      const savedProduct = await updateProduct(product.id, {
+        ...product,
+        name: product.variantName ?? product.name,
+        barcode: product.barcode ?? '',
+        department: product.department ?? '',
+        description: product.description ?? '',
+        imageUrl: product.imageUrl ?? '',
+        costPrice: product.costPrice ?? 0,
+        status: 'ACTIVE',
+      });
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      setMessage(`${savedProduct.name} reactivated.`);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to update product');
+    }
   }
 
-  function closeCategoryDialog() {
-    setEditingCategoryId(null);
-    setCategoryForm(defaultCategoryForm());
+  async function handleCategoryStatus(category: ProductCategory) {
     setError('');
-    setCatalogDialog(null);
-  }
-
-  function openNewProduct() {
-    resetProductForm();
-    setCatalogDialog('product');
-  }
-
-  function closeProductDialog() {
-    resetProductForm();
-    setCatalogDialog(null);
+    setMessage('');
+    try {
+      if (category.status === 'ACTIVE') {
+        await deactivateProductCategory(category.id);
+        await queryClient.invalidateQueries({ queryKey: ['product-categories'] });
+        setMessage(`${category.name} category deactivated.`);
+        return;
+      }
+      await updateProductCategory(category.id, {
+        name: category.name,
+        code: category.code,
+        status: 'ACTIVE',
+      });
+      await queryClient.invalidateQueries({ queryKey: ['product-categories'] });
+      setMessage(`${category.name} category reactivated.`);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to update category');
+    }
   }
 
   async function handleCategorySubmit(event: FormEvent<HTMLFormElement>) {
@@ -21490,820 +14861,548 @@ function ProductsPage({ organization }: { organization: Organization }) {
     setError('');
     setMessage('');
     try {
-      await saveCategoryMutation.mutateAsync({
-        name: categoryForm.name.trim(),
-        code: categoryForm.code.trim().toUpperCase(),
-        status: categoryForm.status,
-      });
+      await saveCategoryMutation.mutateAsync();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Unable to save category');
     }
   }
 
-  async function handleProductSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-
-    if (!productForm.categoryId) {
-      setError('Create an active category before registering products');
-      return;
-    }
-
-    if (!productForm.costPrice.trim()) {
-      setError('Buying Price is required.');
-      return;
-    }
-
-    try {
-      await saveProductMutation.mutateAsync({
-        name: productForm.name.trim(),
-        sku: productForm.sku.trim().toUpperCase(),
-        barcode: productForm.barcode.trim() || generatedProductIdentity.barcode,
-        categoryId: productForm.categoryId,
-        department: productForm.department.trim(),
-        description: productForm.description.trim(),
-        imageUrl: productForm.imageUrl.trim(),
-        unitPrice: Number(productForm.unitPrice),
-        costPrice: Number(productForm.costPrice),
-        vatCategory: productForm.vatCategory,
-        sizes: parseCsv(productForm.sizes),
-        colors: parseCsv(productForm.colors),
-        status: productForm.status,
-      });
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to save product');
-    }
-  }
-
-  async function handleProductCatalogUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-
-    if (!file) {
-      return;
-    }
-
-    setError('');
-    setMessage('');
-    setIsCatalogImporting(true);
-
-    try {
-      const rows = await readWorkbookRows(file);
-      if (rows.length === 0) {
-        setError('The product catalog worksheet is empty.');
-        return;
-      }
-
-      const categoryImport = await ensureWorksheetCategories(rows, categories);
-      const productBySku = new Map(products.map((product) => [product.sku.toUpperCase(), product]));
-      let created = 0;
-      let updated = 0;
-
-      for (const [index, row] of rows.entries()) {
-        const payload = productRequestFromWorksheetRow(
-          row,
-          categoryImport.categories,
-          organization.defaultProductVatCategory,
-          index + 2,
-        );
-        const existingProduct = payload.sku ? productBySku.get(payload.sku) : undefined;
-        if (existingProduct) {
-          const saved = await updateProduct(existingProduct.id, payload);
-          productBySku.set(saved.sku.toUpperCase(), saved);
-          updated += 1;
-        } else {
-          const saved = await createProduct(payload);
-          productBySku.set(saved.sku.toUpperCase(), saved);
-          created += 1;
-        }
-      }
-
-      await queryClient.invalidateQueries({ queryKey: ['product-categories'] });
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
-      await queryClient.invalidateQueries({ queryKey: ['inventory'] });
-      setProductForm((current) =>
-        current.categoryId
-          ? current
-          : {
-              ...current,
-              categoryId:
-                categoryImport.categories.find((category) => category.status === 'ACTIVE')?.id ??
-                '',
-            },
-      );
-      const categorySummary =
-        categoryImport.created > 0
-          ? ` Created ${categoryImport.created} ${
-              categoryImport.created === 1 ? 'category' : 'categories'
-            }.`
-          : '';
-      setMessage(`Imported ${created} new and ${updated} updated products.${categorySummary}`);
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to import products');
-    } finally {
-      setIsCatalogImporting(false);
-    }
-  }
-
-  function handleProductImageUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-
-    if (!file) {
-      return;
-    }
-
-    setError('');
-    setMessage('');
-
-    if (!file.type.startsWith('image/')) {
-      setError('Select an image file for the product.');
-      return;
-    }
-
-    if (file.size > PRODUCT_IMAGE_MAX_BYTES) {
-      setError('Product image must be 1 MB or smaller.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.addEventListener('load', () => {
-      if (typeof reader.result === 'string') {
-        setProductForm((current) => ({ ...current, imageUrl: reader.result as string }));
-        return;
-      }
-
-      setError('Unable to read product image.');
-    });
-    reader.addEventListener('error', () => setError('Unable to read product image.'));
-    reader.readAsDataURL(file);
-  }
-
-  async function handleDeactivateCategory(category: ProductCategory) {
-    setError('');
-    setMessage('');
-    try {
-      if (category.status === 'ACTIVE') {
-        await deactivateCategoryMutation.mutateAsync(category.id);
-      } else {
-        await reactivateCategoryMutation.mutateAsync(category);
-      }
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to update category');
-    }
-  }
-
-  async function handleDeactivateProduct(product: Product) {
-    setError('');
-    setMessage('');
-    try {
-      if (product.status === 'ACTIVE') {
-        await deactivateProductMutation.mutateAsync(product.id);
-      } else {
-        await reactivateProductMutation.mutateAsync(product);
-      }
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to update product');
-    }
-  }
-
   return (
-    <section className="branch-workspace">
+    <section className="branch-workspace product-catalog-workspace">
       <PageHeader
-        title="Product Catalog"
-        subtitle="Register categories, products, prices, sizes, and colors."
+        title={view === 'products' ? 'Product Catalog' : 'Product Categories'}
+        subtitle={
+          view === 'products'
+            ? 'Manage product details, variants and selling prices.'
+            : 'Manage the categories used to organize your products.'
+        }
         action={
           <div className="header-actions">
             <button
               className="secondary-action compact-action"
               type="button"
-              onClick={() => {
-                setError('');
-                setMessage('');
-                try {
-                  downloadProductCatalogWorkbook(products, categories, organization);
-                  setMessage('Product catalog workbook downloaded.');
-                } catch (caughtError) {
-                  setError(
-                    caughtError instanceof Error
-                      ? caughtError.message
-                      : 'Unable to download product catalog workbook.',
-                  );
-                }
-              }}
+              onClick={() => downloadProductCatalogWorkbook(products, categories, organization)}
             >
               <i className="bi bi-file-earmark-spreadsheet" aria-hidden="true" />
               Download Excel
             </button>
-            <label className="secondary-action compact-action product-image-upload-button">
-              <i className="bi bi-upload" aria-hidden="true" />
-              {isCatalogImporting ? 'Importing...' : 'Upload Excel'}
-              <input
-                accept=".xlsx,.xls,.csv"
-                aria-label="Upload product catalog Excel"
-                disabled={isCatalogImporting}
-                type="file"
-                onChange={handleProductCatalogUpload}
-              />
-            </label>
             <button
               className="primary-action compact-action"
               type="button"
-              onClick={openNewProduct}
+              onClick={() => {
+                if (view === 'products') resetProductForm();
+                else {
+                  setError('');
+                  setMessage('');
+                  setIsCategoryDialogOpen(true);
+                }
+              }}
             >
               <i className="bi bi-plus-lg" aria-hidden="true" />
-              New Product
+              {view === 'products' ? 'New Product' : 'New Category'}
             </button>
           </div>
         }
       />
-
-      {catalogDialog ? null : <FormMessages error={error} message={message} />}
-
-      {catalogDialog ? (
-        <div className="dialog-backdrop catalog-dialog-backdrop">
-          <div className="catalog-management-grid">
-            <section
-              className="panel-card branch-form-panel catalog-dialog-card catalog-category-dialog"
-              hidden={catalogDialog !== 'category'}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="category-dialog-title"
-            >
-              <PanelHeader
-                icon={editingCategory ? 'bi-pencil-square' : 'bi-folder-plus'}
-                title={editingCategory ? 'Edit Category' : 'Register Category'}
-                action={
-                  <button
-                    className="icon-button compact-icon"
-                    type="button"
-                    aria-label="Close category dialog"
-                    onClick={closeCategoryDialog}
-                  >
-                    <i className="bi bi-x-lg" aria-hidden="true" />
-                  </button>
-                }
+      <nav className="catalog-module-switcher" aria-label="Product modules">
+        <NavLink className="secondary-action compact-action" to="/product-catalog">
+          <i className="bi bi-box-seam" aria-hidden="true" />
+          Products
+        </NavLink>
+        <NavLink className="secondary-action compact-action" to="/product-categories">
+          <i className="bi bi-tags" aria-hidden="true" />
+          Product Categories
+        </NavLink>
+      </nav>
+      <FormMessages error={error} message={message} />
+      {isProductDialogOpen ? (
+        <div
+          className="dialog-backdrop catalog-dialog-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsProductDialogOpen(false);
+            }
+          }}
+        >
+          <section
+            className="panel-card branch-form-panel catalog-dialog-card catalog-product-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={editingProduct ? 'Edit Product' : 'Register Product'}
+          >
+            <PanelHeader
+              icon={editingProduct ? 'bi-pencil-square' : 'bi-plus-square'}
+              title={editingProduct ? 'Edit Product' : 'Register Product'}
+              action={
+                <button
+                  className="icon-button compact-icon"
+                  type="button"
+                  aria-label="Close product dialog"
+                  onClick={() => setIsProductDialogOpen(false)}
+                >
+                  <i className="bi bi-x-lg" aria-hidden="true" />
+                </button>
+              }
+            />
+            <form className="record-form" onSubmit={handleProductSubmit}>
+              <VariantProductFields
+                form={form}
+                products={products}
+                onChange={setForm}
+                parentLocked={Boolean(editingProduct?.parentProductId)}
               />
-              <h2 id="category-dialog-title" className="sr-only">
-                {editingCategory ? 'Edit Category' : 'Register Category'}
-              </h2>
-              <FormMessages error={error} message={message} />
-              <form className="record-form" onSubmit={handleCategorySubmit}>
-                <label className="field-stack">
-                  <span>Category Name</span>
-                  <input
-                    required
-                    maxLength={120}
-                    value={categoryForm.name}
-                    onChange={(event) =>
-                      setCategoryForm((current) => ({ ...current, name: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Category Code</span>
-                  <input
-                    required
-                    maxLength={40}
-                    value={categoryForm.code}
-                    onChange={(event) =>
-                      setCategoryForm((current) => ({
-                        ...current,
-                        code: event.target.value.toUpperCase(),
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Status</span>
-                  <select
-                    value={categoryForm.status}
-                    onChange={(event) =>
-                      setCategoryForm((current) => ({
-                        ...current,
-                        status: event.target.value as ProductCategory['status'],
-                      }))
-                    }
-                  >
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                  </select>
-                </label>
-                <div className="form-actions">
-                  {editingCategory ? (
-                    <button
-                      className="secondary-action compact-action"
-                      type="button"
-                      onClick={closeCategoryDialog}
-                    >
-                      Cancel
-                    </button>
-                  ) : null}
-                  <button
-                    className="primary-action compact-action"
-                    type="submit"
-                    disabled={saveCategoryMutation.isPending}
-                  >
-                    <i className="bi bi-check2" aria-hidden="true" />
-                    {saveCategoryMutation.isPending ? 'Saving...' : 'Save Category'}
-                  </button>
-                </div>
-              </form>
-            </section>
-
-            <section
-              className="panel-card branch-form-panel catalog-dialog-card catalog-product-dialog"
-              hidden={catalogDialog !== 'product'}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="product-dialog-title"
-            >
-              <PanelHeader
-                icon={editingProduct ? 'bi-pencil-square' : 'bi-plus-square'}
-                title={editingProduct ? 'Edit Product' : 'Register Product'}
-                action={
-                  <button
-                    className="icon-button compact-icon"
-                    type="button"
-                    aria-label="Close product dialog"
-                    onClick={closeProductDialog}
-                  >
-                    <i className="bi bi-x-lg" aria-hidden="true" />
-                  </button>
-                }
-              />
-              <h2 id="product-dialog-title" className="sr-only">
-                {editingProduct ? 'Edit Product' : 'Register Product'}
-              </h2>
-              <FormMessages error={error} message={message} />
-              <form className="record-form" onSubmit={handleProductSubmit}>
-                <label className="field-stack">
-                  <span>Product Name</span>
-                  <input
-                    required
-                    maxLength={180}
-                    value={productForm.name}
-                    onChange={(event) =>
-                      setProductForm((current) => ({ ...current, name: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>SKU</span>
-                  <input
-                    required
-                    maxLength={80}
-                    value={productForm.sku}
-                    onChange={(event) =>
-                      setProductForm((current) => ({
-                        ...current,
-                        sku: event.target.value.toUpperCase(),
-                      }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Category</span>
-                  <select
-                    required
-                    value={productForm.categoryId}
-                    onChange={(event) =>
-                      setProductForm((current) => ({ ...current, categoryId: event.target.value }))
-                    }
-                  >
-                    <option value="">Select category</option>
-                    {activeCategories.map((category) => (
+              <label className="field-stack">
+                <span>Product Name</span>
+                <input
+                  required
+                  maxLength={160}
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, name: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>SKU</span>
+                <input
+                  required
+                  maxLength={80}
+                  value={form.sku}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, sku: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Barcode</span>
+                <input
+                  maxLength={80}
+                  value={form.barcode}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, barcode: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Category</span>
+                <select
+                  required
+                  value={form.categoryId}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, categoryId: event.target.value }))
+                  }
+                >
+                  <option value="">Select a category</option>
+                  {categories
+                    .filter(
+                      (category) => category.status === 'ACTIVE' || category.id === form.categoryId,
+                    )
+                    .map((category) => (
                       <option key={category.id} value={category.id}>
                         {category.name}
                       </option>
                     ))}
-                  </select>
-                </label>
-                <label className="field-stack">
-                  <span>Selling Price</span>
-                  <input
-                    required
-                    min="0"
-                    step="0.01"
-                    type="number"
-                    value={productForm.unitPrice}
-                    onChange={(event) =>
-                      setProductForm((current) => ({ ...current, unitPrice: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Buying Price</span>
-                  <input
-                    required
-                    min="0"
-                    step="0.01"
-                    type="number"
-                    value={productForm.costPrice}
-                    onChange={(event) =>
-                      setProductForm((current) => ({ ...current, costPrice: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>VAT Category</span>
-                  <select
-                    value={productForm.vatCategory}
-                    onChange={(event) =>
-                      setProductForm((current) => ({
-                        ...current,
-                        vatCategory: event.target.value as ProductVatCategory,
-                      }))
-                    }
-                  >
-                    {vatCategoryOptions.map((option) => (
-                      <option key={option.category} value={option.category}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field-stack">
-                  <span>Barcode</span>
-                  <input
-                    maxLength={80}
-                    value={productForm.barcode}
-                    onChange={(event) =>
-                      setProductForm((current) => ({ ...current, barcode: event.target.value }))
-                    }
-                  />
-                </label>
-                <div className="field-stack wide-field product-image-field">
-                  <span>Product Image</span>
-                  <div className="product-image-control">
-                    <ProductImage product={productFormPreview} index={0} small />
-                    <div className="product-image-inputs">
-                      <input
-                        aria-label="Product image URL"
-                        maxLength={PRODUCT_IMAGE_DATA_URL_MAX_LENGTH}
-                        placeholder={
-                          isInlineProductImage(productForm.imageUrl)
-                            ? 'Uploaded image selected'
-                            : 'https://example.com/product.jpg'
-                        }
-                        value={productImageUrlInputValue}
-                        onChange={(event) =>
-                          setProductForm((current) => ({
-                            ...current,
-                            imageUrl: event.target.value,
-                          }))
-                        }
-                      />
-                      <div className="product-image-actions">
-                        <label className="secondary-action compact-action product-image-upload-button">
-                          <i className="bi bi-image" aria-hidden="true" />
-                          Upload Image
-                          <input
-                            aria-label="Upload product image"
-                            accept="image/*"
-                            type="file"
-                            onChange={handleProductImageUpload}
-                          />
-                        </label>
-                        {productForm.imageUrl ? (
-                          <button
-                            className="text-button danger-text"
-                            type="button"
-                            onClick={() =>
-                              setProductForm((current) => ({ ...current, imageUrl: '' }))
-                            }
-                          >
-                            <i className="bi bi-x-circle" aria-hidden="true" />
-                            Remove
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <label className="field-stack">
-                  <span>Sizes</span>
-                  <input
-                    maxLength={500}
-                    placeholder="S, M, L"
-                    value={productForm.sizes}
-                    onChange={(event) =>
-                      setProductForm((current) => ({ ...current, sizes: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Colors</span>
-                  <input
-                    maxLength={500}
-                    placeholder="Black, White, Navy"
-                    value={productForm.colors}
-                    onChange={(event) =>
-                      setProductForm((current) => ({ ...current, colors: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Status</span>
-                  <select
-                    value={productForm.status}
-                    onChange={(event) =>
-                      setProductForm((current) => ({
-                        ...current,
-                        status: event.target.value as Product['status'],
-                      }))
-                    }
-                  >
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                  </select>
-                </label>
-                <label className="field-stack wide-field">
-                  <span>Description</span>
-                  <input
-                    maxLength={500}
-                    value={productForm.description}
-                    onChange={(event) =>
-                      setProductForm((current) => ({ ...current, description: event.target.value }))
-                    }
-                  />
-                </label>
-                <div className="form-actions">
-                  {editingProduct ? (
-                    <button
-                      className="secondary-action compact-action"
-                      type="button"
-                      onClick={closeProductDialog}
-                    >
-                      Cancel
-                    </button>
-                  ) : null}
-                  <button
-                    className="primary-action compact-action"
-                    type="submit"
-                    disabled={isProductBusy}
-                  >
-                    <i className="bi bi-check2" aria-hidden="true" />
-                    {isProductBusy
-                      ? 'Saving...'
-                      : editingProduct
-                        ? 'Save Changes'
-                        : 'Register Product'}
-                  </button>
-                </div>
-              </form>
-            </section>
-          </div>
+                </select>
+              </label>
+              <label className="field-stack">
+                <span>Department</span>
+                <input
+                  maxLength={120}
+                  value={form.department}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, department: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Selling Price</span>
+                <input
+                  required
+                  min="0"
+                  step="0.01"
+                  type="number"
+                  value={form.unitPrice}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      unitPrice: Number(event.target.value) || 0,
+                    }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Buying Price</span>
+                <input
+                  required
+                  min="0"
+                  step="0.01"
+                  type="number"
+                  value={form.costPrice}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      costPrice: Number(event.target.value) || 0,
+                    }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>VAT Category</span>
+                <select
+                  value={form.vatCategory}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      vatCategory: event.target.value as ProductVatCategory,
+                    }))
+                  }
+                >
+                  <option value="A">Standard rate</option>
+                  <option value="G">Exempt</option>
+                </select>
+              </label>
+              <label className="field-stack">
+                <span>Sizes (comma-separated)</span>
+                <input
+                  value={form.sizes.join(', ')}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, sizes: parseCsv(event.target.value) }))
+                  }
+                />
+              </label>
+              <label className="field-stack">
+                <span>Colors (comma-separated)</span>
+                <input
+                  value={form.colors.join(', ')}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, colors: parseCsv(event.target.value) }))
+                  }
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Description</span>
+                <textarea
+                  maxLength={1000}
+                  value={form.description}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, description: event.target.value }))
+                  }
+                />
+              </label>
+              <label className="field-stack wide-field">
+                <span>Image URL</span>
+                <input
+                  maxLength={1000}
+                  type="url"
+                  value={form.imageUrl}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, imageUrl: event.target.value }))
+                  }
+                />
+              </label>
+              <FormMessages error={error} message="" />
+              <div className="form-actions">
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => setIsProductDialogOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary-action compact-action"
+                  type="submit"
+                  disabled={saveProductMutation.isPending || categories.length === 0}
+                >
+                  <i className="bi bi-check2" aria-hidden="true" />
+                  {saveProductMutation.isPending
+                    ? 'Saving...'
+                    : editingProduct
+                      ? 'Save Changes'
+                      : 'Register Product'}
+                </button>
+              </div>
+            </form>
+          </section>
         </div>
       ) : null}
 
-      <section className="panel-card branch-list-panel catalog-products-panel">
-        <PanelHeader
-          icon="bi-tags"
-          title="Catalog Products"
-          action={
-            <span className="catalog-count-pill">
-              {filteredProducts.length} of {products.length} products
-            </span>
-          }
-        />
-        {!productsQuery.isPending && products.length > 0 ? (
-          <div className="catalog-filter-bar">
-            <label className="search-field catalog-search-field">
-              <i className="bi bi-search" aria-hidden="true" />
-              <input
-                aria-label="Search catalog products"
-                placeholder="Search name, category, size or color..."
-                value={productSearch}
-                onChange={(event) => setProductSearch(event.target.value)}
-              />
-            </label>
-            <label className="select-shell catalog-filter-select">
-              <i className="bi bi-grid" aria-hidden="true" />
-              <select
-                aria-label="Filter products by category"
-                value={productCategoryFilter}
-                onChange={(event) => setProductCategoryFilter(event.target.value)}
-              >
-                <option value="all">All Categories</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="select-shell catalog-filter-select">
-              <i className="bi bi-check2-circle" aria-hidden="true" />
-              <select
-                aria-label="Filter products by status"
-                value={productStatusFilter}
-                onChange={(event) =>
-                  setProductStatusFilter(event.target.value as ProductStatusFilter)
-                }
-              >
-                <option value="all">All Statuses</option>
-                <option value="ACTIVE">Active</option>
-                <option value="INACTIVE">Inactive</option>
-              </select>
-            </label>
-          </div>
-        ) : null}
-        {productsQuery.isPending || categoriesQuery.isPending ? (
-          <LoadingPanel label="Loading catalog..." />
-        ) : products.length === 0 ? (
-          <EmptyState
-            icon="bi-tags"
-            title="No products registered"
-            detail="Products created here will appear in POS and inventory workflows."
-          />
-        ) : filteredProducts.length === 0 ? (
-          <EmptyState
-            icon="bi-search"
-            title="No matching products"
-            detail="Adjust the search or filters to see more products."
-          />
-        ) : (
-          <div className="responsive-table catalog-table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Category</th>
-                  <th>Buying Price</th>
-                  <th>Selling Price</th>
-                  <th>Profit</th>
-                  <th>VAT</th>
-                  <th>Sizes</th>
-                  <th>Colors</th>
-                  <th>Total Stock</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProducts.map((product, index) => (
-                  <tr key={product.id}>
-                    <td data-label="Product">
-                      <span className="product-cell">
-                        <ProductImage product={product} index={index} small />
-                        <span>
-                          <strong>{product.name}</strong>
-                          <small>{product.department?.trim() || 'N/A'}</small>
-                        </span>
-                      </span>
-                    </td>
-                    <td data-label="Category">{product.categoryName}</td>
-                    <td data-label="Buying Price">
-                      {formatMoney(product.costPrice ?? 0, organization.currencyCode)}
-                    </td>
-                    <td data-label="Selling Price">
-                      {formatMoney(product.unitPrice, organization.currencyCode)}
-                    </td>
-                    <td
-                      data-label="Profit"
-                      className={
-                        product.unitPrice - (product.costPrice ?? 0) >= 0
-                          ? 'positive-text'
-                          : 'negative-text'
-                      }
-                    >
-                      {formatMoney(
-                        product.unitPrice - (product.costPrice ?? 0),
-                        organization.currencyCode,
-                      )}
-                    </td>
-                    <td data-label="VAT">{formatVatCategory(product.vatCategory)}</td>
-                    <td data-label="Sizes">{joinWithFallback(product.sizes)}</td>
-                    <td data-label="Colors">{joinWithFallback(product.colors)}</td>
-                    <td data-label="Total Stock">{product.totalStock}</td>
-                    <td data-label="Status">
-                      <StatusPill
-                        status={product.status === 'ACTIVE' ? 'posted' : 'pending'}
-                        label={product.status === 'ACTIVE' ? 'Active' : 'Inactive'}
-                      />
-                    </td>
-                    <td data-label="Actions">
-                      <span className="table-actions">
-                        <button
-                          className="text-button"
-                          type="button"
-                          onClick={() => editProduct(product)}
-                        >
-                          <i className="bi bi-pencil" aria-hidden="true" />
-                          Edit
-                        </button>
-                        <button
-                          className={
-                            product.status === 'ACTIVE' ? 'text-button danger-text' : 'text-button'
-                          }
-                          type="button"
-                          disabled={isProductStatusBusy}
-                          onClick={() => handleDeactivateProduct(product)}
-                        >
-                          <i
-                            className={`bi ${
-                              product.status === 'ACTIVE' ? 'bi-pause-circle' : 'bi-play-circle'
-                            }`}
-                            aria-hidden="true"
-                          />
-                          {product.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate'}
-                        </button>
-                      </span>
-                    </td>
+      {view === 'products' ? (
+        <section className="panel-card branch-list-panel catalog-module-panel">
+          <PanelHeader icon="bi-box-seam" title="Products" />
+          {productsQuery.isPending || categoriesQuery.isPending ? (
+            <LoadingPanel label="Loading products..." />
+          ) : productsQuery.isError || categoriesQuery.isError ? (
+            <EmptyState
+              icon="bi-exclamation-circle"
+              title="Products could not be loaded"
+              detail="Refresh the page or try again when the API is available."
+            />
+          ) : products.length === 0 ? (
+            <EmptyState
+              icon="bi-box-seam"
+              title="No products registered"
+              detail="Products you register will appear here."
+            />
+          ) : (
+            <div className="responsive-table catalog-module-table catalog-products-table mobile-compact-table">
+              <table aria-label="Products">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>SKU / Barcode</th>
+                    <th>Category</th>
+                    <th>Department</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                    <th className="mobile-row-more">Details</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      <section className="panel-card branch-list-panel">
-        <PanelHeader
-          icon="bi-grid"
-          title="Categories"
-          action={
-            <button
-              className="secondary-action compact-action"
-              type="button"
-              onClick={openNewCategory}
-            >
-              <i className="bi bi-folder-plus" aria-hidden="true" />
-              New Category
-            </button>
-          }
-        />
-        {categories.length === 0 ? (
-          <EmptyState
-            icon="bi-grid"
-            title="No categories registered"
-            detail="Create a category before registering products."
-          />
-        ) : (
-          <div className="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Category</th>
-                  <th>Code</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {categories.map((category) => (
-                  <tr key={category.id}>
-                    <td data-label="Category">{category.name}</td>
-                    <td data-label="Code">{category.code}</td>
-                    <td data-label="Status">
-                      <StatusPill
-                        status={category.status === 'ACTIVE' ? 'posted' : 'pending'}
-                        label={category.status === 'ACTIVE' ? 'Active' : 'Inactive'}
-                      />
-                    </td>
-                    <td data-label="Actions">
-                      <span className="table-actions">
+                </thead>
+                <tbody>
+                  {products.map((product, index) => (
+                    <tr
+                      className={expandedProductId === product.id ? 'details-expanded' : undefined}
+                      key={product.id}
+                    >
+                      <td className="mobile-row-name" data-label="Product">
+                        <span className="table-label">
+                          <ProductImage product={product} index={index} small />
+                          <span className="catalog-product-label">
+                            <strong>{product.name}</strong>
+                            {product.productType === 'VARIABLE' && (
+                              <small className="table-subtext">
+                                Parent ·{' '}
+                                {products.filter((p) => p.parentProductId === product.id).length}{' '}
+                                variants
+                              </small>
+                            )}
+                          </span>
+                        </span>
+                      </td>
+                      <td data-label="SKU / Barcode">
+                        <span className="catalog-code-label">
+                          <span>{product.sku}</span>
+                          <small className="table-subtext">{product.barcode || 'N/A'}</small>
+                        </span>
+                      </td>
+                      <td data-label="Category">{product.categoryName}</td>
+                      <td data-label="Department">{product.department || 'N/A'}</td>
+                      <td className="mobile-row-value" data-label="Price">
+                        {formatMoney(product.unitPrice, organization.currencyCode)}
+                      </td>
+                      <td data-label="Stock">{formatQuantity(product.totalStock)}</td>
+                      <td data-label="Status">
+                        <StatusPill
+                          status={product.status === 'ACTIVE' ? 'posted' : 'pending'}
+                          label={product.status === 'ACTIVE' ? 'Active' : 'Inactive'}
+                        />
+                      </td>
+                      <td data-label="Actions">
+                        <span className="table-actions">
+                          <button
+                            className="text-button"
+                            type="button"
+                            onClick={() => editProduct(product)}
+                          >
+                            <i className="bi bi-pencil" aria-hidden="true" />
+                            Edit
+                          </button>
+                          {product.productType === 'VARIABLE' && (
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => {
+                                setEditingProductId(null);
+                                setForm({
+                                  ...defaultProductForm(categories, products.length),
+                                  name: '',
+                                  parentProductId: product.id,
+                                  productType: 'SIMPLE',
+                                  categoryId: product.categoryId,
+                                  vatCategory: product.vatCategory,
+                                  variantAttributes: { Volume: '' },
+                                });
+                                setError('');
+                                setIsProductDialogOpen(true);
+                              }}
+                            >
+                              Add Variant
+                            </button>
+                          )}
+                          <button
+                            className={
+                              product.status === 'ACTIVE'
+                                ? 'text-button danger-text'
+                                : 'text-button'
+                            }
+                            type="button"
+                            onClick={() => void handleProductStatus(product)}
+                          >
+                            {product.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate'}
+                          </button>
+                        </span>
+                      </td>
+                      <td className="mobile-row-more">
                         <button
-                          className="text-button"
+                          aria-label={`Details and actions for ${product.name}`}
+                          aria-expanded={expandedProductId === product.id}
+                          className="mobile-row-more-button"
                           type="button"
-                          onClick={() => editCategory(category)}
+                          onClick={() =>
+                            setExpandedProductId((current) =>
+                              current === product.id ? null : product.id,
+                            )
+                          }
                         >
-                          <i className="bi bi-pencil" aria-hidden="true" />
-                          Edit
+                          <i className="bi bi-three-dots-vertical" aria-hidden="true" />
                         </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className="panel-card branch-list-panel catalog-module-panel">
+          <PanelHeader icon="bi-tags" title="Product Categories" />
+          {categoriesQuery.isPending ? (
+            <LoadingPanel label="Loading categories..." />
+          ) : categoriesQuery.isError ? (
+            <EmptyState
+              icon="bi-exclamation-circle"
+              title="Categories could not be loaded"
+              detail="Refresh the page or try again when the API is available."
+            />
+          ) : categories.length === 0 ? (
+            <EmptyState
+              icon="bi-tags"
+              title="No categories registered"
+              detail="Use New Category to organize your products."
+            />
+          ) : (
+            <div className="responsive-table catalog-module-table catalog-categories-table">
+              <table aria-label="Product categories">
+                <thead>
+                  <tr>
+                    <th>Category Name</th>
+                    <th>Category Code</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.map((category) => (
+                    <tr key={category.id}>
+                      <td data-label="Category Name">
+                        <strong>{category.name}</strong>
+                      </td>
+                      <td data-label="Category Code">{category.code}</td>
+                      <td data-label="Status">
+                        <StatusPill
+                          status={category.status === 'ACTIVE' ? 'posted' : 'pending'}
+                          label={category.status === 'ACTIVE' ? 'Active' : 'Inactive'}
+                        />
+                      </td>
+                      <td data-label="Actions">
                         <button
                           className={
                             category.status === 'ACTIVE' ? 'text-button danger-text' : 'text-button'
                           }
                           type="button"
-                          disabled={isCategoryStatusBusy}
-                          onClick={() => handleDeactivateCategory(category)}
+                          onClick={() => void handleCategoryStatus(category)}
                         >
-                          <i
-                            className={`bi ${
-                              category.status === 'ACTIVE' ? 'bi-pause-circle' : 'bi-play-circle'
-                            }`}
-                            aria-hidden="true"
-                          />
                           {category.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate'}
                         </button>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+      {isCategoryDialogOpen ? (
+        <div
+          className="dialog-backdrop catalog-dialog-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setIsCategoryDialogOpen(false);
+          }}
+        >
+          <section
+            className="panel-card catalog-dialog-card catalog-category-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="New Category"
+          >
+            <PanelHeader
+              icon="bi-tags"
+              title="New Category"
+              action={
+                <button
+                  className="icon-button compact-icon"
+                  type="button"
+                  aria-label="Close category dialog"
+                  onClick={() => setIsCategoryDialogOpen(false)}
+                >
+                  <i className="bi bi-x-lg" aria-hidden="true" />
+                </button>
+              }
+            />
+            <form className="record-form" onSubmit={handleCategorySubmit}>
+              <label className="field-stack">
+                <span>Category Name</span>
+                <input
+                  autoFocus
+                  required
+                  maxLength={120}
+                  value={categoryName}
+                  onChange={(event) => setCategoryName(event.target.value)}
+                />
+              </label>
+              <label className="field-stack">
+                <span>Category Code</span>
+                <input
+                  required
+                  maxLength={40}
+                  value={categoryCode}
+                  onChange={(event) => setCategoryCode(event.target.value.toUpperCase())}
+                />
+              </label>
+              <FormMessages error={error} message="" />
+              <div className="form-actions">
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => setIsCategoryDialogOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary-action compact-action"
+                  type="submit"
+                  disabled={saveCategoryMutation.isPending}
+                >
+                  {saveCategoryMutation.isPending ? 'Saving...' : 'Add Category'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
 
 type InventoryHealthFilter = 'ALL' | InventoryItem['stockHealth'];
 type InventoryInsightDialog = 'category' | 'branch' | 'alerts' | null;
+type InventoryDetailTab = 'overview' | 'stock' | 'history';
 
 function Inventory({
   currentUser,
@@ -22312,6 +15411,7 @@ function Inventory({
   currentUser: CurrentUser;
   organization: Organization;
 }) {
+  const { branchId: platformBranchId } = usePlatform();
   const inventoryQuery = useQuery({ queryKey: ['inventory'], queryFn: getInventory });
   const canAdjustInventory = hasAnyPermission(currentUser, ['admin:manage', 'inventory:adjust']);
   const canViewStockAdjustments = hasAnyPermission(currentUser, [
@@ -22324,12 +15424,15 @@ function Inventory({
     queryFn: getStockAdjustments,
     enabled: canViewStockAdjustments,
   });
-  const inventory = inventoryQuery.data ?? [];
-  const stockAdjustments = stockAdjustmentsQuery.data ?? [];
+  const inventory = inBranch(inventoryQuery.data ?? [], platformBranchId);
+  const stockAdjustments = inBranch(stockAdjustmentsQuery.data ?? [], platformBranchId);
   const [searchTerm, setSearchTerm] = useState('');
   const [branchFilter, setBranchFilter] = useState('ALL');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [healthFilter, setHealthFilter] = useState<InventoryHealthFilter>('ALL');
+  const [selectedInventoryId, setSelectedInventoryId] = useState<string | null>(null);
+  const [activeInventoryDetailTab, setActiveInventoryDetailTab] =
+    useState<InventoryDetailTab>('overview');
   const [inventoryDialog, setInventoryDialog] = useState<InventoryInsightDialog>(null);
   const [adjustingItem, setAdjustingItem] = useState<InventoryItem | null>(null);
   const [adjustmentMessage, setAdjustmentMessage] = useState('');
@@ -22368,7 +15471,7 @@ function Inventory({
     return inventory.filter((item) => {
       const matchesSearch =
         !query ||
-        [item.productName, item.sku, item.categoryName, item.branchName].some((value) =>
+        [item.productName, item.sku, item.categoryName].some((value) =>
           value.toLowerCase().includes(query),
         );
       const matchesBranch = branchFilter === 'ALL' || item.branchName === branchFilter;
@@ -22378,6 +15481,33 @@ function Inventory({
       return matchesSearch && matchesBranch && matchesCategory && matchesHealth;
     });
   }, [branchFilter, categoryFilter, healthFilter, inventory, searchTerm]);
+  const selectedInventoryItem = useMemo(
+    () =>
+      filteredInventory.find((item) => item.id === selectedInventoryId) ??
+      filteredInventory[0] ??
+      null,
+    [filteredInventory, selectedInventoryId],
+  );
+  const selectedStockValue = selectedInventoryItem
+    ? selectedInventoryItem.quantityOnHand * selectedInventoryItem.unitPrice
+    : 0;
+  const selectedAvailablePercent =
+    selectedInventoryItem && selectedInventoryItem.quantityOnHand > 0
+      ? Math.round(
+          (selectedInventoryItem.quantityAvailable / selectedInventoryItem.quantityOnHand) * 100,
+        )
+      : 0;
+  const selectedReservedPercent =
+    selectedInventoryItem && selectedInventoryItem.quantityOnHand > 0
+      ? Math.round(
+          (selectedInventoryItem.quantityReserved / selectedInventoryItem.quantityOnHand) * 100,
+        )
+      : 0;
+  const selectedStockAdjustments = selectedInventoryItem
+    ? stockAdjustments
+        .filter((adjustment) => adjustment.productId === selectedInventoryItem.productId)
+        .slice(0, 3)
+    : [];
   const recentStockAdjustments = stockAdjustments.slice(0, 8);
 
   function resetFilters() {
@@ -22391,6 +15521,19 @@ function Inventory({
     setAdjustingItem(item);
     setAdjustmentMessage('');
   }
+
+  useEffect(() => {
+    if (filteredInventory.length === 0) {
+      if (selectedInventoryId !== null) {
+        setSelectedInventoryId(null);
+      }
+      return;
+    }
+
+    if (!filteredInventory.some((item) => item.id === selectedInventoryId)) {
+      setSelectedInventoryId(filteredInventory[0].id);
+    }
+  }, [filteredInventory, selectedInventoryId]);
 
   useEffect(() => {
     if (inventoryDialog == null) {
@@ -22411,7 +15554,7 @@ function Inventory({
     <section className="inventory-workspace">
       <PageHeader
         title="Inventory"
-        subtitle="Monitor stock value, branch availability, and reorder signals."
+        subtitle="Monitor stock value, available units, and reorder signals."
         action={
           <div className="header-actions">
             <button
@@ -22526,7 +15669,7 @@ function Inventory({
               <PanelHeader
                 icon="bi-shop"
                 title="Branch Stock"
-                tone="green"
+                tone="blue"
                 action={
                   <button
                     className="icon-button compact-icon"
@@ -22538,36 +15681,17 @@ function Inventory({
                   </button>
                 }
               />
-              {branches.length === 0 ? (
-                <EmptyState
-                  icon="bi-shop"
-                  title="No branch stock"
-                  detail="Stock posted to branches will appear here."
-                />
-              ) : (
-                <>
-                  <span className="inventory-panel-count">{branches.length} branches</span>
-                  <div className="branch-stock-list">
-                    {branches.slice(0, 5).map((branch) => (
-                      <div className="branch-stock-row" key={branch.label}>
-                        <div>
-                          <strong>{branch.label}</strong>
-                          <span>{formatMoney(branch.value, organization.currencyCode)}</span>
-                        </div>
-                        <div className="branch-stock-track">
-                          <span style={{ width: `${(branch.count / maxBranchCount) * 100}%` }} />
-                        </div>
-                        <em>{branch.count.toLocaleString('en-KE')} units</em>
-                        {branch.alerts > 0 ? (
-                          <small>{branch.alerts.toLocaleString('en-KE')} alerts</small>
-                        ) : (
-                          <small className="healthy">Healthy</small>
-                        )}
-                      </div>
-                    ))}
+              <div className="horizontal-bars">
+                {branches.map((row) => (
+                  <div key={row.label}>
+                    <span>{row.label}</span>
+                    <strong>{formatQuantity(row.count)}</strong>
+                    <div>
+                      <i style={{ width: `${Math.round((row.count / maxBranchCount) * 100)}%` }} />
+                    </div>
                   </div>
-                </>
-              )}
+                ))}
+              </div>
             </section>
           ) : null}
 
@@ -22616,9 +15740,7 @@ function Inventory({
                       </span>
                       <div>
                         <strong>{item.productName}</strong>
-                        <span>
-                          {item.sku} - {item.branchName}
-                        </span>
+                        <span>{item.sku}</span>
                       </div>
                       <em className={item.stockHealth === 'OUT_OF_STOCK' ? 'danger' : 'warning'}>
                         <i
@@ -22677,9 +15799,9 @@ function Inventory({
             <span>Units held aside</span>
           </div>
           <div>
-            <dt>Branches</dt>
-            <dd>{branches.length.toLocaleString('en-KE')}</dd>
-            <span>{topBranch ? `${topBranch.label} leads stock` : 'No branch stock'}</span>
+            <dt>Available</dt>
+            <dd>{totalAvailable.toLocaleString('en-KE')}</dd>
+            <span>Units ready for sale</span>
           </div>
           <div>
             <dt>Categories</dt>
@@ -22724,22 +15846,8 @@ function Inventory({
             type="search"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.currentTarget.value)}
-            placeholder="Search products, SKU, category, branch"
+            placeholder="Search products, SKU, or category"
           />
-        </label>
-        <label className="inventory-filter-field">
-          <span>Branch</span>
-          <select
-            value={branchFilter}
-            onChange={(event) => setBranchFilter(event.currentTarget.value)}
-          >
-            <option value="ALL">All branches</option>
-            {branches.map((branch) => (
-              <option key={branch.label} value={branch.label}>
-                {branch.label}
-              </option>
-            ))}
-          </select>
         </label>
         <label className="inventory-filter-field">
           <span>Category</span>
@@ -22780,6 +15888,189 @@ function Inventory({
         </button>
       </div>
 
+      {selectedInventoryItem ? (
+        <section className="inventory-focus-board" aria-label="Inventory item detail">
+          <aside className="inventory-focus-list">
+            <div className="inventory-focus-list-heading">
+              <strong>Active Items</strong>
+              <span>{filteredInventory.length.toLocaleString('en-KE')}</span>
+            </div>
+            <div className="inventory-focus-options">
+              {filteredInventory.map((item) => (
+                <button
+                  aria-pressed={item.id === selectedInventoryItem.id}
+                  className={`inventory-focus-option ${
+                    item.id === selectedInventoryItem.id ? 'active' : ''
+                  }`}
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedInventoryId(item.id);
+                    setActiveInventoryDetailTab('overview');
+                  }}
+                >
+                  <span className={`inventory-focus-check ${stockHealthTone(item.stockHealth)}`}>
+                    <i
+                      className={`bi ${
+                        item.id === selectedInventoryItem.id ? 'bi-check2' : 'bi-box'
+                      }`}
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <span>
+                    <strong>{item.productName}</strong>
+                    <small>{item.sku}</small>
+                  </span>
+                  <em>{formatQuantity(item.quantityAvailable)}</em>
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <section className="inventory-detail-panel">
+            <div className="inventory-detail-heading">
+              <div>
+                <span className="inventory-detail-eyebrow">{selectedInventoryItem.sku}</span>
+                <h2>{selectedInventoryItem.productName}</h2>
+              </div>
+              <StockHealthPill health={stockHealthLabel(selectedInventoryItem.stockHealth)} />
+            </div>
+
+            <div className="inventory-detail-tabs" role="tablist" aria-label="Inventory detail">
+              {[
+                { id: 'overview', label: 'Overview' },
+                { id: 'stock', label: 'Stock' },
+                { id: 'history', label: 'History' },
+              ].map((tab) => (
+                <button
+                  aria-selected={activeInventoryDetailTab === tab.id}
+                  className={activeInventoryDetailTab === tab.id ? 'active' : ''}
+                  key={tab.id}
+                  role="tab"
+                  type="button"
+                  onClick={() => setActiveInventoryDetailTab(tab.id as InventoryDetailTab)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {activeInventoryDetailTab === 'overview' ? (
+              <dl className="inventory-detail-grid">
+                <div>
+                  <dt>Item Type</dt>
+                  <dd>Inventory Item</dd>
+                </div>
+                <div>
+                  <dt>Category</dt>
+                  <dd>{selectedInventoryItem.categoryName}</dd>
+                </div>
+                <div>
+                  <dt>Branch</dt>
+                  <dd>{selectedInventoryItem.branchName}</dd>
+                </div>
+                <div>
+                  <dt>Unit Price</dt>
+                  <dd>{formatMoney(selectedInventoryItem.unitPrice, organization.currencyCode)}</dd>
+                </div>
+                <div>
+                  <dt>Reorder Level</dt>
+                  <dd>{formatQuantity(selectedInventoryItem.reorderLevel)}</dd>
+                </div>
+                <div>
+                  <dt>Stock Value</dt>
+                  <dd>{formatMoney(selectedStockValue, organization.currencyCode)}</dd>
+                </div>
+              </dl>
+            ) : null}
+
+            {activeInventoryDetailTab === 'stock' ? (
+              <div className="inventory-stock-ledger">
+                <div>
+                  <span>On Hand</span>
+                  <strong>{formatQuantity(selectedInventoryItem.quantityOnHand)}</strong>
+                </div>
+                <div>
+                  <span>Committed Stock</span>
+                  <strong>{formatQuantity(selectedInventoryItem.quantityReserved)}</strong>
+                </div>
+                <div>
+                  <span>Available for Sale</span>
+                  <strong>{formatQuantity(selectedInventoryItem.quantityAvailable)}</strong>
+                </div>
+                <div>
+                  <span>Reorder Level</span>
+                  <strong>{formatQuantity(selectedInventoryItem.reorderLevel)}</strong>
+                </div>
+              </div>
+            ) : null}
+
+            {activeInventoryDetailTab === 'history' ? (
+              <div className="inventory-detail-history">
+                {selectedStockAdjustments.length > 0 ? (
+                  selectedStockAdjustments.map((adjustment) => (
+                    <div key={adjustment.id}>
+                      <span>{commercialFormatDate(adjustment.adjustedAt)}</span>
+                      <strong>
+                        {adjustment.varianceQuantity > 0 ? '+' : ''}
+                        {formatQuantity(adjustment.varianceQuantity)}
+                      </strong>
+                      <small>{adjustment.reason}</small>
+                    </div>
+                  ))
+                ) : (
+                  <p>No variance adjustments recorded for this item.</p>
+                )}
+              </div>
+            ) : null}
+          </section>
+
+          <aside className="inventory-stock-panel">
+            <div className="inventory-stock-panel-head">
+              <span>Accounting Stock</span>
+              <strong>{formatQuantity(selectedInventoryItem.quantityOnHand)}</strong>
+            </div>
+            <div className="inventory-stock-meter">
+              <span style={{ width: `${selectedAvailablePercent}%` }} />
+            </div>
+            <dl className="inventory-stock-lines">
+              <div>
+                <dt>Stock on Hand</dt>
+                <dd>{formatQuantity(selectedInventoryItem.quantityOnHand)}</dd>
+              </div>
+              <div>
+                <dt>Committed Stock</dt>
+                <dd>{formatQuantity(selectedInventoryItem.quantityReserved)}</dd>
+              </div>
+              <div>
+                <dt>Available for Sale</dt>
+                <dd>{formatQuantity(selectedInventoryItem.quantityAvailable)}</dd>
+              </div>
+              <div>
+                <dt>Reserved Share</dt>
+                <dd>{selectedReservedPercent}%</dd>
+              </div>
+            </dl>
+            <div className="inventory-stock-actions">
+              <NavLink className="primary-action compact-action" to="/add-stock">
+                <i className="bi bi-plus-lg" aria-hidden="true" />
+                Add Stock
+              </NavLink>
+              {canAdjustInventory ? (
+                <button
+                  className="secondary-action compact-action"
+                  type="button"
+                  onClick={() => startAdjustment(selectedInventoryItem)}
+                >
+                  <i className="bi bi-calculator" aria-hidden="true" />
+                  Adjust
+                </button>
+              ) : null}
+            </div>
+          </aside>
+        </section>
+      ) : null}
+
       <section className="panel-card inventory-table-panel">
         <div className="table-title-row inventory-table-title-row">
           <div>
@@ -22806,17 +16097,16 @@ function Inventory({
           <EmptyState
             icon="bi-funnel"
             title="No inventory matches filters"
-            detail="Adjust the search, branch, category, or health filter."
+            detail="Adjust the search, category, or health filter."
           />
         ) : (
-          <div className="responsive-table">
-            <table>
+          <div className="responsive-table mobile-compact-table">
+            <table aria-label="Product inventory">
               <thead>
                 <tr>
                   <th>Product</th>
                   <th>SKU</th>
                   <th>Category</th>
-                  <th>Branch</th>
                   <th>On Hand</th>
                   <th>Reserved</th>
                   <th>Available</th>
@@ -22824,12 +16114,14 @@ function Inventory({
                   <th>Stock Value</th>
                   <th>Stock Health</th>
                   {canAdjustInventory ? <th>Actions</th> : null}
+                  <th className="mobile-row-more">Details</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredInventory.map((item) => (
                   <InventoryTableRow
                     canAdjustInventory={canAdjustInventory}
+                    compactOnMobile
                     item={item}
                     key={item.id}
                     onAdjust={startAdjustment}
@@ -22881,16 +16173,19 @@ function Inventory({
 
 function InventoryTableRow({
   canAdjustInventory,
+  compactOnMobile = false,
   item,
   onAdjust,
   organization,
 }: {
   canAdjustInventory: boolean;
+  compactOnMobile?: boolean;
   item: InventoryItem;
   onAdjust: (item: InventoryItem) => void;
   organization: Organization;
 }) {
   const queryClient = useQueryClient();
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [reorderLevel, setReorderLevel] = useState(String(item.reorderLevel));
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState('');
@@ -22940,8 +16235,8 @@ function InventoryTableRow({
   }
 
   return (
-    <tr>
-      <td data-label="Product">
+    <tr className={compactOnMobile && detailsExpanded ? 'details-expanded' : undefined}>
+      <td className="mobile-row-name" data-label="Product">
         <span className="inventory-product-cell">
           <span className={`inventory-product-icon ${stockHealthTone(item.stockHealth)}`}>
             <i className="bi bi-box-seam" aria-hidden="true" />
@@ -22956,20 +16251,19 @@ function InventoryTableRow({
         <span className="inventory-sku">{item.sku}</span>
       </td>
       <td data-label="Category">{item.categoryName}</td>
-      <td data-label="Branch">{item.branchName}</td>
       <td data-label="On Hand" className="number-cell">
         {item.quantityOnHand.toLocaleString('en-KE')}
       </td>
       <td data-label="Reserved" className="number-cell">
         {item.quantityReserved.toLocaleString('en-KE')}
       </td>
-      <td data-label="Available" className="number-cell">
+      <td data-label="Available" className="number-cell mobile-row-value">
         {item.quantityAvailable.toLocaleString('en-KE')}
       </td>
       <td data-label="Reorder Level">
         <form className="reorder-level-form" onSubmit={handleReorderSubmit}>
           <input
-            aria-label={`Reorder level for ${item.productName} at ${item.branchName}`}
+            aria-label={`Reorder level for ${item.productName}`}
             inputMode="numeric"
             min={0}
             step={1}
@@ -22982,7 +16276,7 @@ function InventoryTableRow({
             }}
           />
           <button
-            aria-label={`Save reorder level for ${item.productName} at ${item.branchName}`}
+            aria-label={`Save reorder level for ${item.productName}`}
             className="secondary-action compact-action"
             disabled={!hasChanges || reorderMutation.isPending}
             type="submit"
@@ -23006,6 +16300,19 @@ function InventoryTableRow({
           <button className="text-button" type="button" onClick={() => onAdjust(item)}>
             <i className="bi bi-calculator" aria-hidden="true" />
             Adjust Count
+          </button>
+        </td>
+      ) : null}
+      {compactOnMobile ? (
+        <td className="mobile-row-more">
+          <button
+            aria-label={`Details and actions for ${item.productName}`}
+            aria-expanded={detailsExpanded}
+            className="mobile-row-more-button"
+            type="button"
+            onClick={() => setDetailsExpanded((current) => !current)}
+          >
+            <i className="bi bi-three-dots-vertical" aria-hidden="true" />
           </button>
         </td>
       ) : null}
@@ -23118,9 +16425,7 @@ function StockAdjustmentDialog({
           <div>
             <p className="eyebrow">Physical Count</p>
             <h2 id={titleId}>Adjust Stock Count</h2>
-            <p>
-              {item.productName} - {item.branchName}
-            </p>
+            <p>{item.productName}</p>
           </div>
           <button
             aria-label="Close adjustment dialog"
@@ -23231,27 +16536,32 @@ function StockAdjustmentHistoryTable({
   organization: Organization;
   rows: StockAdjustment[];
 }) {
+  const [expandedAdjustmentId, setExpandedAdjustmentId] = useState<string | null>(null);
+
   return (
-    <div className="responsive-table">
-      <table>
+    <div className="responsive-table mobile-compact-table stock-adjustment-history-table">
+      <table aria-label="Recent variance adjustments">
         <thead>
           <tr>
             <th>Date</th>
             <th>Product</th>
-            <th>Branch</th>
             <th>System</th>
             <th>Counted</th>
             <th>Variance</th>
             <th>Loss</th>
             <th>Excess</th>
             <th>Reason</th>
+            <th className="mobile-row-more">Details</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id}>
+            <tr
+              className={expandedAdjustmentId === row.id ? 'details-expanded' : undefined}
+              key={row.id}
+            >
               <td data-label="Date">{formatDateTime(row.adjustedAt)}</td>
-              <td data-label="Product">
+              <td className="mobile-row-name" data-label="Product">
                 <span className="inventory-product-cell">
                   <span className={`inventory-product-icon ${stockAdjustmentTone(row)}`}>
                     <i className="bi bi-box-seam" aria-hidden="true" />
@@ -23262,7 +16572,6 @@ function StockAdjustmentHistoryTable({
                   </span>
                 </span>
               </td>
-              <td data-label="Branch">{row.branchName}</td>
               <td data-label="System" className="number-cell">
                 {formatQuantity(row.systemQuantity)}
               </td>
@@ -23271,7 +16580,7 @@ function StockAdjustmentHistoryTable({
               </td>
               <td
                 data-label="Variance"
-                className={`number-cell ${
+                className={`number-cell mobile-row-value ${
                   row.varianceQuantity < 0 ? 'negative-text' : 'positive-text'
                 }`}
               >
@@ -23284,6 +16593,19 @@ function StockAdjustmentHistoryTable({
                 {formatMoney(row.excessValue, organization.currencyCode)}
               </td>
               <td data-label="Reason">{row.reason}</td>
+              <td className="mobile-row-more">
+                <button
+                  aria-label={`Adjustment details for ${row.productName}`}
+                  aria-expanded={expandedAdjustmentId === row.id}
+                  className="mobile-row-more-button"
+                  type="button"
+                  onClick={() =>
+                    setExpandedAdjustmentId((current) => (current === row.id ? null : row.id))
+                  }
+                >
+                  <i className="bi bi-three-dots-vertical" aria-hidden="true" />
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -23293,8 +16615,9 @@ function StockAdjustmentHistoryTable({
 }
 
 function LowStockPage({ organization }: { organization: Organization }) {
+  const { branchId: platformBranchId } = usePlatform();
   const inventoryQuery = useQuery({ queryKey: ['inventory'], queryFn: getInventory });
-  const inventory = inventoryQuery.data ?? [];
+  const inventory = inBranch(inventoryQuery.data ?? [], platformBranchId);
   const lowStockItems = useMemo(
     () =>
       inventory
@@ -23396,7 +16719,6 @@ function LowStockPage({ organization }: { organization: Organization }) {
                 <tr>
                   <th>Product</th>
                   <th>SKU</th>
-                  <th>Branch</th>
                   <th>Available</th>
                   <th>Reorder Level</th>
                   <th>Needed</th>
@@ -23423,7 +16745,6 @@ function LowStockPage({ organization }: { organization: Organization }) {
                     <td data-label="SKU">
                       <span className="inventory-sku">{item.sku}</span>
                     </td>
-                    <td data-label="Branch">{item.branchName}</td>
                     <td data-label="Available" className="number-cell">
                       {item.quantityAvailable.toLocaleString('en-KE')}
                     </td>
@@ -23492,7 +16813,7 @@ function buildStockReceiptLine(
 ): StockReceiptLine {
   const branch = branches.find((item) => item.id === form.branchId);
   if (!branch) {
-    throw new Error('Select a branch before adding the stock line.');
+    throw new Error('Set up the shop location before adding the stock line.');
   }
 
   const product = products.find((item) => item.id === form.productId);
@@ -23543,7 +16864,7 @@ function stockReceiptLineFromRequest(
   const product = products.find((item) => item.id === request.productId);
 
   if (!branch || !product) {
-    throw new Error('Imported stock line references an unavailable branch or product.');
+    throw new Error('Imported stock line references an unavailable shop location or product.');
   }
 
   return {
@@ -23553,11 +16874,6 @@ function stockReceiptLineFromRequest(
     productName: product.name,
     sku: product.sku,
   };
-}
-
-function stockReceiptPayload(line: StockReceiptLine): StockIntakeRequest {
-  const { id, branchName, productName, sku, ...payload } = line;
-  return payload;
 }
 
 function stockReceiptLineTotal(line: Pick<StockReceiptLine, 'quantity' | 'unitCost'>) {
@@ -23730,6 +17046,7 @@ function AddStockPage({
   branches: Branch[];
   organization: Organization;
 }) {
+  const { branchId: platformBranchId } = usePlatform();
   const queryClient = useQueryClient();
   const productsQuery = useQuery({ queryKey: ['products'], queryFn: getProducts });
   const inventoryQuery = useQuery({ queryKey: ['inventory'], queryFn: getInventory });
@@ -23738,13 +17055,13 @@ function AddStockPage({
   const products = productsQuery.data ?? [];
   const inventory = inventoryQuery.data ?? [];
   const suppliers = suppliersQuery.data ?? [];
-  const activeProducts = products.filter((product) => product.status === 'ACTIVE');
+  const activeProducts = products.filter(isSellableProduct);
   const activeBranches = branches.filter((branch) => branch.status === 'ACTIVE');
   const activeSuppliers = suppliers.filter((supplier) => supplier.status === 'ACTIVE');
   const firstActiveBranchId = activeBranches[0]?.id ?? '';
   const firstActiveProductId = activeProducts[0]?.id ?? '';
   const firstActiveSupplierName = activeSuppliers[0]?.name ?? '';
-  const stockIntakes = stockIntakesQuery.data ?? [];
+  const stockIntakes = inBranch(stockIntakesQuery.data ?? [], platformBranchId);
   const productById = useMemo(
     () => new Map(products.map((product) => [product.id, product])),
     [products],
@@ -23810,10 +17127,8 @@ function AddStockPage({
 
   const postReceiptMutation = useMutation({
     mutationFn: async (lines: StockReceiptLine[]) => {
-      const intakes: StockIntake[] = [];
-      for (const line of lines) {
-        intakes.push(await addStock(stockReceiptPayload(line)));
-      }
+      await stockEntry.complete();
+      const intakes = lines;
       return {
         intakes,
         total: lines.reduce((sum, line) => sum + stockReceiptLineTotal(line), 0),
@@ -23840,6 +17155,21 @@ function AddStockPage({
     },
   });
   const isStockBusy = postReceiptMutation.isPending || isStockImporting;
+  const stockEntry = useStockEntry({
+    draftBranchId: platformBranchId,
+    form,
+    lines: receiptLines,
+    busy: isStockBusy,
+    restore: (nextForm, nextLines) => {
+      setForm(nextForm);
+      setReceiptLines(nextLines);
+      setIsReceiptDialogOpen(false);
+    },
+    clear: () => {
+      setForm(defaultStockIntakeForm(firstActiveBranchId, firstActiveProductId));
+      setReceiptLines([]);
+    },
+  });
 
   function handleAddReceiptLine(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -23850,6 +17180,7 @@ function AddStockPage({
       const receiptLine = buildStockReceiptLine(form, activeBranches, activeProducts);
       const selectedProduct = productById.get(receiptLine.productId);
       setReceiptLines((current) => [...current, receiptLine]);
+      stockEntry.markChanged();
       setForm((current) => ({
         ...current,
         productId: receiptLine.productId,
@@ -23871,6 +17202,12 @@ function AddStockPage({
     setError('');
     setMessage('');
 
+    if (form.quantity.trim() || form.notes.trim()) {
+      setError('Add the current stock line to the invoice, or clear it, before posting.');
+      setIsReceiptDialogOpen(true);
+      return;
+    }
+
     if (receiptLines.length === 0) {
       setError('Add at least one stock line before posting the supplier receipt.');
       return;
@@ -23890,6 +17227,7 @@ function AddStockPage({
   }
 
   function handleClearReceiptLines() {
+    if (!window.confirm('Remove all lines from this stock receipt?')) return;
     setReceiptLines([]);
     setMessage('');
     setError('');
@@ -23928,6 +17266,7 @@ function AddStockPage({
       }
 
       setReceiptLines((current) => [...current, ...importedLines]);
+      stockEntry.markChanged();
       setMessage(`Added ${imported} stock rows to the supplier invoice.`);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Unable to import stock');
@@ -23937,10 +17276,15 @@ function AddStockPage({
   }
 
   return (
-    <section className="branch-workspace">
+    <section
+      className="branch-workspace"
+      onChange={() => stockEntry.interact(true)}
+      onPointerDownCapture={() => stockEntry.interact()}
+      onKeyDownCapture={() => stockEntry.interact()}
+    >
       <PageHeader
         title="Add Stock"
-        subtitle="Receive inventory from suppliers into a branch."
+        subtitle="Receive inventory from suppliers into the shop."
         action={
           <div className="header-actions">
             <button
@@ -23980,6 +17324,7 @@ function AddStockPage({
         }
       />
 
+      {isReceiptDialogOpen ? null : stockEntry.controls}
       {isReceiptDialogOpen ? null : <FormMessages error={error} message={message} />}
 
       <div className="management-grid add-stock-grid">
@@ -24014,23 +17359,7 @@ function AddStockPage({
                 }
               />
               <form className="record-form" onSubmit={handleAddReceiptLine}>
-                <label className="field-stack">
-                  <span>Branch</span>
-                  <select
-                    required
-                    value={form.branchId}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, branchId: event.target.value }))
-                    }
-                  >
-                    <option value="">Select branch</option>
-                    {activeBranches.map((branch) => (
-                      <option key={branch.id} value={branch.id}>
-                        {branch.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="wide-field">{stockEntry.controls}</div>
                 <div className="field-stack">
                   <span>Product</span>
                   <ProductSearchSelect
@@ -24180,7 +17509,6 @@ function AddStockPage({
                     <thead>
                       <tr>
                         <th>Product</th>
-                        <th>Branch</th>
                         <th>Supplier</th>
                         <th>Reference</th>
                         <th>Quantity</th>
@@ -24201,7 +17529,6 @@ function AddStockPage({
                               </span>
                             </span>
                           </td>
-                          <td data-label="Branch">{line.branchName}</td>
                           <td data-label="Supplier">{line.supplierName}</td>
                           <td data-label="Reference">{line.referenceNumber || 'N/A'}</td>
                           <td data-label="Quantity">{line.quantity}</td>
@@ -24273,229 +17600,6 @@ function AddStockPage({
   );
 }
 
-type StockTransferFormState = {
-  sourceBranchId: string;
-  destinationBranchId: string;
-  productId: string;
-  quantity: string;
-  referenceNumber: string;
-  notes: string;
-};
-
-function defaultTransferForm(branchId = '', productId = ''): StockTransferFormState {
-  return {
-    sourceBranchId: branchId,
-    destinationBranchId: '',
-    productId,
-    quantity: '',
-    referenceNumber: '',
-    notes: '',
-  };
-}
-
-function TransfersPage({
-  branches,
-  organization,
-}: {
-  branches: Branch[];
-  organization: Organization;
-}) {
-  const queryClient = useQueryClient();
-  const productsQuery = useQuery({ queryKey: ['products'], queryFn: getProducts });
-  const inventoryQuery = useQuery({ queryKey: ['inventory'], queryFn: getInventory });
-  const transfersQuery = useQuery({ queryKey: ['transfers'], queryFn: getTransfers });
-  const products = productsQuery.data ?? [];
-  const inventory = inventoryQuery.data ?? [];
-  const transfers = transfersQuery.data ?? [];
-  const activeBranches = branches.filter((branch) => branch.status === 'ACTIVE');
-  const activeProducts = products.filter((product) => product.status === 'ACTIVE');
-  const firstActiveBranchId = activeBranches[0]?.id ?? '';
-  const firstActiveProductId = activeProducts[0]?.id ?? '';
-  const [form, setForm] = useState<StockTransferFormState>(() =>
-    defaultTransferForm(firstActiveBranchId, firstActiveProductId),
-  );
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const availableSourceStock = inventory.find(
-    (item) => item.branchId === form.sourceBranchId && item.productId === form.productId,
-  )?.quantityAvailable;
-
-  useEffect(() => {
-    setForm((current) => ({
-      ...current,
-      sourceBranchId: current.sourceBranchId || firstActiveBranchId,
-      productId: current.productId || firstActiveProductId,
-    }));
-  }, [firstActiveBranchId, firstActiveProductId]);
-
-  const transferMutation = useMutation({
-    mutationFn: (payload: StockTransferRequest) => createTransfer(payload),
-    onSuccess: async (transfer) => {
-      await queryClient.invalidateQueries({ queryKey: ['transfers'] });
-      await queryClient.invalidateQueries({ queryKey: ['inventory'] });
-      await queryClient.invalidateQueries({ queryKey: ['products'] });
-      setForm(defaultTransferForm(transfer.sourceBranchId, transfer.productId));
-      setMessage(`Transferred ${transfer.quantity} units of ${transfer.productName}.`);
-    },
-  });
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-
-    if (!form.productId) {
-      setError('Select a product before transferring stock.');
-      return;
-    }
-
-    try {
-      await transferMutation.mutateAsync({
-        sourceBranchId: form.sourceBranchId,
-        destinationBranchId: form.destinationBranchId,
-        productId: form.productId,
-        quantity: Number(form.quantity),
-        referenceNumber: form.referenceNumber.trim(),
-        notes: form.notes.trim(),
-      });
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to transfer stock');
-    }
-  }
-
-  return (
-    <section className="branch-workspace">
-      <PageHeader
-        title="Transfers"
-        subtitle="Move stock between branches."
-        action={
-          <NavLink className="secondary-action compact-action" to="/inventory">
-            <i className="bi bi-box" aria-hidden="true" />
-            Inventory
-          </NavLink>
-        }
-      />
-
-      <div className="management-grid">
-        <section className="panel-card branch-form-panel">
-          <PanelHeader icon="bi-arrow-left-right" title="New Transfer" />
-          <form className="record-form" onSubmit={handleSubmit}>
-            <label className="field-stack">
-              <span>Source Branch</span>
-              <select
-                required
-                value={form.sourceBranchId}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, sourceBranchId: event.target.value }))
-                }
-              >
-                <option value="">Select source</option>
-                {activeBranches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-stack">
-              <span>Destination Branch</span>
-              <select
-                required
-                value={form.destinationBranchId}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, destinationBranchId: event.target.value }))
-                }
-              >
-                <option value="">Select destination</option>
-                {activeBranches
-                  .filter((branch) => branch.id !== form.sourceBranchId)
-                  .map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <div className="field-stack">
-              <span>Product</span>
-              <ProductSearchSelect
-                products={activeProducts}
-                value={form.productId}
-                onChange={(productId) => setForm((current) => ({ ...current, productId }))}
-              />
-            </div>
-            <label className="field-stack">
-              <span>Available</span>
-              <input readOnly value={availableSourceStock ?? 0} />
-            </label>
-            <label className="field-stack">
-              <span>Quantity</span>
-              <input
-                required
-                min="1"
-                step="1"
-                type="number"
-                value={form.quantity}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, quantity: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack">
-              <span>Reference</span>
-              <input
-                maxLength={80}
-                value={form.referenceNumber}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, referenceNumber: event.target.value }))
-                }
-              />
-            </label>
-            <label className="field-stack wide-field">
-              <span>Notes</span>
-              <input
-                maxLength={500}
-                value={form.notes}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, notes: event.target.value }))
-                }
-              />
-            </label>
-
-            <FormMessages error={error} message={message} />
-
-            <div className="form-actions">
-              <button
-                className="primary-action compact-action"
-                type="submit"
-                disabled={transferMutation.isPending}
-              >
-                <i className="bi bi-check2" aria-hidden="true" />
-                {transferMutation.isPending ? 'Saving...' : 'Transfer Stock'}
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <section className="panel-card branch-list-panel">
-          <PanelHeader icon="bi-clock-history" title="Transfer History" />
-          {transfersQuery.isPending || productsQuery.isPending || inventoryQuery.isPending ? (
-            <LoadingPanel label="Loading transfers..." />
-          ) : transfers.length === 0 ? (
-            <EmptyState
-              icon="bi-arrow-left-right"
-              title="No transfers recorded"
-              detail="Completed branch transfers will appear here."
-            />
-          ) : (
-            <TransfersTable transfers={transfers} organization={organization} />
-          )}
-        </section>
-      </div>
-    </section>
-  );
-}
-
 function FormMessages({ error, message }: { error: string; message: string }) {
   return (
     <>
@@ -24513,71 +17617,6 @@ function FormMessages({ error, message }: { error: string; message: string }) {
       ) : null}
     </>
   );
-}
-
-function userSyncMessage(createdCount: number, skippedCount: number) {
-  if (createdCount === 0) {
-    return `No new system users were added. ${skippedCount} already linked, inactive, or missing a branch assignment.`;
-  }
-
-  return `${createdCount} system user${createdCount === 1 ? '' : 's'} added as employee${
-    createdCount === 1 ? '' : 's'
-  }. ${skippedCount} skipped.`;
-}
-
-function employeeFormFromProfile(profile: EmployeeProfile): HrEmployeeFormState {
-  return {
-    employeeNumber: profile.employeeNumber,
-    firstName: profile.firstName,
-    middleName: profile.middleName ?? '',
-    lastName: profile.lastName,
-    preferredName: profile.preferredName ?? '',
-    email: profile.email ?? '',
-    phone: profile.phone ?? '',
-    gender: profile.gender ?? '',
-    dateOfBirth: profile.dateOfBirth ?? '',
-    nationalIdNumber: profile.nationalIdNumber ?? '',
-    primaryBranchId: profile.branchId,
-    departmentId: profile.departmentId ?? '',
-    jobTitleId: profile.jobTitleId ?? '',
-    employmentType: profile.employmentType,
-    employmentStatus: profile.employmentStatus,
-    joiningDate: profile.joiningDate,
-    probationEndDate: profile.probationEndDate ?? '',
-    contractStartDate: profile.contractStartDate ?? '',
-    contractEndDate: profile.contractEndDate ?? '',
-    userId: profile.linkedUserId ?? '',
-    managerEmployeeId: profile.managerEmployeeId ?? '',
-    workLocation: profile.workLocation ?? '',
-    emergencyContactName: profile.emergencyContactName ?? '',
-    emergencyContactPhone: profile.emergencyContactPhone ?? '',
-    address: profile.address ?? '',
-    notes: profile.notes ?? '',
-    basicSalary: profile.basicSalary ?? 0,
-    salaryPaymentMethod: profile.salaryPaymentMethod ?? 'UNSPECIFIED',
-    bankName: profile.bankName ?? '',
-    bankAccountNumber: profile.bankAccountNumber ?? '',
-    bankAccountName: profile.bankAccountName ?? '',
-    mpesaNumber: profile.mpesaNumber ?? '',
-    active: profile.active,
-  };
-}
-
-function dateTimeLocalValue(value: string) {
-  return value.slice(0, 16);
-}
-
-function formatOptionalDateTime(value?: string) {
-  if (!value) {
-    return 'Not recorded';
-  }
-  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function minutesToHours(minutes: number) {
-  const wholeHours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return `${wholeHours}h ${remainingMinutes}m`;
 }
 
 function LoadingPanel({ label }: { label: string }) {
@@ -24649,7 +17688,6 @@ function StockIntakesTable({
           <tr>
             <th>Received</th>
             <th>Product</th>
-            <th>Branch</th>
             <th>Supplier</th>
             <th>Reference</th>
             <th>Quantity</th>
@@ -24670,7 +17708,6 @@ function StockIntakesTable({
                   </span>
                 </span>
               </td>
-              <td data-label="Branch">{intake.branchName}</td>
               <td data-label="Supplier">{intake.supplierName}</td>
               <td data-label="Reference">{intake.referenceNumber || 'N/A'}</td>
               <td data-label="Quantity">{intake.quantity}</td>
@@ -24684,61 +17721,6 @@ function StockIntakesTable({
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function TransfersTable({
-  organization,
-  transfers,
-}: {
-  organization: Organization;
-  transfers: StockTransfer[];
-}) {
-  return (
-    <div className="responsive-table">
-      <table>
-        <thead>
-          <tr>
-            <th>Transferred</th>
-            <th>Product</th>
-            <th>From</th>
-            <th>To</th>
-            <th>Quantity</th>
-            <th>Status</th>
-            <th>Reference</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transfers.map((transfer) => (
-            <tr key={transfer.id}>
-              <td data-label="Transferred">{formatDateTime(transfer.transferredAt)}</td>
-              <td data-label="Product">
-                <span className="table-label">
-                  <i className="bi bi-box" aria-hidden="true" />
-                  <span>
-                    <strong>{transfer.productName}</strong>
-                    <small>{transfer.sku}</small>
-                  </span>
-                </span>
-              </td>
-              <td data-label="From">{transfer.sourceBranchName}</td>
-              <td data-label="To">{transfer.destinationBranchName}</td>
-              <td data-label="Quantity">{transfer.quantity}</td>
-              <td data-label="Status">
-                <StatusPill
-                  status={transfer.status === 'COMPLETED' ? 'posted' : 'pending'}
-                  label={transfer.status === 'COMPLETED' ? 'Completed' : 'Cancelled'}
-                />
-              </td>
-              <td data-label="Reference">{transfer.referenceNumber || 'N/A'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <span className="table-footnote">
-        {organization.currencyCode} stock movement valuation uses product catalog prices.
-      </span>
     </div>
   );
 }
@@ -24767,13 +17749,17 @@ function defaultExpenseForm(branchId = ''): ExpenseFormState {
 function ExpensesPage({
   branches,
   organization,
+  currentUser,
 }: {
   branches: Branch[];
   organization: Organization;
+  currentUser: CurrentUser;
 }) {
+  const canManageExpenses = !isCashierUser(currentUser);
+  const { branchId: platformBranchId } = usePlatform();
   const queryClient = useQueryClient();
   const expensesQuery = useQuery({ queryKey: ['expenses'], queryFn: getExpenses });
-  const expenses = expensesQuery.data ?? [];
+  const expenses = inBranch(expensesQuery.data ?? [], platformBranchId);
   const activeBranches = branches.filter((branch) => branch.status === 'ACTIVE');
   const firstActiveBranchId = activeBranches[0]?.id ?? '';
   const [form, setForm] = useState<ExpenseFormState>(() => defaultExpenseForm(firstActiveBranchId));
@@ -24830,7 +17816,7 @@ function ExpensesPage({
     setMessage('');
 
     if (!form.branchId) {
-      setError('Select a branch before recording an expense.');
+      setError('Set up the shop location before recording an expense.');
       return;
     }
 
@@ -24875,7 +17861,7 @@ function ExpensesPage({
     <section className="branch-workspace expenses-workspace">
       <PageHeader
         title="Expenses"
-        subtitle="Record branch expenses and monitor operating spend."
+        subtitle="Record shop expenses and monitor operating spend."
         action={
           <button
             className="secondary-action compact-action"
@@ -24925,24 +17911,6 @@ function ExpensesPage({
         <section className="panel-card branch-form-panel">
           <PanelHeader icon="bi-wallet2" title="Record Expense" tone="orange" />
           <form className="record-form" onSubmit={handleSubmit}>
-            <label className="field-stack">
-              <span>Branch</span>
-              <select
-                required
-                value={form.branchId}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, branchId: event.target.value }))
-                }
-              >
-                <option value="">Select branch</option>
-                {activeBranches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
             <label className="field-stack">
               <span>Category</span>
               <select
@@ -25091,7 +18059,7 @@ function ExpensesPage({
           <EmptyState
             icon="bi-wallet2"
             title="No expenses recorded"
-            detail="Branch operating costs will appear here."
+            detail="Shop operating costs will appear here."
           />
         ) : (
           <div className="responsive-table">
@@ -25100,7 +18068,6 @@ function ExpensesPage({
                 <tr>
                   <th>Date</th>
                   <th>Expense</th>
-                  <th>Branch</th>
                   <th>Category</th>
                   <th>Payment</th>
                   <th>Amount</th>
@@ -25124,7 +18091,6 @@ function ExpensesPage({
                         </span>
                       </span>
                     </td>
-                    <td data-label="Branch">{expense.branchName}</td>
                     <td data-label="Category">{expense.category}</td>
                     <td data-label="Payment">
                       <span className="table-label compact-label">
@@ -25149,24 +18115,30 @@ function ExpensesPage({
                     </td>
                     <td data-label="Actions">
                       <span className="table-actions">
-                        <button
-                          className="text-button"
-                          type="button"
-                          disabled={isBusy || expense.status !== 'PENDING'}
-                          onClick={() => handleMarkPaid(expense)}
-                        >
-                          <i className="bi bi-check2-circle" aria-hidden="true" />
-                          Mark Paid
-                        </button>
-                        <button
-                          className="text-button danger-text"
-                          type="button"
-                          disabled={isBusy || expense.status === 'VOID'}
-                          onClick={() => handleVoid(expense)}
-                        >
-                          <i className="bi bi-x-circle" aria-hidden="true" />
-                          Void
-                        </button>
+                        {canManageExpenses ? (
+                          <>
+                            <button
+                              className="text-button"
+                              type="button"
+                              disabled={isBusy || expense.status !== 'PENDING'}
+                              onClick={() => handleMarkPaid(expense)}
+                            >
+                              <i className="bi bi-check2-circle" aria-hidden="true" />
+                              Mark Paid
+                            </button>
+                            <button
+                              className="text-button danger-text"
+                              type="button"
+                              disabled={isBusy || expense.status === 'VOID'}
+                              onClick={() => handleVoid(expense)}
+                            >
+                              <i className="bi bi-x-circle" aria-hidden="true" />
+                              Void
+                            </button>
+                          </>
+                        ) : (
+                          <span className="table-subtext">Registered</span>
+                        )}
                       </span>
                     </td>
                   </tr>
@@ -25191,18 +18163,18 @@ function updateExpensesCache(queryClient: QueryClient, expense: Expense) {
 
 function ReportsHub({
   branches,
-  currentUser,
   organization,
 }: {
   branches: Branch[];
-  currentUser: CurrentUser;
   organization: Organization;
 }) {
+  const { branchId: platformBranchId } = usePlatform();
   const activeBranches = useMemo(
     () => branches.filter((branch) => branch.status === 'ACTIVE'),
     [branches],
   );
-  const [selectedBranchId, setSelectedBranchId] = useState('');
+  const [selectedBranchId, setSelectedBranchId] = useState(platformBranchId);
+  useEffect(() => setSelectedBranchId(platformBranchId), [platformBranchId]);
   const [selectedPeriod, setSelectedPeriod] = useState<ReportPeriod>('month');
   const [activeDetailTab, setActiveDetailTab] = useState<ReportDetailTab>('sales');
   const [areReportFiltersOpen, setAreReportFiltersOpen] = useState(false);
@@ -25214,25 +18186,16 @@ function ReportsHub({
   const expensesQuery = useQuery({ queryKey: ['expenses'], queryFn: getExpenses });
   const inventoryQuery = useQuery({ queryKey: ['inventory'], queryFn: getInventory });
   const stockIntakesQuery = useQuery({ queryKey: ['stock-intakes'], queryFn: getStockIntakes });
-  const transfersQuery = useQuery({ queryKey: ['transfers'], queryFn: getTransfers });
   const stockAdjustmentsQuery = useQuery({
     queryKey: ['stock-adjustments'],
     queryFn: getStockAdjustments,
   });
-  const canReadUsers = hasPermission(currentUser, 'admin:manage');
-  const usersQuery = useQuery({ queryKey: ['users'], queryFn: getUsers, enabled: canReadUsers });
-  const sales = salesQuery.data ?? [];
-  const expenses = expensesQuery.data ?? [];
-  const inventory = inventoryQuery.data ?? [];
-  const stockIntakes = stockIntakesQuery.data ?? [];
-  const transfers = transfersQuery.data ?? [];
-  const stockAdjustments = stockAdjustmentsQuery.data ?? [];
-  const users = usersQuery.data ?? [];
-  const selectedBranch = activeBranches.find((branch) => branch.id === selectedBranchId);
-  const reportBranches = useMemo(
-    () => (selectedBranch ? [selectedBranch] : activeBranches),
-    [activeBranches, selectedBranch],
-  );
+  const sales = inBranch(salesQuery.data ?? [], platformBranchId);
+  const expenses = inBranch(expensesQuery.data ?? [], platformBranchId);
+  const inventory = inBranch(inventoryQuery.data ?? [], platformBranchId);
+  const stockIntakes = inBranch(stockIntakesQuery.data ?? [], platformBranchId);
+  const stockAdjustments = inBranch(stockAdjustmentsQuery.data ?? [], platformBranchId);
+  const reportBranches = activeBranches;
   const filteredSales = useMemo(
     () =>
       sales.filter(
@@ -25264,15 +18227,6 @@ function ReportsHub({
       ),
     [dateRange, selectedBranchId, stockIntakes],
   );
-  const filteredTransfers = useMemo(
-    () =>
-      transfers.filter(
-        (transfer) =>
-          matchesTransferBranch(transfer, selectedBranchId) &&
-          isWithinReportRange(transfer.transferredAt, dateRange),
-      ),
-    [dateRange, selectedBranchId, transfers],
-  );
   const filteredStockAdjustments = useMemo(
     () =>
       stockAdjustments.filter(
@@ -25282,15 +18236,6 @@ function ReportsHub({
       ),
     [dateRange, selectedBranchId, stockAdjustments],
   );
-  const filteredUsers = useMemo(
-    () =>
-      selectedBranchId
-        ? users.filter(
-            (user) => user.branchIds.length === 0 || user.branchIds.includes(selectedBranchId),
-          )
-        : users,
-    [selectedBranchId, users],
-  );
   const summary = useMemo(
     () =>
       buildReportSummary(
@@ -25298,9 +18243,7 @@ function ReportsHub({
         filteredSales,
         filteredExpenses,
         filteredInventory,
-        filteredUsers,
         filteredStockIntakes,
-        filteredTransfers,
         filteredStockAdjustments,
       ),
     [
@@ -25309,8 +18252,6 @@ function ReportsHub({
       filteredSales,
       filteredStockAdjustments,
       filteredStockIntakes,
-      filteredTransfers,
-      filteredUsers,
       reportBranches,
     ],
   );
@@ -25319,29 +18260,26 @@ function ReportsHub({
     expensesQuery.isPending ||
     inventoryQuery.isPending ||
     stockIntakesQuery.isPending ||
-    transfersQuery.isPending ||
-    stockAdjustmentsQuery.isPending ||
-    usersQuery.isPending;
+    stockAdjustmentsQuery.isPending;
   const loadError = [
     salesQuery.error,
     expensesQuery.error,
     inventoryQuery.error,
     stockIntakesQuery.error,
-    transfersQuery.error,
     stockAdjustmentsQuery.error,
-    usersQuery.error,
   ]
     .filter((error): error is Error => error instanceof Error)
     .at(0);
-  const scopeLabel = selectedBranch?.name ?? 'All Branches';
-  const reportTitle = selectedBranch
-    ? `${isStoreBranch(selectedBranch) ? 'Store' : 'Shop'} reports`
-    : 'Business reports';
-  const reportSubtitle = selectedBranch
-    ? `View sales, stock movement, expenses, and financial position for ${selectedBranch.name}.`
-    : 'View sales, stock movement, expenses, and financial position across all active branches.';
+  const scopeLabel = 'Shop';
+  const reportTitle = 'Business reports';
+  const reportSubtitle =
+    'View sales, stock movement, expenses, and financial position for the shop.';
   const canExport = !isLoading && !loadError;
   const overviewCards = reportOverviewCards(summary, organization);
+  const reportSalesTrendRows = useMemo(
+    () => reportSalesTrendRowsFromSales(filteredSales, dateRange),
+    [dateRange, filteredSales],
+  );
   const reportRangeLabel = `${formatReportDateInput(dateRange.from)} to ${formatReportDateInput(
     dateRange.to,
   )}`;
@@ -25413,21 +18351,6 @@ function ReportsHub({
         subtitle={reportSubtitle}
         action={
           <div className="header-actions reports-header-actions">
-            <label className="select-shell report-branch-select report-branch-select-header">
-              <i className="bi bi-geo-alt" aria-hidden="true" />
-              <select
-                aria-label="Report branch"
-                value={selectedBranchId}
-                onChange={(event) => setSelectedBranchId(event.target.value)}
-              >
-                <option value="">All Branches</option>
-                {activeBranches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <button
               className="primary-action compact-action report-excel-action"
               type="button"
@@ -25440,6 +18363,8 @@ function ReportsHub({
           </div>
         }
       />
+
+      <DailySalesReportsPanel branches={branches} timeZone={organization.timeZone} />
 
       {loadError ? (
         <p className="message-banner error" role="alert">
@@ -25466,21 +18391,6 @@ function ReportsHub({
           </button>
         </div>
         <div className={`report-filter-controls ${areReportFiltersOpen ? 'open' : ''}`}>
-          <label className="select-shell report-branch-select report-branch-select-mobile">
-            <i className="bi bi-geo-alt" aria-hidden="true" />
-            <select
-              aria-label="Report branch"
-              value={selectedBranchId}
-              onChange={(event) => setSelectedBranchId(event.target.value)}
-            >
-              <option value="">All Branches</option>
-              {activeBranches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <div className="report-period-row" aria-label="Report period presets">
             {reportPeriodOptions.map((option) => (
               <button
@@ -25533,6 +18443,8 @@ function ReportsHub({
         ))}
       </div>
 
+      <ReportSalesTrendPanel currencyCode={organization.currencyCode} rows={reportSalesTrendRows} />
+
       <div className="report-section-heading">
         <h2>Performance overview</h2>
       </div>
@@ -25583,7 +18495,7 @@ function ReportsHub({
             <EmptyState
               icon="bi-activity"
               title="No activity"
-              detail="Sales, expenses, receipts, and transfers will appear in this mix."
+              detail="Sales, expenses, receipts, and stock counts will appear in this mix."
             />
           ) : (
             <DonutChart
@@ -25601,7 +18513,7 @@ function ReportsHub({
             <EmptyState
               icon="bi-boxes"
               title="No stock movement"
-              detail="Sold, received, and transferred units will appear here."
+              detail="Sold and received units will appear here."
             />
           ) : (
             <DonutChart
@@ -25644,7 +18556,7 @@ function ReportsHub({
                 <i className="bi bi-arrow-right" aria-hidden="true" />
               </NavLink>
             }
-            eyebrow={selectedBranch ? 'Branch report' : 'Branch reports'}
+            eyebrow="Shop report"
             icon="bi-shop"
             title="Sales summary"
           >
@@ -25777,6 +18689,112 @@ function ReportKpiCard({ metric }: { metric: ReportOverviewCard }) {
   );
 }
 
+function ReportSalesTrendPanel({
+  currencyCode,
+  rows,
+}: {
+  currencyCode: string;
+  rows: ReturnType<typeof reportSalesTrendRowsFromSales>;
+}) {
+  const retailSalesTotal = rows.reduce((sum, row) => sum + row.retailSales, 0);
+  const grossProfitTotal = rows.reduce((sum, row) => sum + row.grossProfit, 0);
+
+  return (
+    <section className="report-panel report-trend-panel">
+      <div className="report-trend-header">
+        <div>
+          <span className="report-panel-eyebrow">Analytics</span>
+          <h2>Sales and profit</h2>
+        </div>
+        <div className="report-trend-meta">
+          <span className="report-trend-source-pill">
+            <i className="bi bi-database" aria-hidden="true" />
+            Database
+            <i className="bi bi-chevron-down" aria-hidden="true" />
+          </span>
+          <div className="report-trend-legend" aria-label="Sales trend totals">
+            <div>
+              <span>
+                <i className="retail" />
+                Retail sales
+              </span>
+              <strong>{formatMoney(retailSalesTotal, currencyCode)}</strong>
+            </div>
+            <div>
+              <span>
+                <i className="profit" />
+                Gross profit
+              </span>
+              <strong>{formatMoney(grossProfitTotal, currencyCode)}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="report-trend-chart" aria-label="Sales and gross profit trend">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={rows} margin={{ top: 8, right: 18, bottom: 0, left: -6 }}>
+            <defs>
+              <linearGradient id="reportRetailSalesFill" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="#2878f0" stopOpacity={0.22} />
+                <stop offset="100%" stopColor="#2878f0" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke="#dbe7f7" strokeDasharray="2 6" />
+            <XAxis
+              dataKey="day"
+              tick={{ fill: 'var(--muted)', fontSize: 12, fontWeight: 600 }}
+              tickLine={false}
+              axisLine={false}
+              minTickGap={18}
+            />
+            <YAxis
+              allowDecimals={false}
+              tickFormatter={(value) => formatMoneyTick(Number(value), currencyCode)}
+              tick={{ fill: 'var(--muted)', fontSize: 12, fontWeight: 600 }}
+              tickLine={false}
+              axisLine={false}
+              width={58}
+            />
+            <Tooltip
+              formatter={(value, name) => [
+                formatMoney(Number(value), currencyCode),
+                name === 'retailSales' ? 'Retail sales' : 'Gross profit',
+              ]}
+              labelFormatter={(label) => String(label)}
+              contentStyle={{
+                border: '1px solid #d4dde9',
+                borderRadius: 8,
+                boxShadow: '0 12px 28px rgba(15, 23, 42, 0.12)',
+                fontSize: 12,
+              }}
+            />
+            <Area
+              type="monotone"
+              dataKey="retailSales"
+              stroke="#2878f0"
+              fill="url(#reportRetailSalesFill)"
+              strokeWidth={3}
+              dot={{ r: 3, strokeWidth: 2, fill: '#ffffff' }}
+              activeDot={{ r: 5 }}
+              isAnimationActive={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="grossProfit"
+              stroke="#18bf7a"
+              strokeWidth={3}
+              dot={{ r: 3, strokeWidth: 2, fill: '#ffffff' }}
+              activeDot={{ r: 5 }}
+              isAnimationActive={false}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+  );
+}
+
 function ReportPanel({
   action,
   children,
@@ -25820,8 +18838,8 @@ function ReportBranchSalesTable({
     return (
       <EmptyState
         icon="bi-shop"
-        title="No sales by branch"
-        detail="Completed sales will appear in the branch summary."
+        title="No shop sales"
+        detail="Completed sales will appear in the shop summary."
       />
     );
   }
@@ -25842,7 +18860,7 @@ function ReportBranchSalesTable({
       <table>
         <thead>
           <tr>
-            <th>Branch</th>
+            <th>Shop</th>
             <th>Receipts</th>
             <th>Product Lines</th>
             <th>Units Sold</th>
@@ -25854,7 +18872,7 @@ function ReportBranchSalesTable({
         <tbody>
           {rows.map((row) => (
             <tr key={row.branch.id}>
-              <td data-label="Branch">
+              <td data-label="Shop">
                 <strong>{row.branch.name}</strong>
               </td>
               <td data-label="Receipts">{row.receipts}</td>
@@ -25873,7 +18891,7 @@ function ReportBranchSalesTable({
             </tr>
           ))}
           <tr className="report-total-row">
-            <td data-label="Branch">Total</td>
+            <td data-label="Shop">Total</td>
             <td data-label="Receipts">{totals.receipts}</td>
             <td data-label="Product Lines">{totals.productLines}</td>
             <td data-label="Units Sold">{formatQuantity(totals.unitsSold)}</td>
@@ -25908,7 +18926,6 @@ function ReportRestockTable({ rows }: { rows: ReturnType<typeof restockReportRow
         <thead>
           <tr>
             <th>Product</th>
-            <th>Branch</th>
             <th>Restock Qty</th>
             <th>Available</th>
             <th>Reorder Level</th>
@@ -25927,7 +18944,6 @@ function ReportRestockTable({ rows }: { rows: ReturnType<typeof restockReportRow
                   </span>
                 </span>
               </td>
-              <td data-label="Branch">{row.branchName}</td>
               <td data-label="Restock Qty">{formatQuantity(row.restockQty)}</td>
               <td data-label="Available">{formatQuantity(row.quantityAvailable)}</td>
               <td data-label="Reorder Level">{formatQuantity(row.reorderLevel)}</td>
@@ -25967,7 +18983,6 @@ function ReportSalesLinesTable({
             <th>Date</th>
             <th>Receipt</th>
             <th>Product</th>
-            <th>Branch</th>
             <th>Qty</th>
             <th>Unit Price</th>
             <th>Discount</th>
@@ -25981,7 +18996,6 @@ function ReportSalesLinesTable({
               <td data-label="Date">{formatDateOnly(row.soldAt)}</td>
               <td data-label="Receipt">{row.receipt}</td>
               <td data-label="Product">{row.productName}</td>
-              <td data-label="Branch">{row.branchName}</td>
               <td data-label="Qty">{formatQuantity(row.quantity)}</td>
               <td data-label="Unit Price">
                 {formatMoney(row.unitPrice, organization.currencyCode)}
@@ -26060,7 +19074,7 @@ function ReportExpenseTable({
       <EmptyState
         icon="bi-wallet2"
         title="No expenses"
-        detail="Expense categories will appear after branch costs are recorded."
+        detail="Expense categories will appear after shop costs are recorded."
       />
     );
   }
@@ -26122,7 +19136,6 @@ function ReportStockAdjustmentTable({
           <tr>
             <th>Date</th>
             <th>Product</th>
-            <th>Branch</th>
             <th>System</th>
             <th>Counted</th>
             <th>Variance</th>
@@ -26145,7 +19158,6 @@ function ReportStockAdjustmentTable({
                     </span>
                   </span>
                 </td>
-                <td data-label="Branch">{row.branchName}</td>
                 <td data-label="System">{formatQuantity(row.systemQuantity)}</td>
                 <td data-label="Counted">{formatQuantity(row.countedQuantity)}</td>
                 <td
@@ -26204,6 +19216,8 @@ function SettingsPage({ organization }: { organization: Organization }) {
         title="Settings"
         subtitle="Organization controls for taxes and default product behavior."
       />
+
+      <PosPreferencesPanel />
 
       <FormMessages error={error} message={message} />
 
@@ -26293,21 +19307,20 @@ function HelpPage() {
   return (
     <section className="help-workspace" aria-labelledby="help-page-title">
       <header className="help-page-heading">
-        <p>KEEN FASHION OPERATIONS</p>
+        <p>{appName}</p>
         <h1 id="help-page-title">Help & product information</h1>
         <span>Everything you need to know about your workspace and support.</span>
       </header>
 
       <section className="help-product-hero" aria-labelledby="help-product-title">
         <div className="help-product-brandmark" aria-hidden="true">
-          <img src={keenLogoUrl} alt="" />
+          <img src={keenLogoImageUrl} alt="" />
         </div>
         <div className="help-product-copy">
-          <h2 id="help-product-title">KEEN ERP, Fashion Inventory & POS</h2>
+          <h2 id="help-product-title">{appName}</h2>
           <span className="help-version-badge">Version {appVersion}</span>
           <p>
-            Your central workspace for branches, products, stock movement, security, sales, HR, and
-            reporting.
+            Your central workspace for products, stock movement, security, sales, and reporting.
           </p>
         </div>
         <div className="help-hero-art" aria-hidden="true">
@@ -26385,13 +19398,13 @@ function HelpPage() {
 
       <footer className="help-page-footer">
         <div>
-          <strong>KEEN ERP, Fashion Inventory & POS</strong>
+          <strong>{appName}</strong>
           <span>
             Version {appVersion} | Copyright @{copyrightYear} CRENVIXMORAVA SYSTEMS. All rights
             reserved.
           </span>
         </div>
-        <p>Built for a more organized fashion business.</p>
+        <p>Built for a more organized business.</p>
       </footer>
     </section>
   );
@@ -26461,9 +19474,6 @@ function ShiftsPage({ activeBranch, branches, currentUser, organization }: Shift
     queryFn: getExpenses,
     refetchOnMount: 'always',
   });
-  const canReadUsers = hasPermission(currentUser, 'admin:manage');
-  const usersQuery = useQuery({ queryKey: ['users'], queryFn: getUsers, enabled: canReadUsers });
-
   useEffect(() => {
     if (activeBranch?.id) {
       setSelectedBranchId(activeBranch.id);
@@ -26488,10 +19498,6 @@ function ShiftsPage({ activeBranch, branches, currentUser, organization }: Shift
   );
   const sales = salesQuery.data ?? [];
   const expenses = expensesQuery.data ?? [];
-  const users = usersQuery.data ?? [];
-  const branchUsers = users.filter(
-    (user) => user.status === 'ACTIVE' && user.branchIds.includes(selectedBranchId),
-  );
   const todayRange = reportPeriodRange('today');
   const selectedBranchSales = selectedBranchId
     ? sales.filter((sale) => sale.branchId === selectedBranchId)
@@ -26539,7 +19545,7 @@ function ShiftsPage({ activeBranch, branches, currentUser, organization }: Shift
     setMessage('');
 
     if (!selectedBranch) {
-      setError('Select an active branch before opening a shift.');
+      setError('Set up the shop location before opening a shift.');
       return;
     }
 
@@ -26624,21 +19630,6 @@ function ShiftsPage({ activeBranch, branches, currentUser, organization }: Shift
         subtitle="Open, close, and reconcile register sessions against live sales and expenses."
         action={
           <div className="header-actions">
-            <label className="select-shell">
-              <i className="bi bi-shop" aria-hidden="true" />
-              <select
-                aria-label="Shift branch"
-                value={selectedBranchId}
-                onChange={(event) => handleBranchChange(event.target.value)}
-              >
-                <option value="">Select Branch</option>
-                {activeBranches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <button
               className="secondary-action compact-action"
               type="button"
@@ -26702,8 +19693,8 @@ function ShiftsPage({ activeBranch, branches, currentUser, organization }: Shift
           {!selectedBranch ? (
             <EmptyState
               icon="bi-shop"
-              title="Select a branch"
-              detail="Choose a branch before opening or reconciling a shift."
+              title="Shop location unavailable"
+              detail="Set up the shop location before opening or reconciling a shift."
             />
           ) : activeShift ? (
             <>
@@ -26780,7 +19771,7 @@ function ShiftsPage({ activeBranch, branches, currentUser, organization }: Shift
           ) : (
             <form className="record-form" onSubmit={handleOpenShift}>
               <label className="field-stack">
-                <span>Branch</span>
+                <span>Shop</span>
                 <input value={selectedBranch.name} readOnly />
               </label>
 
@@ -26882,7 +19873,7 @@ function ShiftsPage({ activeBranch, branches, currentUser, organization }: Shift
             <EmptyState
               icon="bi-clock"
               title="No open shifts"
-              detail="Open branch shifts will appear here for quick switching."
+              detail="Open register shifts will appear here."
             />
           ) : (
             <div className="shift-open-list">
@@ -26898,7 +19889,7 @@ function ShiftsPage({ activeBranch, branches, currentUser, organization }: Shift
                     onClick={() => handleBranchChange(shift.branchId)}
                   >
                     <span>
-                      <strong>{branch?.name ?? 'Unknown branch'}</strong>
+                      <strong>{branch?.name ?? 'Shop'}</strong>
                       <small>{shift.cashierName}</small>
                     </span>
                     <em>{shiftDurationLabel(shift)}</em>
@@ -26987,38 +19978,13 @@ function ShiftsPage({ activeBranch, branches, currentUser, organization }: Shift
           )}
         </section>
 
-        <section className="panel-card shift-staff-panel">
-          <PanelHeader icon="bi-people" title="Branch Staff" tone="blue" />
-          {usersQuery.isPending ? (
-            <LoadingPanel label="Loading staff..." />
-          ) : branchUsers.length === 0 ? (
-            <EmptyState
-              icon="bi-person"
-              title="No staff assigned"
-              detail="Assigned active users will appear here."
-            />
-          ) : (
-            <div className="shift-ledger-list">
-              {branchUsers.slice(0, 8).map((user) => (
-                <div className="shift-ledger-row" key={user.id}>
-                  <span>
-                    <strong>{user.displayName}</strong>
-                    <small>{user.roleNames.join(', ') || user.email}</small>
-                  </span>
-                  <StatusPill status="posted" label="Active" />
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
         <section className="panel-card shift-history-panel">
           <PanelHeader icon="bi-archive" title="Closed Shift History" tone="purple" />
           {closedShifts.length === 0 ? (
             <EmptyState
               icon="bi-archive"
               title="No closed shifts"
-              detail="Closed shifts for the selected branch will appear here."
+              detail="Closed register shifts will appear here."
             />
           ) : (
             <div className="responsive-table">
@@ -27091,9 +20057,7 @@ function BackOffice() {
   const modules = [
     { label: 'Sales', icon: 'bi-receipt', detail: 'History, returns, and voids' },
     { label: 'Expenses', icon: 'bi-wallet2', detail: 'Approvals and categories' },
-    { label: 'Shifts', icon: 'bi-clock-history', detail: 'Open, close, reconcile' },
-    { label: 'Transfers', icon: 'bi-arrow-left-right', detail: 'Request, dispatch, receive' },
-    { label: 'Staff', icon: 'bi-people', detail: 'Roles and permissions' },
+    { label: 'Commercial', icon: 'bi-receipt-cutoff', detail: 'Invoices' },
     { label: 'Settings', icon: 'bi-gear', detail: 'Organization controls' },
   ];
 
@@ -27129,7 +20093,7 @@ type MetricCardProps = {
 
 function MetricCard({ label, value, icon, tone }: MetricCardProps) {
   return (
-    <article className="metric-card">
+    <article className={`metric-card metric-${tone}`}>
       <span className={`icon-tile ${tone}`}>
         <i className={`bi ${icon}`} aria-hidden="true" />
       </span>
@@ -27162,60 +20126,6 @@ function SummaryMetric({
         <strong>{value}</strong>
       </div>
     </article>
-  );
-}
-
-function HrDashboardMetricCard({
-  icon,
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-  detail: string;
-  tone: 'blue' | 'green' | 'orange' | 'purple';
-}) {
-  return (
-    <article className={`hr-metric-card tone-${tone}`}>
-      <i className={`bi ${icon} hr-metric-icon`} aria-hidden="true" />
-      <div className="hr-metric-copy">
-        <span>{label}</span>
-        <strong>{value}</strong>
-        <small>{detail}</small>
-      </div>
-      <i className="bi bi-chevron-right hr-metric-arrow" aria-hidden="true" />
-    </article>
-  );
-}
-
-function employeeInitials(fullName: string) {
-  const parts = fullName
-    .split(' ')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  return (parts[0]?.charAt(0) ?? '') + (parts[1]?.charAt(0) ?? parts[0]?.charAt(1) ?? '');
-}
-
-function HrBackButton() {
-  const navigate = useNavigate();
-
-  return (
-    <button className="secondary-action compact-action" type="button" onClick={() => navigate(-1)}>
-      <i className="bi bi-arrow-left" aria-hidden="true" />
-      Back
-    </button>
-  );
-}
-
-function ProfileFact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="user-detail-block hr-profile-fact">
-      <span className="user-detail-label">{label}</span>
-      <strong>{value}</strong>
-    </div>
   );
 }
 
@@ -27407,11 +20317,6 @@ function InventoryFilters({ showProductSearch = false }: { showProductSearch?: b
         </div>
       ) : null}
       <label className="select-shell">
-        <select aria-label="Inventory branch filter" defaultValue="all">
-          <option value="all">All Branches</option>
-        </select>
-      </label>
-      <label className="select-shell">
         <select aria-label="Inventory category filter" defaultValue="all">
           <option value="all">All Categories</option>
         </select>
@@ -27546,28 +20451,21 @@ function ReportCardBody({
     );
   }
 
-  if (type === 'branches') {
-    if (summary.branchRows.length === 0) {
-      return (
-        <EmptyState
-          icon="bi-shop"
-          title="No branches"
-          detail="Branch reporting will appear after active branches are registered."
-        />
-      );
-    }
-
-    const maxSales = Math.max(1, ...summary.branchRows.map((row) => row.netSales));
+  if (type === 'shop') {
     return (
-      <div className="branch-report-list">
-        {summary.branchRows.slice(0, 4).map((row, index) => (
-          <div key={row.branch.id}>
-            <span>{index + 1}</span>
-            <strong>{row.branch.name}</strong>
-            <i style={{ width: `${(row.netSales / maxSales) * 100}%` }} />
-            <em>{formatMoney(row.netSales, organization.currencyCode)}</em>
-          </div>
-        ))}
+      <div className="split-stat">
+        <div>
+          <strong>{formatMoney(summary.totalSales, organization.currencyCode)}</strong>
+          <span>Shop Sales</span>
+          <em className="positive-text">{summary.transactions} transactions</em>
+        </div>
+        <div>
+          <strong>{formatMoney(summary.contribution, organization.currencyCode)}</strong>
+          <span>Net Position</span>
+          <em className={summary.contribution >= 0 ? 'positive-text' : 'negative-text'}>
+            Sales less expenses
+          </em>
+        </div>
       </div>
     );
   }
@@ -27629,16 +20527,6 @@ function ReportCardBody({
             </div>
           </div>
         ))}
-      </div>
-    );
-  }
-
-  if (type === 'staff') {
-    return (
-      <div className="simple-stat">
-        <strong>{summary.userCount}</strong>
-        <span>Staff Users</span>
-        <em className="positive-text">{summary.activeUserCount} active</em>
       </div>
     );
   }
@@ -27747,16 +20635,6 @@ function StatusPill({
   );
 }
 
-function payrollRunPillStatus(status: PayrollRunStatus): 'posted' | 'review' | 'pending' {
-  if (status === 'APPROVED' || status === 'PROCESSED' || status === 'LOCKED') {
-    return 'posted';
-  }
-  if (status === 'CALCULATED' || status === 'REVIEWED') {
-    return 'review';
-  }
-  return 'pending';
-}
-
 function labelizeEnum(value: string) {
   return value
     .toLowerCase()
@@ -27764,2008 +20642,6 @@ function labelizeEnum(value: string) {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 }
-
-const hrDashboardStyles = `
-.hr-dashboard-workspace {
-  gap: 1rem;
-}
-
-.settings-workspace .hr-settings-structure-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.settings-workspace .hr-structure-list-panel.panel-card {
-  overflow: visible;
-}
-
-.settings-workspace .hr-settings-structure-grid .user-directory-row,
-.settings-workspace .hr-structure-row {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.75rem;
-}
-
-.settings-workspace .hr-settings-structure-grid .user-directory-status,
-.settings-workspace .hr-structure-row .user-directory-status {
-  grid-column: auto;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.75rem;
-}
-
-.settings-workspace .hr-settings-structure-grid .user-directory-actions,
-.settings-workspace .hr-structure-row .user-directory-actions {
-  justify-items: start;
-}
-
-@media (max-width: 1180px) {
-  .settings-workspace .hr-settings-structure-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.hr-dashboard-body {
-  display: flex;
-  flex-direction: column;
-  gap: 1.15rem;
-}
-
-.hr-dashboard-hero,
-.hr-kpi-grid,
-.hr-panel-heading,
-.hr-dashboard-actions,
-.hr-schedule-item,
-.hr-schedule-copy {
-  display: flex;
-}
-
-.hr-dashboard-hero {
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.25rem;
-  flex-wrap: wrap;
-  padding: 0.2rem 0 0.15rem;
-}
-
-.hr-dashboard-hero h1 {
-  margin: 0;
-  font-size: 2.15rem;
-  color: #12284a;
-  letter-spacing: -0.045em;
-}
-
-.hr-dashboard-hero h2 {
-  margin: 0.28rem 0 0.12rem;
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: #183566;
-  letter-spacing: -0.02em;
-}
-
-.hr-dashboard-hero p {
-  margin: 0;
-  color: #667a96;
-  font-size: 0.96rem;
-}
-
-.hr-dashboard-actions {
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.hr-period-pill,
-.hr-period-inline {
-  min-height: 46px;
-  padding: 0.72rem 1rem;
-  border: 1px solid #dbe6f2;
-  border-radius: 12px;
-  background: #fff;
-  color: #17345c;
-  font-weight: 600;
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.04);
-}
-
-.hr-period-pill,
-.hr-period-inline {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.625rem;
-}
-
-.hr-dashboard-select {
-  width: auto;
-  min-width: 0;
-  padding-right: 2.25rem;
-  box-sizing: border-box;
-  font-weight: 700;
-}
-
-.hr-dashboard-add-action {
-  min-height: 46px;
-  padding-inline: 0.15rem;
-  border-radius: 12px;
-  background: transparent;
-  color: #2563eb;
-  box-shadow: none;
-  border: 0;
-}
-
-.hr-kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.7rem;
-}
-
-.hr-metric-card {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 0.9rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid #dfe7f1;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.035);
-  transition:
-    transform 160ms ease,
-    box-shadow 160ms ease,
-    border-color 160ms ease;
-}
-
-.hr-metric-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
-  border-color: #d2ddea;
-}
-
-.hr-metric-icon {
-  font-size: 1.8rem;
-  line-height: 1;
-}
-
-.hr-metric-card.tone-blue .hr-metric-icon {
-  color: #2878f0;
-}
-
-.hr-metric-card.tone-green .hr-metric-icon {
-  color: #22c55e;
-}
-
-.hr-metric-card.tone-orange .hr-metric-icon {
-  color: #f59e0b;
-}
-
-.hr-metric-card.tone-purple .hr-metric-icon {
-  color: #8b5cf6;
-}
-
-.hr-metric-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.18rem;
-}
-
-.hr-metric-copy span {
-  color: #2a4670;
-  font-weight: 700;
-  font-size: 0.82rem;
-}
-
-.hr-metric-copy small {
-  color: #69809d;
-  font-size: 0.82rem;
-  line-height: 1.3;
-}
-
-.hr-metric-copy strong {
-  font-size: 1.95rem;
-  line-height: 1;
-  color: #152c53;
-  letter-spacing: -0.05em;
-}
-
-.hr-metric-arrow {
-  color: #7e93b0;
-  font-size: 0.92rem;
-}
-
-.hr-dashboard-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr) minmax(0, 1.1fr);
-  gap: 0.9rem;
-  align-items: start;
-}
-
-.hr-dashboard-panel {
-  padding: 1.15rem 1.15rem 1.05rem;
-  border-radius: 10px;
-  border: 1px solid #dfe7f1;
-  background: #ffffff;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.035);
-}
-
-.hr-attendance-panel {
-  grid-column: 1;
-}
-
-.hr-leave-panel {
-  grid-column: 2;
-}
-
-.hr-distribution-panel {
-  grid-column: 3;
-}
-
-.hr-recent-table-panel {
-  grid-column: 1 / span 2;
-}
-
-.hr-schedule-panel {
-  grid-column: 3;
-}
-
-.hr-panel-heading {
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.hr-panel-heading h3 {
-  margin: 0;
-  font-size: 0.98rem;
-  color: #17345c;
-  letter-spacing: -0.03em;
-}
-
-.hr-dashboard-chart-wrap {
-  height: 270px;
-}
-
-.hr-attendance-chart-wrap .recharts-cartesian-axis-tick-value tspan:last-child {
-  fill: #7c8ea4;
-}
-
-.hr-attendance-legend {
-  display: flex;
-  gap: 1.1rem;
-  margin-bottom: 0.85rem;
-  flex-wrap: wrap;
-}
-
-.hr-attendance-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  color: #4a6280;
-  font-size: 0.84rem;
-  font-weight: 600;
-}
-
-.hr-attendance-legend-item i {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  display: inline-block;
-}
-
-.hr-attendance-legend-item.present i {
-  background: #2f80ed;
-}
-
-.hr-attendance-legend-item.absent i {
-  background: #cfe0ff;
-}
-
-.hr-attendance-legend-item.attendance i {
-  background: #1d4ed8;
-}
-
-.hr-leave-list {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.hr-leave-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 0.85rem;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid #eef3f8;
-}
-
-.hr-leave-row:last-child {
-  border-bottom: 0;
-}
-
-.hr-leave-avatar,
-.hr-table-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-size: 0.85rem;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
-}
-
-.hr-leave-avatar.tone-0,
-.hr-table-avatar.tone-0 {
-  background: #efe3ff;
-  color: #7c3aed;
-}
-
-.hr-leave-avatar.tone-1,
-.hr-table-avatar.tone-1 {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-.hr-leave-avatar.tone-2,
-.hr-table-avatar.tone-2 {
-  background: #dcfce7;
-  color: #16a34a;
-}
-
-.hr-leave-avatar.tone-3,
-.hr-table-avatar.tone-3 {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.hr-leave-avatar.tone-4,
-.hr-table-avatar.tone-4 {
-  background: #fef3c7;
-  color: #d97706;
-}
-
-.hr-leave-copy {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.hr-leave-copy span,
-.hr-schedule-copy span {
-  color: #3d5673;
-}
-
-.hr-leave-copy strong,
-.hr-schedule-copy strong {
-  color: #17345c;
-}
-
-.hr-leave-copy strong {
-  font-size: 0.93rem;
-}
-
-.hr-leave-copy span {
-  font-size: 0.86rem;
-}
-
-.hr-leave-copy small,
-.hr-schedule-copy small {
-  color: #708399;
-  font-size: 0.82rem;
-}
-
-.hr-dashboard-tag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 28px;
-  padding: 0.3rem 0.65rem;
-  border-radius: 999px;
-  font-size: 0.79rem;
-  font-weight: 700;
-  white-space: nowrap;
-  background: transparent;
-}
-
-.hr-dashboard-tag.pending {
-  color: #b7791f;
-}
-
-.hr-dashboard-tag.approved,
-.hr-dashboard-tag.meeting,
-.hr-dashboard-tag.review {
-  color: #15803d;
-}
-
-.hr-dashboard-tag.interview {
-  color: #7c3aed;
-}
-
-.hr-dashboard-tag.deadline {
-  color: #dc2626;
-}
-
-.ai-assistant-shell {
-  position: fixed;
-  right: 1.25rem;
-  bottom: 1.25rem;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.8rem;
-}
-
-.ai-assistant-toggle {
-  border: 0;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #17345c, #2563eb);
-  color: #fff;
-  padding: 0.85rem 1.15rem;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  box-shadow: 0 20px 35px rgba(37, 99, 235, 0.22);
-}
-
-.ai-assistant-panel {
-  width: min(380px, calc(100vw - 2rem));
-  padding: 1rem;
-  border-radius: 20px;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
-}
-
-.ai-assistant-header,
-.ai-assistant-suggestions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.ai-assistant-header span {
-  display: block;
-  margin-top: 0.2rem;
-  color: #6b7e95;
-  font-size: 0.84rem;
-}
-
-.ai-assistant-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-.ai-assistant-form textarea {
-  width: 100%;
-  min-height: 110px;
-  resize: vertical;
-}
-
-.ai-assistant-response,
-.ai-assistant-empty {
-  margin-top: 0.95rem;
-}
-
-.ai-assistant-response p,
-.ai-assistant-empty p {
-  margin: 0;
-  color: #17345c;
-  line-height: 1.55;
-}
-
-.ai-assistant-citations {
-  margin-top: 0.85rem;
-}
-
-.ai-assistant-citations strong {
-  display: block;
-  margin-bottom: 0.35rem;
-  color: #17345c;
-}
-
-.ai-assistant-citations ul {
-  margin: 0;
-  padding-left: 1.1rem;
-  color: #5f728a;
-}
-
-.ai-assistant-suggestions {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  margin-top: 0.95rem;
-}
-
-.sidebar-module-switch {
-  padding: 0 1rem 1rem;
-}
-
-.sidebar-module-switch-button {
-  width: 100%;
-  justify-content: center;
-  text-decoration: none;
-}
-
-.hr-form-section {
-  margin: 0.25rem 0 0.5rem;
-  padding-top: 0.25rem;
-}
-
-.hr-employee-page-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.hr-page-back {
-  margin-bottom: 0.75rem;
-}
-
-.hr-employee-layout {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.hr-attendance-layout {
-  align-items: start;
-}
-
-.hr-attendance-layout > .panel-card {
-  min-width: 0;
-}
-
-.hr-documents-layout {
-  grid-template-columns: minmax(320px, 0.86fr) minmax(0, 1.14fr);
-}
-
-.hr-document-upload-form {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.hr-document-upload-form .wide-field,
-.hr-document-upload-form .form-actions,
-.hr-document-upload-form .message-banner {
-  grid-column: 1 / -1;
-}
-
-.hr-document-upload-form .field-stack small {
-  color: #6b7e95;
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.hr-document-preview-panel {
-  min-height: 420px;
-}
-
-.hr-document-preview {
-  min-height: 330px;
-  border: 1px solid #dfe7f1;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #f8fbff;
-}
-
-.hr-document-preview iframe,
-.hr-document-preview img {
-  display: block;
-  width: 100%;
-}
-
-.hr-document-preview iframe {
-  min-height: 430px;
-  border: 0;
-}
-
-.hr-document-preview img {
-  max-height: 430px;
-  object-fit: contain;
-  background: #ffffff;
-}
-
-.hr-document-preview-meta {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.7rem;
-  align-items: end;
-  margin-top: 0.85rem;
-}
-
-.hr-document-preview-meta .compact-action {
-  width: 100%;
-  justify-content: center;
-}
-
-.field-stack.inline-checkbox {
-  width: fit-content;
-  max-width: 100%;
-  min-height: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  justify-self: start;
-  box-sizing: border-box;
-  padding: 0.08rem 0;
-}
-
-.field-stack.inline-checkbox input[type='checkbox'] {
-  flex: 0 0 14px;
-  width: 14px;
-  min-width: 14px;
-  max-width: 14px;
-  height: 14px;
-  min-height: 14px;
-  max-height: 14px;
-  margin: 0;
-  padding: 0;
-  border-radius: 3px;
-  box-shadow: none;
-  accent-color: #2878f0;
-}
-
-.field-stack.inline-checkbox span {
-  min-width: 0;
-  max-width: 100%;
-  line-height: 1.35;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.hr-leave-form-layout {
-  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
-}
-
-.hr-leave-type-panel,
-.hr-leave-request-panel {
-  min-width: 0;
-  overflow: visible;
-}
-
-.hr-leave-type-form,
-.hr-leave-request-form,
-.hr-leave-type-form .field-stack,
-.hr-leave-request-form .field-stack {
-  min-width: 0;
-}
-
-.hr-leave-type-form .field-stack input,
-.hr-leave-type-form .field-stack select,
-.hr-leave-type-form .field-stack textarea,
-.hr-leave-request-form .field-stack input,
-.hr-leave-request-form .field-stack select,
-.hr-leave-request-form .field-stack textarea {
-  min-width: 0;
-}
-
-.hr-leave-rule-grid {
-  grid-template-columns: minmax(0, 0.62fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.hr-leave-type-form .form-actions,
-.hr-leave-request-form .form-actions {
-  min-width: 0;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.hr-leave-type-form .form-actions .compact-action,
-.hr-leave-request-form .form-actions .compact-action {
-  min-width: 0;
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
-.hr-attendance-summary-grid {
-  margin-bottom: 0.2rem;
-}
-
-.performance-bonus-panel {
-  margin-top: 0.2rem;
-  min-width: 0;
-}
-
-.performance-bonus-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.52fr);
-  gap: 1rem;
-  align-items: start;
-}
-
-.performance-bonus-rule-form {
-  min-width: 0;
-}
-
-.performance-bonus-readiness {
-  grid-template-columns: 1fr;
-}
-
-.performance-entry-mode-actions,
-.performance-row-actions {
-  display: flex;
-  gap: 0.55rem;
-  flex-wrap: wrap;
-}
-
-.performance-entry-mode-actions {
-  margin-bottom: 0.85rem;
-}
-
-.performance-row-actions {
-  align-items: center;
-}
-
-.payroll-live-preview-panel,
-.performance-pay-focus-panel {
-  min-width: 0;
-}
-
-.payroll-equation-strip {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.55rem;
-  align-items: stretch;
-  margin: 0 1rem 1rem;
-}
-
-.payroll-equation-strip > span {
-  min-width: 0;
-  padding: 0.72rem 0.8rem;
-  border: 1px solid #e0e8f2;
-  border-radius: 8px;
-  background: #f8fbff;
-  color: #647890;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.payroll-equation-strip > i {
-  display: none;
-}
-
-.payroll-equation-strip strong {
-  display: block;
-  margin-bottom: 0.18rem;
-  color: #17345c;
-  font-size: 1rem;
-}
-
-.payroll-equation-strip .payroll-equation-total {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.payroll-live-table {
-  margin: 0 1rem;
-}
-
-.payroll-live-table table {
-  min-width: 980px;
-}
-
-.payroll-live-note {
-  margin: 0.75rem 1rem 1rem;
-  color: #647890;
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
-.performance-payout-list {
-  display: grid;
-  gap: 0.7rem;
-  margin: 0 1rem 1rem;
-}
-
-.performance-payout-row {
-  display: grid;
-  grid-template-columns: minmax(230px, 1.1fr) minmax(150px, 0.55fr) minmax(280px, 1fr) minmax(150px, 0.55fr) auto;
-  gap: 0.75rem;
-  align-items: center;
-  padding: 0.9rem;
-  border: 1px solid #dfe7f1;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.performance-payout-identity {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  min-width: 0;
-}
-
-.performance-payout-identity strong,
-.performance-payout-identity small,
-.performance-payout-sales span,
-.performance-payout-sales small,
-.performance-payout-net span,
-.performance-payout-net small {
-  display: block;
-}
-
-.performance-payout-identity strong {
-  color: #10213f;
-}
-
-.performance-payout-identity small,
-.performance-payout-sales small,
-.performance-payout-net small {
-  color: #647890;
-  font-size: 0.78rem;
-  line-height: 1.35;
-}
-
-.performance-payout-sales,
-.performance-payout-net {
-  min-width: 0;
-}
-
-.performance-payout-sales span,
-.performance-payout-net span {
-  color: #6b7e95;
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.performance-payout-sales strong,
-.performance-payout-net strong {
-  display: block;
-  margin-top: 0.15rem;
-  color: #17345c;
-  font-size: 1rem;
-}
-
-.performance-payout-equation {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.45rem;
-}
-
-.performance-payout-equation span {
-  min-width: 0;
-  padding: 0.48rem 0.55rem;
-  border: 1px solid #e4ebf4;
-  border-radius: 8px;
-  background: #f8fbff;
-  color: #647890;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.performance-payout-equation strong {
-  display: block;
-  margin-top: 0.12rem;
-  color: #17345c;
-  font-size: 0.82rem;
-}
-
-.hr-attendance-history .user-directory-row {
-  align-items: center;
-}
-
-.hr-employee-form-panel,
-.hr-employee-directory-panel {
-  min-width: 0;
-}
-
-.hr-employee-form-panel {
-  overflow: visible;
-}
-
-.hr-employee-form {
-  min-width: 0;
-}
-
-.hr-employee-form .report-date-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.9rem;
-}
-
-.hr-employee-form .report-date-grid > .field-stack {
-  min-width: 0;
-}
-
-.hr-employee-form .field-stack input,
-.hr-employee-form .field-stack select,
-.hr-employee-form .field-stack textarea {
-  width: 100%;
-  min-width: 0;
-}
-
-.hr-employee-form .wide-field {
-  grid-column: 1 / -1;
-}
-
-.hr-form-section h3 {
-  margin: 0;
-  font-size: 1rem;
-  color: #10213f;
-}
-
-.hr-form-section p {
-  margin: 0.25rem 0 0;
-  color: #688096;
-  font-size: 0.9rem;
-}
-
-.hr-dashboard-table table thead th {
-  color: #6b7e95;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.hr-dashboard-table table tbody tr {
-  background: transparent;
-}
-
-.hr-dashboard-table table td {
-  font-size: 0.84rem;
-}
-
-.hr-recent-table-panel .hr-dashboard-table table {
-  table-layout: auto;
-}
-
-.hr-recent-table-panel .hr-dashboard-table table th:nth-child(2),
-.hr-recent-table-panel .hr-dashboard-table table td:nth-child(2) {
-  width: 26%;
-}
-
-.hr-table-name {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-  width: 100%;
-}
-
-.hr-table-name strong {
-  display: inline-block;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.hr-table-actions {
-  width: 32px;
-  height: 32px;
-  border: 1px solid #d8e2ef;
-  border-radius: 10px;
-  display: inline-grid;
-  place-items: center;
-  color: #17324d;
-  text-decoration: none;
-  background: #fff;
-}
-
-.hr-table-actions:hover {
-  border-color: #b8cae2;
-  background: #f8fbff;
-}
-
-.hr-schedule-list {
-  display: grid;
-  gap: 0;
-}
-
-.hr-schedule-item {
-  align-items: center;
-  gap: 0.875rem;
-  padding: 0.95rem 0 0.95rem 0.15rem;
-  border-bottom: 1px solid #edf2f7;
-  position: relative;
-}
-
-.hr-schedule-item:last-child {
-  border-bottom: 0;
-}
-
-.hr-schedule-item::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.65rem;
-  bottom: 0.65rem;
-  width: 1px;
-  background: #d9e7fb;
-}
-
-.hr-schedule-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  position: relative;
-  z-index: 1;
-  width: 18px;
-  background: #fff;
-}
-
-.hr-schedule-icon.tone-0 {
-  color: #2878f0;
-}
-
-.hr-schedule-icon.tone-1 {
-  color: #8b5cf6;
-}
-
-.hr-schedule-icon.tone-2 {
-  color: #22c55e;
-}
-
-.hr-schedule-icon.tone-3 {
-  color: #f59e0b;
-}
-
-.hr-schedule-copy {
-  flex: 1;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.hr-schedule-copy strong {
-  color: #17345c;
-  font-size: 0.95rem;
-}
-
-.hr-panel-heading-match .text-button {
-  font-weight: 700;
-}
-
-.hr-dashboard-workspace .empty-state {
-  min-height: 220px;
-  border-radius: 10px;
-  border: 1px solid #e2eaf3;
-  background: #ffffff;
-}
-
-.hr-distribution-panel .donut-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.75rem;
-}
-
-.hr-distribution-panel .donut-chart {
-  height: 240px;
-}
-
-.hr-distribution-panel .donut-chart strong {
-  font-size: 2rem;
-  color: #17345c;
-}
-
-.hr-distribution-panel .donut-chart span {
-  color: #667a96;
-}
-
-.hr-distribution-panel .donut-legend {
-  gap: 0.65rem;
-}
-
-.hr-distribution-panel .donut-legend div {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  column-gap: 0.75rem;
-  row-gap: 0.2rem;
-  font-size: 0.82rem;
-}
-
-.hr-distribution-panel .donut-legend strong {
-  color: #17345c;
-}
-
-.hr-distribution-panel .donut-legend em {
-  grid-column: 2;
-  justify-self: end;
-  color: #667a96;
-  font-style: normal;
-  font-size: 0.78rem;
-}
-
-.hr-distribution-panel .donut-legend span {
-  min-width: 0;
-}
-
-.hr-distribution-panel .donut-legend span,
-.hr-distribution-panel .donut-legend strong,
-.hr-distribution-panel .donut-legend em {
-  white-space: nowrap;
-}
-
-.payroll-page-actions {
-  justify-content: flex-end;
-}
-
-.payroll-period-switch {
-  min-height: 42px;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.38rem 0.55rem 0.38rem 0.75rem;
-  border: 1px solid #dbe6f2;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #17345c;
-  font-weight: 700;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
-}
-
-.payroll-period-switch span {
-  color: #5f728a;
-  font-size: 0.78rem;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.payroll-period-switch select {
-  min-width: 12rem;
-  border: 0;
-  background: transparent;
-  color: #17345c;
-  font: inherit;
-  outline: 0;
-}
-
-.payroll-run-panel,
-.payroll-settings-panel {
-  min-width: 0;
-}
-
-.payroll-start-panel {
-  margin-top: 1rem;
-}
-
-.payroll-payslip-panel {
-  margin-top: 1rem;
-}
-
-.payroll-payslip-form {
-  grid-template-columns: minmax(220px, 0.8fr) minmax(240px, 1fr) minmax(280px, 1.2fr) auto;
-  align-items: end;
-}
-
-.payroll-payslip-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.payroll-payslip-summary span {
-  min-width: 0;
-  padding: 0.55rem 0.65rem;
-  border: 1px solid #e4ebf4;
-  border-radius: 8px;
-  background: #f8fbff;
-  color: #647890;
-  font-size: 0.76rem;
-  font-weight: 700;
-}
-
-.payroll-payslip-summary strong {
-  display: block;
-  margin-bottom: 0.15rem;
-  color: #17345c;
-  font-size: 0.92rem;
-}
-
-.payroll-payslip-summary-total {
-  border-color: #bfd6ff !important;
-  background: #edf5ff !important;
-}
-
-.payslip-backdrop {
-  z-index: 2100;
-  place-items: start center;
-  overflow: auto;
-}
-
-.payroll-payslip-dialog {
-  width: min(100%, 520px);
-  max-height: calc(100vh - 2rem);
-  overflow: auto;
-  padding: 1rem;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 24px 80px rgba(8, 31, 50, 0.24);
-}
-
-.payslip-print-area {
-  position: relative;
-  width: min(100%, 390px);
-  margin: 0.85rem auto 0;
-  padding: 0.42rem 0.5rem 0.22rem;
-  border: 1.5px dashed #4b5563;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #111827;
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 0.82rem;
-  line-height: 1.2;
-}
-
-.payslip-slip-header {
-  position: relative;
-  min-height: 3.25rem;
-  padding: 0.18rem 3.2rem 0.32rem 0.2rem;
-  border-bottom: 1px solid #9ca3af;
-  text-align: center;
-}
-
-.payslip-slip-header img {
-  position: absolute;
-  top: 0.24rem;
-  right: 0.25rem;
-  width: 38px;
-  height: 38px;
-  object-fit: contain;
-}
-
-.payslip-slip-header strong,
-.payslip-slip-header em,
-.payslip-slip-header span {
-  display: block;
-}
-
-.payslip-slip-header strong {
-  color: #111827;
-  font-size: 0.86rem;
-  line-height: 1.12;
-}
-
-.payslip-slip-header em {
-  color: #d21f1f;
-  font-size: 0.82rem;
-  font-style: italic;
-  font-weight: 800;
-  line-height: 1.1;
-}
-
-.payslip-slip-header span {
-  color: #111827;
-  font-size: 0.62rem;
-  line-height: 1.15;
-}
-
-.payslip-staff-lines {
-  display: grid;
-  gap: 0.04rem;
-  padding: 0.35rem 0.25rem;
-  border-bottom: 1px solid #b9bec8;
-  color: #111827;
-}
-
-.payslip-staff-lines div {
-  display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
-  gap: 0.5rem;
-}
-
-.payslip-staff-lines span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.payslip-payment-heading {
-  padding: 0.34rem 0.25rem 0.22rem;
-  color: #0000cc;
-  font-size: 1rem;
-  font-weight: 800;
-  line-height: 1.15;
-  text-align: center;
-}
-
-.payslip-slip-body {
-  position: relative;
-  padding: 0.1rem 0.25rem 0.28rem;
-}
-
-.payslip-watermark {
-  position: absolute;
-  z-index: 0;
-  top: 2.4rem;
-  left: 50%;
-  width: 108px;
-  max-height: 110px;
-  object-fit: contain;
-  opacity: 0.2;
-  transform: translateX(-50%);
-}
-
-.payslip-slip-lines,
-.payslip-nett-line {
-  position: relative;
-  z-index: 1;
-}
-
-.payslip-slip-lines {
-  display: grid;
-  gap: 0.18rem;
-}
-
-.payslip-deduction-lines {
-  margin-top: 1rem;
-}
-
-.payslip-slip-line,
-.payslip-nett-line {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(6.5rem, max-content);
-  gap: 0.7rem;
-  align-items: baseline;
-}
-
-.payslip-slip-line span,
-.payslip-nett-line span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.payslip-slip-line strong,
-.payslip-nett-line strong {
-  color: #111827;
-  font-weight: 400;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.payslip-slip-total {
-  margin-top: 0.22rem;
-  font-weight: 800;
-}
-
-.payslip-slip-total strong,
-.payslip-nett-line strong {
-  font-weight: 800;
-}
-
-.payslip-nett-line {
-  margin-top: 0.9rem;
-  padding-top: 0.1rem;
-  font-weight: 800;
-}
-
-.payslip-notes {
-  margin: 0.35rem 0.25rem 0;
-  padding-top: 0.32rem;
-  border-top: 1px solid #d1d5db;
-  color: #111827;
-  font-size: 0.72rem;
-}
-
-.payslip-notes span {
-  display: block;
-  font-weight: 800;
-}
-
-.payslip-notes p {
-  margin: 0;
-}
-
-.payslip-slip-footer {
-  margin: 0.22rem 0.25rem 0;
-  padding-top: 0.16rem;
-  border-top: 1px solid #d1d5db;
-  color: #111827;
-  font-size: 0.56rem;
-  font-weight: 700;
-  text-align: center;
-}
-
-.payroll-start-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.55fr);
-  gap: 1rem;
-  align-items: start;
-}
-
-.payroll-run-form,
-.payroll-compact-form {
-  gap: 0.85rem;
-}
-
-.payroll-run-form-grid {
-  display: grid;
-  grid-template-columns: minmax(240px, 0.8fr) minmax(280px, 1fr);
-  gap: 0.85rem;
-}
-
-.payroll-run-form .report-date-grid,
-.payroll-compact-form .report-date-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.payroll-readiness-item,
-.payroll-run-card-totals div,
-.payroll-run-impact span {
-  border: 1px solid #e4ebf4;
-  border-radius: 8px;
-  background: #f8fbff;
-}
-
-.payroll-run-card-totals span,
-.payroll-run-impact span,
-.payroll-readiness-item small {
-  color: #647890;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.payroll-run-card-totals strong,
-.payroll-run-impact strong,
-.payroll-readiness-item strong {
-  display: block;
-  margin-top: 0.18rem;
-  color: #17345c;
-  font-size: 0.95rem;
-}
-
-.payroll-readiness-list {
-  display: grid;
-  gap: 0.65rem;
-}
-
-.payroll-readiness-list-compact {
-  grid-template-columns: 1fr;
-}
-
-.payroll-readiness-item {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.8rem;
-}
-
-.payroll-readiness-item i {
-  color: #2878f0;
-  font-size: 1.2rem;
-}
-
-.payroll-readiness-item span {
-  min-width: 0;
-}
-
-.payroll-runs-panel {
-  margin-top: 1rem;
-}
-
-.payroll-run-list {
-  display: grid;
-  gap: 0.85rem;
-}
-
-.payroll-run-card {
-  display: grid;
-  gap: 0.85rem;
-  padding: 1rem;
-  border: 1px solid #dfe7f1;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.035);
-}
-
-.payroll-run-card-main {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(280px, 0.95fr) auto;
-  gap: 0.9rem;
-  align-items: center;
-}
-
-.payroll-run-card-totals {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.payroll-run-card-totals div {
-  min-width: 0;
-  padding: 0.6rem 0.68rem;
-}
-
-.payroll-run-card-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.65rem;
-  flex-wrap: wrap;
-}
-
-.payroll-run-impact {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.payroll-run-impact span {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-height: 34px;
-  padding: 0.45rem 0.65rem;
-}
-
-.payroll-run-impact strong {
-  display: inline;
-  margin: 0;
-}
-
-.payroll-run-details {
-  min-width: 0;
-}
-
-.payroll-run-details {
-  grid-column: 1 / -1;
-  border-top: 1px solid #edf2f7;
-  padding-top: 0.85rem;
-}
-
-.payroll-run-details summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  cursor: pointer;
-  font-weight: 700;
-  color: #17345c;
-  margin-bottom: 0.75rem;
-}
-
-.payroll-run-details summary small {
-  color: #647890;
-  font-weight: 600;
-}
-
-.payroll-employee-table {
-  overflow-x: auto;
-}
-
-.payroll-adjustment-input {
-  width: min(100%, 8rem);
-  min-height: 2.35rem;
-  border: 1px solid #d8e2ee;
-  border-radius: 8px;
-  padding: 0.45rem 0.6rem;
-  font: inherit;
-}
-
-.payroll-adjustment-actions {
-  display: grid;
-  gap: 0.45rem;
-  min-width: 12rem;
-}
-
-.payroll-adjustment-notes {
-  width: 100%;
-  min-height: 3.8rem;
-  border: 1px solid #d8e2ee;
-  border-radius: 8px;
-  padding: 0.45rem 0.6rem;
-  font: inherit;
-  resize: vertical;
-}
-
-.payroll-settings-panel {
-  margin-top: 1rem;
-}
-
-.payroll-settings-drawers {
-  display: grid;
-  gap: 0.7rem;
-}
-
-.payroll-settings-drawer {
-  border: 1px solid #dfe7f1;
-  border-radius: 8px;
-  background: #ffffff;
-}
-
-.payroll-settings-drawer > summary {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.75rem;
-  align-items: center;
-  min-height: 56px;
-  padding: 0.85rem 1rem;
-  color: #17345c;
-  cursor: pointer;
-  list-style: none;
-}
-
-.payroll-settings-drawer > summary::-webkit-details-marker {
-  display: none;
-}
-
-.payroll-settings-drawer > summary::after {
-  content: "\\F282";
-  color: #667a96;
-  font-family: "bootstrap-icons";
-  font-size: 0.8rem;
-  line-height: 1;
-  transition: transform 0.18s ease;
-}
-
-.payroll-settings-drawer[open] > summary::after {
-  transform: rotate(180deg);
-}
-
-.payroll-settings-drawer > summary strong,
-.payroll-settings-drawer > summary small {
-  display: block;
-}
-
-.payroll-settings-drawer > summary strong {
-  font-size: 0.95rem;
-}
-
-.payroll-settings-drawer > summary small {
-  margin-top: 0.12rem;
-  color: #647890;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.payroll-settings-summary-icon {
-  width: 34px;
-  height: 34px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 8px;
-  background: #edf5ff;
-  color: #2878f0;
-}
-
-.payroll-settings-drawer > .record-form,
-.payroll-settings-drawer > .responsive-table,
-.payroll-settings-drawer > .user-directory-list,
-.payroll-settings-drawer > .empty-state,
-.payroll-settings-drawer > .loading-panel {
-  margin: 0 1rem 1rem;
-}
-
-@media (max-width: 1100px) {
-  .hr-kpi-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .hr-dashboard-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .hr-attendance-panel,
-  .hr-leave-panel,
-  .hr-distribution-panel,
-  .hr-recent-table-panel,
-  .hr-schedule-panel {
-    grid-column: auto;
-  }
-
-  .payroll-start-grid,
-  .performance-bonus-grid,
-  .hr-documents-layout,
-  .hr-leave-form-layout,
-  .payroll-payslip-form,
-  .payslip-meta-grid,
-  .payslip-breakdown-grid,
-  .payroll-run-form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .payroll-payslip-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .payroll-run-card-main {
-    grid-template-columns: 1fr;
-    align-items: start;
-  }
-
-  .payroll-equation-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .payroll-equation-strip .payroll-equation-total {
-    grid-column: 1 / -1;
-  }
-
-  .performance-payout-row {
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.75fr);
-  }
-
-  .performance-payout-equation,
-  .performance-payout-row .performance-row-actions {
-    grid-column: 1 / -1;
-  }
-
-  .payroll-run-card-actions {
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 767px) {
-  .hr-dashboard-hero {
-    align-items: stretch;
-  }
-
-  .hr-dashboard-hero h1 {
-    font-size: 1.62rem;
-    letter-spacing: 0;
-  }
-
-  .hr-dashboard-hero h2 {
-    font-size: 0.92rem;
-  }
-
-  .hr-dashboard-hero p {
-    font-size: 0.82rem;
-    line-height: 1.35;
-  }
-
-  .hr-dashboard-actions {
-    width: 100%;
-  }
-
-  .hr-period-pill,
-  .hr-dashboard-actions .primary-action {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .hr-kpi-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.55rem;
-  }
-
-  .hr-metric-card {
-    min-width: 0;
-    min-height: 104px;
-    grid-template-columns: minmax(0, 1fr);
-    align-content: start;
-    align-items: start;
-    gap: 0.34rem;
-    padding: 0.62rem;
-  }
-
-  .hr-metric-icon {
-    font-size: 1.08rem;
-  }
-
-  .hr-metric-copy {
-    min-width: 0;
-    gap: 0.12rem;
-  }
-
-  .hr-metric-copy span {
-    font-size: 0.66rem;
-    line-height: 1.18;
-    overflow-wrap: anywhere;
-  }
-
-  .hr-metric-copy strong {
-    font-size: 1.16rem;
-    line-height: 1.05;
-    letter-spacing: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .hr-metric-copy small {
-    font-size: 0.64rem;
-    line-height: 1.22;
-    overflow-wrap: anywhere;
-  }
-
-  .hr-metric-arrow {
-    display: none;
-  }
-
-  .hr-dashboard-panel {
-    padding: 0.82rem;
-  }
-
-  .hr-panel-heading {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 0.55rem;
-  }
-
-  .hr-panel-heading h3 {
-    font-size: 0.88rem;
-  }
-
-  .hr-dashboard-chart-wrap {
-    height: 240px;
-  }
-
-  .hr-employee-page-actions {
-    width: 100%;
-  }
-
-  .hr-employee-page-actions > * {
-    flex: 1 1 100%;
-    justify-content: center;
-  }
-
-  .hr-employee-form .report-date-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .hr-leave-rule-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .hr-leave-type-form .field-stack.inline-checkbox,
-  .hr-leave-request-form .field-stack.inline-checkbox {
-    width: 100%;
-  }
-
-  .hr-document-upload-form,
-  .hr-document-preview-meta {
-    grid-template-columns: 1fr;
-  }
-
-  .hr-document-upload-form .wide-field,
-  .hr-document-upload-form .form-actions {
-    grid-column: auto;
-  }
-
-  .hr-document-preview iframe,
-  .hr-document-preview img {
-    max-height: 360px;
-    min-height: 320px;
-  }
-
-  .hr-leave-row {
-    grid-template-columns: auto 1fr;
-  }
-
-  .hr-leave-row .hr-dashboard-tag {
-    grid-column: 2;
-    justify-self: start;
-  }
-
-  .payroll-page-actions,
-  .payroll-period-switch {
-    width: 100%;
-  }
-
-  .payroll-period-switch {
-    justify-content: space-between;
-  }
-
-  .payroll-period-switch select {
-    min-width: 0;
-    width: 100%;
-  }
-
-  .payroll-start-grid {
-    gap: 0.85rem;
-  }
-
-  .payroll-payslip-summary,
-  .payslip-net-panel {
-    grid-template-columns: 1fr;
-  }
-
-  .payslip-letterhead {
-    flex-direction: column;
-  }
-
-  .payslip-letterhead div:last-child,
-  .payslip-net-panel div:last-child {
-    justify-items: start;
-    text-align: left;
-  }
-
-  .payroll-run-form .report-date-grid,
-  .payroll-compact-form .report-date-grid,
-  .payroll-run-form-grid,
-  .payroll-run-card-totals {
-    grid-template-columns: 1fr;
-  }
-
-  .payroll-run-card {
-    padding: 0.9rem;
-  }
-
-  .payroll-run-impact {
-    flex-direction: column;
-  }
-
-  .payroll-equation-strip {
-    grid-template-columns: 1fr;
-    margin-inline: 0.85rem;
-  }
-
-  .payroll-live-table,
-  .payroll-live-note,
-  .performance-payout-list {
-    margin-inline: 0.85rem;
-  }
-
-  .performance-payout-row,
-  .performance-payout-equation {
-    grid-template-columns: 1fr;
-  }
-
-  .performance-payout-row {
-    align-items: start;
-    padding: 0.85rem;
-  }
-
-  .payroll-run-details summary {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .payroll-settings-drawer > summary {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    padding: 0.78rem 0.85rem;
-  }
-
-  .payroll-settings-drawer > .record-form,
-  .payroll-settings-drawer > .responsive-table,
-  .payroll-settings-drawer > .user-directory-list,
-  .payroll-settings-drawer > .empty-state,
-  .payroll-settings-drawer > .loading-panel {
-    margin: 0 0.85rem 0.85rem;
-  }
-
-  .payroll-adjustment-actions {
-    min-width: 0;
-  }
-}
-
-@media print {
-  .payslip-backdrop,
-  .payslip-backdrop * {
-    visibility: visible;
-  }
-
-  .payslip-backdrop {
-    position: absolute;
-    inset: 0;
-    display: block;
-    padding: 0;
-    overflow: visible;
-    background: #ffffff;
-  }
-
-  .payroll-payslip-dialog {
-    width: 100%;
-    max-height: none;
-    padding: 0;
-    overflow: visible;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  .payslip-dialog-actions {
-    display: none !important;
-  }
-
-  .payslip-print-area {
-    width: 98mm;
-    margin: 0 auto;
-    padding: 4mm 4mm 2mm;
-    border: 1.5px dashed #4b5563;
-    border-radius: 6px;
-    font-size: 10.2pt;
-  }
-}
-`;
 
 function UserChip({
   name,
@@ -29822,11 +20698,10 @@ function reportDescription(type: string) {
     sales: 'Total sales, trends and key breakdowns.',
     products: 'Top selling products and performance.',
     category: 'Sales by product category.',
-    branches: 'Compare sales and performance by branch.',
+    shop: 'Daily sales, contribution and transaction health.',
     payments: 'Track payment methods and matching rates.',
     inventory: 'Stock levels, low stock items and stock value.',
     expenses: 'Business expenses and spending.',
-    staff: 'Staff performance and shift activity.',
     losses: 'Track losses, variances and adjustments.',
     audit: 'System activity and compliance logs.',
   };
@@ -29971,7 +20846,7 @@ function productTileBackground(product: Pick<Product, 'categoryName'>, index: nu
   const overlay =
     overlayByCategory[product.categoryName] ??
     'linear-gradient(180deg, rgba(255,255,255,.12), rgba(226,232,240,.62))';
-  return `${overlay}, url(${bannerUrl})`;
+  return `${overlay}, url(${bannerImageUrl})`;
 }
 
 function formatMoney(amount: number, currencyCode: string) {
@@ -30046,14 +20921,6 @@ function formatFileSize(sizeBytes: number) {
   }
   const fractionDigits = value >= 10 || unitIndex === 0 ? 0 : 1;
   return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
-}
-
-function isImageHrDocument(document: EmployeeDocument) {
-  return document.contentType.startsWith('image/');
-}
-
-function isPreviewableHrDocument(document: EmployeeDocument) {
-  return isImageHrDocument(document) || document.contentType === 'application/pdf';
 }
 
 function formatDateOnly(value: string) {
@@ -30134,6 +21001,9 @@ function formatPaymentMethod(method: PaymentMethod | undefined) {
   }
   if (method === 'CARD') {
     return 'Card';
+  }
+  if (method === 'BANK_TRANSFER') {
+    return 'Bank Transfer';
   }
   return 'N/A';
 }
@@ -30276,11 +21146,11 @@ function exportShiftCsv(
   organization: Organization,
   includeProfit: boolean,
 ) {
-  const branchName = branch?.name ?? 'Unknown branch';
+  const branchName = branch?.name ?? 'Unknown shop';
   const branchCode = branch?.code ?? shift.branchId;
   const rows: string[][] = [
     ['Shift Summary'],
-    ['Branch', branchName],
+    ['Shop', branchName],
     ['Cashier', shift.cashierName],
     ['Status', shift.status],
     ['Opened At', formatDateTime(shift.openedAt)],
@@ -30338,7 +21208,6 @@ function exportShiftCsv(
 }
 
 function exportDashboardCsv({
-  branchPerformanceRows,
   contribution,
   currencyCode,
   grossProfit,
@@ -30350,7 +21219,6 @@ function exportDashboardCsv({
   totalSales,
   transactions,
 }: {
-  branchPerformanceRows: ReturnType<typeof branchPerformanceFromSales>;
   contribution: number;
   currencyCode: string;
   grossProfit: number;
@@ -30379,19 +21247,9 @@ function exportDashboardCsv({
     ['Payment Method', 'Percent', 'Amount'],
     ...paymentMethodTotals.map((row) => [row.name, `${row.percent}%`, row.value.toFixed(2)]),
     [],
-    ['Branch', 'Transactions', 'Net Sales', 'Gross Profit', 'Average Basket'],
-    ...branchPerformanceRows.map((row) => [
-      row.branch.name,
-      String(row.transactions),
-      row.netSales.toFixed(2),
-      row.grossProfit.toFixed(2),
-      row.averageBasket.toFixed(2),
-    ]),
-    [],
-    ['Attention Item', 'Branch', 'Health', 'On Hand', 'Reorder Level'],
+    ['Attention Item', 'Health', 'On Hand', 'Reorder Level'],
     ...lowStockItems.map((item) => [
       item.productName,
-      item.branchName,
       stockHealthLabel(item.stockHealth),
       String(item.quantityOnHand),
       String(item.reorderLevel),
@@ -30401,21 +21259,10 @@ function exportDashboardCsv({
 
 function exportExpensesCsv(expenses: Expense[], organization: Organization) {
   downloadCsv('keen-expenses.csv', [
-    [
-      'Number',
-      'Date',
-      'Branch',
-      'Category',
-      'Description',
-      'Vendor',
-      'Payment',
-      'Status',
-      'Amount',
-    ],
+    ['Number', 'Date', 'Category', 'Description', 'Vendor', 'Payment', 'Status', 'Amount'],
     ...expenses.map((expense) => [
       expense.expenseNumber,
       formatDateTime(expense.incurredAt),
-      expense.branchName,
       expense.category,
       expense.description,
       expense.vendorName ?? '',
@@ -30448,14 +21295,13 @@ function exportReportsWorkbook(
     ['Items sold', summary.totalItems],
     ['Stock value', summary.totalStockValue.toFixed(2)],
     ['Inventory received value', summary.receivedValue.toFixed(2)],
-    ['Transfer units', summary.transferredUnits],
     ['Stock loss value', summary.stockAdjustmentSummary.totalLossValue.toFixed(2)],
     ['Stock excess value', summary.stockAdjustmentSummary.totalExcessValue.toFixed(2)],
     ['Stock variance net', summary.stockAdjustmentSummary.netValue.toFixed(2)],
     ['Priority restock lines', summary.restockRows.length],
     [],
-    ['Branch sales summary'],
-    ['Branch', 'Receipts', 'Product Lines', 'Units Sold', 'Sales Amount', 'Profit'],
+    ['Shop sales summary'],
+    ['Shop', 'Receipts', 'Product Lines', 'Units Sold', 'Sales Amount', 'Profit'],
     ...summary.branchSalesRows.map((row) => [
       row.branch.name,
       row.receipts,
@@ -30466,11 +21312,10 @@ function exportReportsWorkbook(
     ]),
     [],
     ['Priority restock'],
-    ['Product', 'SKU', 'Branch', 'Restock Qty', 'Available', 'Reorder Level', 'Status'],
+    ['Product', 'SKU', 'Restock Qty', 'Available', 'Reorder Level', 'Status'],
     ...summary.restockRows.map((row) => [
       row.productName,
       row.sku,
-      row.branchName,
       row.restockQty,
       row.quantityAvailable,
       row.reorderLevel,
@@ -30489,23 +21334,11 @@ function exportReportsWorkbook(
     ]),
     [],
     ['Stock count variances'],
-    [
-      'Date',
-      'Product',
-      'SKU',
-      'Branch',
-      'System',
-      'Counted',
-      'Variance',
-      'Loss',
-      'Excess',
-      'Reason',
-    ],
+    ['Date', 'Product', 'SKU', 'System', 'Counted', 'Variance', 'Loss', 'Excess', 'Reason'],
     ...summary.stockAdjustments.map((row) => [
       formatDateOnly(row.adjustedAt),
       row.productName,
       row.sku,
-      row.branchName,
       row.systemQuantity,
       row.countedQuantity,
       row.varianceQuantity,
@@ -30533,11 +21366,10 @@ function exportReportCsv(
 ) {
   if (type === 'sales') {
     downloadCsv('keen-sales-summary.csv', [
-      ['Receipt', 'Date', 'Branch', 'Customer', 'Items', 'Payment', 'Subtotal', 'VAT', 'Total'],
+      ['Receipt', 'Date', 'Customer', 'Items', 'Payment', 'Subtotal', 'VAT', 'Total'],
       ...summary.sales.map((sale) => [
         sale.saleNumber,
         formatDateTime(sale.soldAt),
-        sale.branchName,
         sale.customerName || 'Walk-in Customer',
         String(sale.lines.reduce((sum, line) => sum + line.quantity, 0)),
         formatSalePayments(sale, organization.currencyCode),
@@ -30577,8 +21409,8 @@ function exportReportCsv(
   }
 
   if (type === 'branches') {
-    downloadCsv('keen-branch-performance.csv', [
-      ['Branch', 'Transactions', 'Net Sales', 'Gross Profit', 'Average Basket'],
+    downloadCsv('keen-shop-performance.csv', [
+      ['Shop', 'Transactions', 'Net Sales', 'Gross Profit', 'Average Basket'],
       ...summary.branchRows.map((row) => [
         row.branch.name,
         String(row.transactions),
@@ -30604,21 +21436,10 @@ function exportReportCsv(
 
   if (type === 'inventory') {
     downloadCsv('keen-inventory-report.csv', [
-      [
-        'Product',
-        'SKU',
-        'Branch',
-        'Category',
-        'On Hand',
-        'Available',
-        'Unit Price',
-        'Stock Value',
-        'Health',
-      ],
+      ['Product', 'SKU', 'Category', 'On Hand', 'Available', 'Unit Price', 'Stock Value', 'Health'],
       ...summary.inventory.map((item) => [
         item.productName,
         item.sku,
-        item.branchName,
         item.categoryName,
         String(item.quantityOnHand),
         String(item.quantityAvailable),
@@ -30637,39 +21458,13 @@ function exportReportCsv(
     return;
   }
 
-  if (type === 'staff') {
-    downloadCsv('keen-staff-report.csv', [
-      ['Name', 'Email', 'Status', 'Roles', 'Branches'],
-      ...summary.users.map((user) => [
-        user.displayName,
-        user.email,
-        user.status,
-        user.roleNames.join(', '),
-        user.branchNames.join(', '),
-      ]),
-    ]);
-    return;
-  }
-
   if (type === 'losses') {
     downloadCsv('keen-losses-variances.csv', [
-      [
-        'Date',
-        'Product',
-        'SKU',
-        'Branch',
-        'System',
-        'Counted',
-        'Variance',
-        'Loss',
-        'Excess',
-        'Reason',
-      ],
+      ['Date', 'Product', 'SKU', 'System', 'Counted', 'Variance', 'Loss', 'Excess', 'Reason'],
       ...summary.stockAdjustments.map((row) => [
         formatDateTime(row.adjustedAt),
         row.productName,
         row.sku,
-        row.branchName,
         String(row.systemQuantity),
         String(row.countedQuantity),
         String(row.varianceQuantity),
@@ -30692,7 +21487,6 @@ function exportReportCsv(
       ['Completed sales', String(summary.sales.length)],
       ['Expense records', String(summary.expenses.length)],
       ['Inventory rows', String(summary.inventory.length)],
-      ['Staff users', String(summary.users.length)],
     ]);
     return;
   }
@@ -30709,7 +21503,6 @@ function exportReportCsv(
     ['Inventory Value', summary.totalStockValue.toFixed(2)],
     ['Low Stock Items', String(summary.lowStockCount)],
     ['Out of Stock Items', String(summary.outOfStockCount)],
-    ['Staff Users', String(summary.userCount)],
   ]);
 }
 
@@ -30736,8 +21529,6 @@ const productCatalogWorksheetHeaders = [
 ];
 
 const stockWorksheetHeaders = [
-  'Branch Code',
-  'Branch Name',
   'Product SKU',
   'Product Name',
   'Product VAT Category',
@@ -30988,6 +21779,14 @@ function findWorksheetCategory(
 function findWorksheetBranch(row: WorksheetRow, branches: Branch[], rowNumber: number) {
   const branchCode = worksheetText(row, 'Branch Code').toUpperCase();
   const branchName = worksheetText(row, 'Branch Name', 'Branch').toLowerCase();
+  if (!branchCode && !branchName) {
+    const defaultBranch = branches.find((item) => item.status === 'ACTIVE') ?? branches[0];
+    if (!defaultBranch) {
+      throw new Error(`Row ${rowNumber}: Shop location is not available.`);
+    }
+    return defaultBranch;
+  }
+
   const branch = branches.find(
     (item) =>
       (branchCode && item.code.toUpperCase() === branchCode) ||
@@ -30995,7 +21794,7 @@ function findWorksheetBranch(row: WorksheetRow, branches: Branch[], rowNumber: n
   );
 
   if (!branch) {
-    throw new Error(`Row ${rowNumber}: Branch Code or Branch Name does not match a branch.`);
+    throw new Error(`Row ${rowNumber}: Shop Code or Shop Name does not match the configured shop.`);
   }
   return branch;
 }
@@ -31109,17 +21908,16 @@ function downloadStockWorksheet(
   inventory: InventoryItem[],
   organization: Organization,
 ) {
+  const branch = branches.find((item) => item.status === 'ACTIVE') ?? branches[0];
   const inventoryByBranchProduct = new Map(
     inventory.map((item) => [`${item.branchId}:${item.productId}`, item]),
   );
   const rows: (string | number)[][] = [];
 
-  for (const branch of branches) {
+  if (branch) {
     for (const product of products) {
       const stock = inventoryByBranchProduct.get(`${branch.id}:${product.id}`);
       rows.push([
-        branch.code,
-        branch.name,
         product.sku,
         product.name,
         product.vatCategory ?? organization.defaultProductVatCategory,
@@ -31196,6 +21994,9 @@ function downloadCsv(filename: string, rows: (string | number | null | undefined
 }
 
 function downloadBlob(filename: string, blob: Blob) {
+  if (typeof URL.createObjectURL !== 'function') {
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

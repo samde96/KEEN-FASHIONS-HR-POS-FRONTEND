@@ -1,0 +1,323 @@
+/* Shared readability palette. Keep text opaque; use surfaces and borders for hierarchy. */
+:root {
+  color-scheme: light;
+  --ink: #111827;
+  --ink-2: #0b1929;
+  --ink-3: #19324d;
+  --muted: #344054;
+  --muted-2: #344054;
+  --text-link: #123f8c;
+  --text-positive: #07533c;
+  --text-warning: #783900;
+  --text-danger: #921b31;
+  --text-purple: #512c91;
+  --text-teal: #075266;
+  --text-on-dark: #ffffff;
+  --canvas: #f0f2f5;
+  --panel: #ffffff;
+  --white: #ffffff;
+  --line: #b8c2cf;
+  --line-soft: #d1d8e1;
+  --blue: #164b9e;
+  --blue-strong: #123f8c;
+  --green: #164b9e;
+  --green-strong: #123f8c;
+  --orange: #783900;
+  --orange-strong: #783900;
+  --red: #921b31;
+  --red-strong: #921b31;
+  --purple: #512c91;
+  --bs-body-color: var(--ink);
+  --bs-secondary-color: var(--muted);
+  --bs-tertiary-color: var(--muted);
+  --bs-heading-color: var(--ink);
+  --bs-link-color: var(--text-link);
+  --bs-link-hover-color: #082b64;
+  --bs-code-color: var(--text-purple);
+}
+
+body,
+.platform-shell,
+.platform-shell .platform-main,
+.pos-shell {
+  color: var(--ink);
+  background-color: var(--canvas);
+}
+
+a {
+  color: var(--text-link);
+}
+
+input,
+select,
+textarea {
+  color: var(--ink);
+  caret-color: var(--ink);
+}
+
+option,
+optgroup {
+  color: var(--ink);
+  background: var(--panel);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  color: var(--muted);
+  -webkit-text-fill-color: var(--muted);
+  background-color: #e5e9ef;
+  opacity: 1;
+}
+
+/* These are foreground surfaces, so content behind them must never bleed through. */
+.platform-shell .platform-topbar,
+.apps-search,
+.apps-home-bottom,
+.apps-card,
+.platform-launcher,
+.panel-card,
+.metric-card,
+.crm-metric-card,
+.crm-insight-card,
+.payment-dialog,
+.receipt-dialog,
+.form-dialog,
+.confirm-dialog,
+.detail-dialog,
+.inventory-modal,
+[role='dialog']:not(.commercial-preview-backdrop),
+[role='alertdialog'] {
+  background-color: var(--panel);
+  background-image: none;
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.platform-shell .platform-topbar {
+  backdrop-filter: none;
+}
+
+.apps-card-planned {
+  background: #e8ecf1;
+}
+
+.platform-workspace-panel,
+.platform-kpis > div,
+.platform-workspace-tools > a,
+.apps-actions-section a,
+.platform-launcher-search,
+.crm-panel,
+.field-control,
+.password-field,
+.field-stack > input,
+.field-stack > select,
+.field-stack > textarea {
+  border-color: var(--line);
+}
+
+.primary-action,
+.primary-action:disabled,
+.primary-action:hover:not(:disabled),
+.primary-action:active:not(:disabled) {
+  border-color: var(--blue-strong);
+  background: var(--blue-strong);
+  color: var(--text-on-dark);
+  opacity: 1;
+}
+
+.primary-action:hover:not(:disabled) {
+  background: #082b64;
+}
+
+.primary-action:disabled {
+  border-style: dashed;
+  background: #344054;
+  cursor: not-allowed;
+}
+
+.secondary-action:disabled,
+.text-button:disabled,
+.icon-button:disabled {
+  background: #e5e9ef;
+  color: var(--muted);
+  opacity: 1;
+}
+
+.pos-topbar,
+.payment-dialog .dialog-header {
+  background: #123f8c;
+  color: var(--text-on-dark);
+}
+
+.login-heading .login-app-name {
+  margin: 10px 0 4px;
+  color: var(--text-on-dark);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.login-heading:has(.login-app-name) {
+  padding-bottom: 10px;
+}
+
+.pos-topbar .exit-command,
+.pos-topbar .logout-action {
+  background: #082b64;
+  color: var(--text-on-dark);
+}
+
+.payment-dialog .dialog-header .icon-button {
+  background: #082b64;
+  color: var(--text-on-dark);
+}
+
+.payment-complete-action kbd,
+.receipt-footer-actions kbd {
+  background: #082b64;
+  color: var(--text-on-dark);
+}
+
+.pos-topbar .user-chip small,
+.pos-topbar .user-chip strong,
+.pos-topbar .brand-block > span,
+.pos-register span {
+  opacity: 1;
+  color: var(--text-on-dark);
+}
+
+.pos-topbar .pos-register strong,
+.pos-topbar .pos-session,
+.pos-topbar .online-dot,
+.pos-topbar .select-shell {
+  color: var(--text-on-dark);
+}
+
+.login-heading,
+.login-submit,
+.login-submit:hover:not(:disabled),
+.crm-workspace .primary-action,
+.commercial-document-brandbar,
+.commercial-document-items th,
+.commercial-document-preview .commercial-total-due,
+.commercial-totals-card > div:last-child {
+  background: var(--blue-strong);
+  color: var(--text-on-dark);
+}
+
+.dashboard-hero,
+.crm-growth-banner {
+  background: linear-gradient(115deg, #071a2e, #12365e);
+}
+
+.dashboard-hero .dashboard-export,
+.dashboard-hero .dashboard-export:disabled {
+  background: #123f8c;
+  color: var(--text-on-dark);
+}
+
+.dashboard-yellow-action,
+.crm-yellow-action {
+  color: var(--ink);
+}
+
+.recharts-cartesian-axis text,
+.recharts-cartesian-axis tspan {
+  fill: var(--muted);
+}
+
+/* Solid dark surfaces need their own foregrounds, including inherited secondary text. */
+.platform-rail,
+.login-story,
+.dashboard-hero,
+.crm-growth-banner {
+  --muted: #ffffff;
+  --muted-2: #ffffff;
+}
+
+.platform-shell .platform-rail,
+.platform-app-nav > p,
+.platform-rail-bottom > small {
+  color: var(--text-on-dark);
+}
+
+.tone-violet {
+  --app-color: var(--text-purple);
+}
+.tone-blue {
+  --app-color: var(--text-link);
+}
+.tone-amber {
+  --app-color: var(--text-warning);
+}
+.tone-rose {
+  --app-color: var(--text-danger);
+}
+.tone-teal,
+.tone-cyan {
+  --app-color: var(--text-teal);
+}
+.tone-emerald {
+  --app-color: var(--text-positive);
+}
+.tone-slate {
+  --app-color: var(--muted);
+}
+
+.apps-favorite,
+.apps-card-planned .platform-app-icon {
+  opacity: 1;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 3px solid #123f8c;
+  outline-offset: 3px;
+}
+
+.platform-rail a:focus-visible,
+.pos-topbar button:focus-visible {
+  outline-color: #ffffff;
+}
+
+@media (max-width: 600px) {
+  .payment-dialog .dialog-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+  }
+
+  .payment-dialog .payment-title-block {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .payment-dialog .dialog-header .icon-button {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .payment-dialog .payment-due-header {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    text-align: left;
+  }
+}

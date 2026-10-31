@@ -1,0 +1,350 @@
+@font-face {
+  font-family: 'Caveat';
+  src: url('../assets/fonts/caveat-latin-variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+.apps-home-hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 45px 28px 26px;
+  margin: 0 0 30px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--panel);
+  color: var(--ink);
+  text-align: center;
+}
+
+.apps-home-hero::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  bottom: -38px;
+  left: -18%;
+  width: 136%;
+  height: 143px;
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  background: var(--canvas);
+}
+
+.apps-hero-copy {
+  width: 100%;
+  max-width: 1180px;
+  min-width: 0;
+}
+
+.apps-eyebrow {
+  margin: 0 0 15px;
+  color: var(--text-link);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2.1px;
+}
+
+.apps-hero-copy h1 {
+  margin: 0 auto 10px;
+  color: var(--ink);
+  font-family: 'Caveat', 'Segoe Print', cursive;
+  font-size: clamp(48px, 6.1vw, 87px);
+  font-weight: 700;
+  line-height: 1.17;
+  letter-spacing: -2px;
+}
+
+.apps-hero-copy h1 > span {
+  position: relative;
+  isolation: isolate;
+  display: inline-block;
+  padding: 0 8px 2px;
+  color: var(--text-link);
+  white-space: nowrap;
+}
+
+.apps-hero-copy h1 > span::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 18% -4px 7%;
+  border-radius: 13px;
+  background: var(--blue-soft);
+  transform: rotate(-1.8deg);
+  clip-path: polygon(
+    2% 8%,
+    98% 0,
+    100% 30%,
+    97% 48%,
+    100% 65%,
+    98% 95%,
+    2% 100%,
+    0 76%,
+    2% 52%,
+    0 29%
+  );
+}
+
+.apps-hero-tagline {
+  margin: 3px 0 16px;
+  color: var(--ink);
+  font-family: 'Caveat', 'Segoe Print', cursive;
+  font-size: clamp(31px, 3.6vw, 48px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.7px;
+}
+
+.apps-hero-tagline > span {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.apps-hero-tagline > span::after {
+  content: '';
+  position: absolute;
+  left: -3px;
+  right: -4px;
+  bottom: -6px;
+  height: 11px;
+  background: var(--blue);
+  border-radius: 60% 40% 45% 55%;
+  clip-path: polygon(
+    0 45%,
+    17% 13%,
+    41% 0,
+    68% 13%,
+    100% 37%,
+    98% 94%,
+    65% 74%,
+    40% 64%,
+    17% 77%,
+    1% 100%
+  );
+  transform: rotate(-1deg);
+}
+
+.apps-home .apps-hero-description {
+  max-width: 660px;
+  margin: 0 auto;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.apps-hero-actions {
+  position: relative;
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin: 26px auto 45px;
+}
+
+.apps-hero-actions > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 46px;
+  padding: 12px 22px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.apps-hero-actions .apps-hero-primary {
+  background: var(--blue-strong);
+  color: var(--text-on-dark);
+}
+
+.apps-hero-actions .apps-hero-primary:hover {
+  background: var(--bs-link-hover-color);
+}
+
+.apps-hero-actions .apps-hero-secondary {
+  border-color: var(--line-soft);
+  background: var(--gray-soft);
+  color: var(--text-link);
+}
+
+.apps-hero-actions .apps-hero-secondary:hover {
+  border-color: var(--blue-strong);
+  background: var(--blue-soft);
+}
+
+.apps-hero-note {
+  position: absolute;
+  top: -10px;
+  left: calc(100% + 38px);
+  width: 160px;
+  color: var(--text-link);
+  font-family: 'Caveat', 'Segoe Print', cursive;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.05;
+  text-align: left;
+  transform: rotate(-7deg);
+}
+
+.apps-hero-note svg {
+  position: absolute;
+  top: -54px;
+  left: 5px;
+  width: 69px;
+  height: 56px;
+  stroke: currentColor;
+  stroke-width: 2.8px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.apps-hero-search {
+  z-index: 1;
+  width: min(100%, 690px);
+}
+
+.apps-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 55px;
+  margin: 0;
+  padding: 10px 20px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 5px 10px #11182708;
+  color: var(--ink);
+  text-align: left;
+}
+
+.apps-search:focus-within {
+  border-color: var(--blue-strong);
+  outline: 2px solid var(--blue-strong);
+  outline-offset: 2px;
+}
+
+.apps-search > i {
+  font-size: 17px;
+}
+
+.apps-home .apps-search input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.apps-search input::placeholder,
+.apps-search-hint {
+  color: var(--muted);
+}
+
+.apps-search-hint {
+  padding-left: 14px;
+  border-left: 1px solid var(--line-soft);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.apps-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 20px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.apps-hero-meta span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#apps-catalog {
+  scroll-margin-top: 95px;
+}
+
+@media (max-width: 1250px) {
+  .apps-hero-note {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .apps-home-hero {
+    margin-bottom: 25px;
+    padding: 32px 17px 20px;
+    border-radius: 12px;
+  }
+
+  .apps-eyebrow {
+    margin-bottom: 13px;
+    font-size: 9px;
+    letter-spacing: 1.6px;
+  }
+
+  .apps-hero-copy h1 {
+    font-size: clamp(44px, 10.7vw, 65px);
+    letter-spacing: -1.2px;
+    line-height: 1.12;
+  }
+
+  .apps-hero-tagline {
+    margin: 14px 0 18px;
+    font-size: clamp(29px, 6.7vw, 40px);
+  }
+
+  .apps-home .apps-hero-description {
+    max-width: 400px;
+    font-size: 12px;
+  }
+
+  .apps-hero-actions {
+    display: flex;
+    gap: 10px;
+    margin: 23px auto 31px;
+  }
+
+  .apps-hero-actions > a {
+    flex: 1 1 200px;
+    max-width: 330px;
+    min-height: 44px;
+    padding: 10px 15px;
+    font-size: 12px;
+  }
+
+  .apps-search {
+    min-height: 50px;
+    padding: 8px 14px;
+    gap: 10px;
+  }
+
+  .apps-home .apps-search input {
+    font-size: 12px;
+  }
+
+  .apps-search-hint {
+    display: none;
+  }
+
+  .apps-hero-meta {
+    gap: 8px 12px;
+    font-size: 9px;
+  }
+}

@@ -15,48 +15,19 @@ import type {
   Branch,
   BranchRequest,
   CurrentUser,
-  Department,
-  DepartmentRequest,
-  AttendancePage,
-  AttendanceRecord,
-  AttendanceRequest,
-  EmployeeDocument,
-  EmployeeDocumentUploadRequest,
-  EmployeePerformanceEntry,
-  EmployeePerformanceEntryRequest,
-  EmployeePerformancePage,
-  EmployeePage,
-  EmployeeProfile,
-  EmployeeRequest,
-  EmployeeUserSyncResult,
+  Customer,
+  CustomerPeriodReport,
+  CustomerRequest,
   Expense,
   ExpenseRequest,
   InventoryItem,
   InventoryReorderLevelRequest,
-  JobTitle,
-  JobTitleRequest,
-  LeavePage,
-  LeaveRequestInput,
-  LeaveRequestRecord,
-  LeaveType,
-  LeaveTypeRequest,
   AuditEvent,
   ModuleSummary,
   NotificationItem,
   Organization,
   Permission,
   PermissionRequest,
-  PayrollComponent,
-  PayrollComponentRequest,
-  PayrollEmployeeAdjustmentRequest,
-  PayrollEmployee,
-  PayrollPage,
-  PayrollPeriod,
-  PayrollPeriodRequest,
-  PayrollRun,
-  PayrollRunRequest,
-  PayrollSalesBonusRule,
-  PayrollSalesBonusRuleRequest,
   ProductVatCategory,
   Product,
   ProductCategory,
@@ -72,15 +43,14 @@ import type {
   StockAdjustmentSummary,
   StockIntake,
   StockIntakeRequest,
-  StockTransfer,
-  StockTransferRequest,
   Supplier,
   SupplierRequest,
   UserRequest,
 } from '../data/types';
 
 const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
-const apiBaseUrl = import.meta.env.DEV ? '' : configuredApiBaseUrl;
+const isDevelopment = import.meta.env.DEV;
+const apiBaseUrl = isDevelopment ? '' : configuredApiBaseUrl;
 const localDevelopmentApiBaseUrl = 'http://localhost:8080';
 const csrfTokenPath = '/api/v1/auth/csrf';
 const csrfCookieName = 'XSRF-TOKEN';
@@ -95,6 +65,20 @@ type LoginCredentials = {
   username: string;
   password: string;
   rememberDevice: boolean;
+};
+
+export type DocumentEmailRequest = {
+  to: string;
+  from?: string;
+  subject: string;
+  message: string;
+  attachmentFileName: string;
+  attachmentContentBase64: string;
+};
+
+export type DocumentEmailResponse = {
+  providerMessageId?: string;
+  status: string;
 };
 
 let csrfToken: string | null = null;
@@ -122,26 +106,6 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
   }
 
   return response.json() as Promise<T>;
-}
-
-export async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
-  const securedInit = await withCsrf(path, {
-    ...init,
-    headers: {
-      Accept: '*/*',
-      ...headersToRecord(init?.headers),
-    },
-  });
-  const response = await fetchApi(path, securedInit);
-
-  if (!response.ok) {
-    if (response.status === 403 && isUnsafeMethod(securedInit?.method)) {
-      clearCsrfToken();
-    }
-    throw new Error(await getErrorMessage(response));
-  }
-
-  return response.blob();
 }
 
 async function fetchApi(path: string, init?: RequestInit) {
@@ -275,7 +239,7 @@ function headersToRecord(headers?: HeadersInit) {
 }
 
 async function shouldRetryAgainstLocalBackend(response: Response, path: string) {
-  if (!import.meta.env.DEV || apiBaseUrl || !path.startsWith('/api/')) {
+  if (!isDevelopment || apiBaseUrl || !path.startsWith('/api/')) {
     return false;
   }
 
@@ -383,6 +347,53 @@ export function getProcurementSummary() {
 
 export function getCustomersSummary() {
   return requestJson<ModuleSummary>('/api/v1/customers/summary');
+}
+
+export function getCustomers() {
+  return requestJson<Customer[]>('/api/v1/customers');
+}
+
+export function createCustomer(customer: CustomerRequest) {
+  return requestJson<Customer>('/api/v1/customers', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(customer),
+  });
+}
+
+export function updateCustomer(customerId: string, customer: CustomerRequest) {
+  return requestJson<Customer>(`/api/v1/customers/${customerId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(customer),
+  });
+}
+
+export function clearCustomerData(customerId: string) {
+  return requestJson<Customer>(`/api/v1/customers/${customerId}/clear`, {
+    method: 'POST',
+  });
+}
+
+export function deleteCustomer(customerId: string) {
+  return requestJson<void>(`/api/v1/customers/${customerId}`, {
+    method: 'DELETE',
+  });
+}
+
+export type CustomerPeriodReportParams = {
+  from?: string;
+  to?: string;
+};
+
+export function getCustomerPeriodReport(customerId: string, params?: CustomerPeriodReportParams) {
+  return requestJson<CustomerPeriodReport>(
+    `/api/v1/customers/${customerId}/period-report${apiSearchParams(params)}`,
+  );
 }
 
 export function getCrmSummary() {
@@ -549,10 +560,6 @@ export function getAccountingCashFlow(params?: AccountingReportParams) {
   );
 }
 
-export function getEtimsSummary() {
-  return requestJson<ModuleSummary>('/api/v1/etims/summary');
-}
-
 export function getNotificationsSummary() {
   return requestJson<ModuleSummary>('/api/v1/notifications/summary');
 }
@@ -619,6 +626,16 @@ export function deleteRole(roleId: string) {
   });
 }
 
+export function sendDocumentEmail(payload: DocumentEmailRequest) {
+  return requestJson<DocumentEmailResponse>('/api/v1/document-delivery/email', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getUsers() {
   return requestJson<StaffUser[]>('/api/v1/users');
 }
@@ -647,265 +664,6 @@ export function disableUser(userId: string) {
   return requestJson<void>(`/api/v1/users/${userId}`, {
     method: 'DELETE',
   });
-}
-
-export function getHrDepartments() {
-  return requestJson<Department[]>('/api/v1/hr/departments');
-}
-
-export function createHrDepartment(department: DepartmentRequest) {
-  return requestJson<Department>('/api/v1/hr/departments', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(department)),
-  });
-}
-
-export function updateHrDepartment(departmentId: string, department: DepartmentRequest) {
-  return requestJson<Department>(`/api/v1/hr/departments/${departmentId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(department)),
-  });
-}
-
-export function getHrJobTitles() {
-  return requestJson<JobTitle[]>('/api/v1/hr/job-titles');
-}
-
-export function createHrJobTitle(jobTitle: JobTitleRequest) {
-  return requestJson<JobTitle>('/api/v1/hr/job-titles', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(jobTitle)),
-  });
-}
-
-export function updateHrJobTitle(jobTitleId: string, jobTitle: JobTitleRequest) {
-  return requestJson<JobTitle>(`/api/v1/hr/job-titles/${jobTitleId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(jobTitle)),
-  });
-}
-
-export function getHrEmployees(params?: URLSearchParams) {
-  const suffix = params && Array.from(params).length > 0 ? `?${params.toString()}` : '';
-  return requestJson<EmployeePage>(`/api/v1/hr/employees${suffix}`);
-}
-
-export function getHrEmployee(employeeId: string) {
-  return requestJson<EmployeeProfile>(`/api/v1/hr/employees/${employeeId}`);
-}
-
-export function createHrEmployee(employee: EmployeeRequest) {
-  return requestJson<EmployeeProfile>('/api/v1/hr/employees', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(employee)),
-  });
-}
-
-export function updateHrEmployee(employeeId: string, employee: EmployeeRequest) {
-  return requestJson<EmployeeProfile>(`/api/v1/hr/employees/${employeeId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(employee)),
-  });
-}
-
-export function syncHrEmployeesFromUsers() {
-  return requestJson<EmployeeUserSyncResult>('/api/v1/hr/employees/sync-users', {
-    method: 'POST',
-  });
-}
-
-export function getHrDocuments(params?: URLSearchParams) {
-  const suffix = params && Array.from(params).length > 0 ? `?${params.toString()}` : '';
-  return requestJson<EmployeeDocument[]>(`/api/v1/hr/documents${suffix}`);
-}
-
-export function uploadHrDocument(document: EmployeeDocumentUploadRequest) {
-  const formData = new FormData();
-  formData.append('employeeId', document.employeeId);
-  formData.append('documentType', document.documentType);
-  formData.append('title', document.title);
-  formData.append('notes', document.notes);
-  formData.append('file', document.file);
-
-  return requestJson<EmployeeDocument>('/api/v1/hr/documents', {
-    method: 'POST',
-    body: formData,
-  });
-}
-
-export function downloadHrDocument(documentId: string) {
-  return requestBlob(`/api/v1/hr/documents/${documentId}/content`, {
-    method: 'GET',
-  });
-}
-
-export function getHrAttendance(params?: URLSearchParams) {
-  const suffix = params && Array.from(params).length > 0 ? `?${params.toString()}` : '';
-  return requestJson<AttendancePage>(`/api/v1/hr/attendance${suffix}`);
-}
-
-export function createHrAttendance(attendance: AttendanceRequest) {
-  return requestJson<AttendanceRecord>('/api/v1/hr/attendance', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeAttendanceRequest(attendance)),
-  });
-}
-
-export function updateHrAttendance(attendanceId: string, attendance: AttendanceRequest) {
-  return requestJson<AttendanceRecord>(`/api/v1/hr/attendance/${attendanceId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeAttendanceRequest(attendance)),
-  });
-}
-
-export function getHrLeavePage() {
-  return requestJson<LeavePage>('/api/v1/hr/leave');
-}
-
-export function createHrLeaveType(leaveType: LeaveTypeRequest) {
-  return requestJson<LeaveType>('/api/v1/hr/leave/types', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(leaveType)),
-  });
-}
-
-export function updateHrLeaveType(leaveTypeId: string, leaveType: LeaveTypeRequest) {
-  return requestJson<LeaveType>(`/api/v1/hr/leave/types/${leaveTypeId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(leaveType)),
-  });
-}
-
-export function createHrLeaveRequest(request: LeaveRequestInput) {
-  return requestJson<LeaveRequestRecord>('/api/v1/hr/leave/requests', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(request)),
-  });
-}
-
-export function updateHrLeaveRequest(requestId: string, request: LeaveRequestInput) {
-  return requestJson<LeaveRequestRecord>(`/api/v1/hr/leave/requests/${requestId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(request)),
-  });
-}
-
-export function getHrPerformance(params?: URLSearchParams) {
-  const suffix = params && Array.from(params).length > 0 ? `?${params.toString()}` : '';
-  return requestJson<EmployeePerformancePage>(`/api/v1/hr/performance${suffix}`);
-}
-
-export function createHrPerformanceEntry(entry: EmployeePerformanceEntryRequest) {
-  return requestJson<EmployeePerformanceEntry>('/api/v1/hr/performance/entries', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(entry)),
-  });
-}
-
-export function getHrPayrollPage() {
-  return requestJson<PayrollPage>('/api/v1/hr/payroll');
-}
-
-export function createHrPayrollComponent(component: PayrollComponentRequest) {
-  return requestJson<PayrollComponent>('/api/v1/hr/payroll/components', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(component)),
-  });
-}
-
-export function updateHrPayrollSalesBonusRule(rule: PayrollSalesBonusRuleRequest) {
-  return requestJson<PayrollSalesBonusRule>('/api/v1/hr/payroll/sales-bonus-rule', {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(rule)),
-  });
-}
-
-export function createHrPayrollPeriod(period: PayrollPeriodRequest) {
-  return requestJson<PayrollPeriod>('/api/v1/hr/payroll/periods', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(period)),
-  });
-}
-
-export function createHrPayrollRun(run: PayrollRunRequest) {
-  return requestJson<PayrollRun>('/api/v1/hr/payroll/runs', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(normalizeNullableRequest(run)),
-  });
-}
-
-export function recalculateHrPayrollRun(runId: string) {
-  return requestJson<PayrollRun>(`/api/v1/hr/payroll/runs/${runId}/recalculate`, {
-    method: 'POST',
-  });
-}
-
-export function updateHrPayrollEmployeeAdjustment(
-  runId: string,
-  payrollEmployeeId: string,
-  adjustment: PayrollEmployeeAdjustmentRequest,
-) {
-  return requestJson<PayrollEmployee>(
-    `/api/v1/hr/payroll/runs/${runId}/employees/${payrollEmployeeId}/adjustments`,
-    {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(normalizeNullableRequest(adjustment)),
-    },
-  );
 }
 
 export function getProductCategories() {
@@ -1017,20 +775,6 @@ export function createStockAdjustment(stockAdjustment: StockAdjustmentRequest) {
   });
 }
 
-export function getTransfers() {
-  return requestJson<StockTransfer[]>('/api/v1/transfers');
-}
-
-export function createTransfer(transfer: StockTransferRequest) {
-  return requestJson<StockTransfer>('/api/v1/transfers', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(transfer),
-  });
-}
-
 export function getSales(params?: URLSearchParams) {
   const suffix = params && Array.from(params).length > 0 ? `?${params.toString()}` : '';
   return requestJson<Sale[]>(`/api/v1/sales${suffix}`);
@@ -1096,27 +840,6 @@ function normalizeNullableRequest<T extends Record<string, unknown>>(payload: T)
   );
 }
 
-function normalizeAttendanceRequest(attendance: AttendanceRequest) {
-  const normalized = normalizeNullableRequest(attendance);
-  return {
-    ...normalized,
-    clockIn: normalizeOffsetDateTimeInput(attendance.clockIn),
-    clockOut: normalizeOffsetDateTimeInput(attendance.clockOut),
-  };
-}
-
-function normalizeOffsetDateTimeInput(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) {
-    return trimmed;
-  }
-  return parsed.toISOString();
-}
-
 export async function login(credentials: LoginCredentials) {
   const currentUser = await requestJson<CurrentUser>('/api/v1/auth/login', {
     method: 'POST',
@@ -1158,7 +881,7 @@ async function getUnexpectedResponseMessage(response: Response, contentType: str
   const received = contentType || 'unknown content type';
 
   if (looksLikeHtml(trimmed)) {
-    if (!import.meta.env.DEV && response.url.startsWith(window.location.origin)) {
+    if (!isDevelopment && response.url.startsWith(window.location.origin)) {
       return 'Expected backend JSON but received the frontend HTML app. Set VITE_API_BASE_URL in Vercel to the Render backend URL, then redeploy the frontend.';
     }
 

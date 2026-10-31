@@ -1,0 +1,32 @@
+.mpesa-payment-panel {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f2faf6;
+  color: var(--ink);
+  min-width: 0;
+}
+.mpesa-payment-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-positive);
+}
+.mpesa-payment-status {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.mpesa-payment-status.status-failed {
+  color: var(--text-danger);
+}
+.mpesa-payment-panel > small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.payment-tenders {
+  display: contents;
+}

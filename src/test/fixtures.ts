@@ -35,8 +35,6 @@ export const testUser: CurrentUser = {
     'profit:view',
     'reports:view',
     'sales:view',
-    'transfer:create',
-    'transfer:receive',
   ],
 };
 
@@ -75,7 +73,7 @@ export const testPermissions: Permission[] = [
   {
     id: '00000000-0000-4000-8000-000000000501',
     code: 'admin:manage',
-    description: 'Manage users, roles, branches, products, and settings',
+    description: 'Manage users, roles, products, and settings',
   },
   {
     id: '00000000-0000-4000-8000-000000000505',
@@ -97,36 +95,57 @@ export const testPermissions: Permission[] = [
     code: 'sales:view',
     description: 'View Sales Data',
   },
+  {
+    id: '00000000-0000-4000-8000-000000000520',
+    code: 'expenses:create',
+    description: 'Register own shop expenses',
+  },
+  {
+    id: '00000000-0000-4000-8000-000000000521',
+    code: 'shifts:manage',
+    description: 'Open and close own shop shifts',
+  },
 ];
 
 export const testRoles: Role[] = [
   {
-    id: '00000000-0000-4000-8000-000000000403',
-    name: 'Cashier',
-    key: 'CASHIER',
-    description: 'POS sales and sales lookup access',
+    id: '00000000-0000-4000-8000-000000000405',
+    name: 'Shop Manager',
+    key: 'SHOP_MANAGER',
+    description: 'Shop operations and sales review',
     assignedUsers: 1,
-    permissionIds: [testPermissions[1].id, testPermissions[4].id],
-    permissionCodes: [testPermissions[1].code, testPermissions[4].code],
+    permissionIds: [testPermissions[1].id, testPermissions[2].id, testPermissions[4].id],
+    permissionCodes: [testPermissions[1].code, testPermissions[2].code, testPermissions[4].code],
   },
   {
-    id: '00000000-0000-4000-8000-000000000407',
-    name: 'Supervisor',
-    key: 'SUPERVISOR',
-    description: 'POS supervision and sales review',
+    id: '00000000-0000-4000-8000-000000000401',
+    name: 'Admin',
+    key: 'ADMIN',
+    description: 'Full system administration for this business',
     assignedUsers: 0,
     permissionIds: [
+      testPermissions[0].id,
       testPermissions[1].id,
       testPermissions[2].id,
       testPermissions[3].id,
       testPermissions[4].id,
     ],
     permissionCodes: [
+      testPermissions[0].code,
       testPermissions[1].code,
       testPermissions[2].code,
       testPermissions[3].code,
       testPermissions[4].code,
     ],
+  },
+  {
+    id: '00000000-0000-4000-8000-000000000403',
+    name: 'Cashier',
+    key: 'CASHIER',
+    description: 'Shop sales, own expense registration, and own opening and closing shifts',
+    assignedUsers: 0,
+    permissionIds: [testPermissions[1].id, testPermissions[5].id, testPermissions[6].id],
+    permissionCodes: ['pos:sell', 'expenses:create', 'shifts:manage'],
   },
 ];
 

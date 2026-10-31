@@ -1,0 +1,85 @@
+import { testBranches, testOrganization, testUser } from './fixtures';
+
+export const testCrmStorageKey = `keen-crm-records-v1:${testOrganization.id}:${testUser.userId}`;
+
+const contacts = [
+  ['Amina Kimani', 'Atelier Nairobi', 'Instagram', 'QUALIFIED'],
+  ['Brian Otieno', 'Otieno Retail', 'Referral', 'WON'],
+  ['Grace Wanjiru', 'Grace Collections', 'Walk-in', 'NEW'],
+  ['David Mwangi', 'Mwangi & Co.', 'Website', 'PROPOSAL'],
+  ['Faith Njeri', 'Njeri Studio', 'Instagram', 'CONTACTED'],
+  ['Kevin Kamau', 'Kamau Designs', 'Referral', 'LOST'],
+];
+const stages = ['QUALIFIED', 'WON', 'NEW', 'PROPOSAL', 'NEGOTIATION', 'LOST'];
+const values = ['25000', '12000', '18000', '42500', '31000', '15000'];
+
+export const testCrmRecords = {
+  leads: contacts.map(([name, company, source, status], index) => ({
+    id: `crm-contact-${index + 1}`,
+    leadNumber: `LEAD-000${index + 1}`,
+    branchId: testBranches[0].id,
+    assignedTo: testUser.displayName,
+    name,
+    company,
+    source,
+    status,
+    phone: `+25470000000${index + 1}`,
+    email: `contact${index + 1}@example.com`,
+    location: 'Nairobi',
+    estimatedValue: values[index],
+    notes: 'Interested in the new season collection.',
+    createdAt: '2026-10-20T09:00:00Z',
+    updatedAt: `2026-10-2${index + 1}T09:00:00Z`,
+  })),
+  opportunities: contacts.map(([name, company], index) => ({
+    id: `crm-opportunity-${index + 1}`,
+    opportunityNumber: `OPP-000${index + 1}`,
+    leadId: `crm-contact-${index + 1}`,
+    branchId: testBranches[0].id,
+    assignedTo: testUser.displayName,
+    title: `${company} seasonal order`,
+    customerName: name,
+    company,
+    phone: `+25470000000${index + 1}`,
+    email: `contact${index + 1}@example.com`,
+    expectedValue: values[index],
+    probabilityPercent: index === 1 ? '100' : index === 5 ? '0' : '60',
+    expectedCloseDate: '2026-11-05',
+    stage: stages[index],
+    notes: '',
+    createdAt: '2026-10-20T09:00:00Z',
+    updatedAt: '2026-10-26T09:00:00Z',
+  })),
+  activities: [
+    {
+      id: 'crm-activity-1',
+      leadId: 'crm-contact-1',
+      opportunityId: '',
+      branchId: testBranches[0].id,
+      assignedTo: testUser.displayName,
+      activityType: 'CALL',
+      subject: 'Discuss the new collection with Amina',
+      dueAt: '2026-10-20T10:00',
+      completedAt: '',
+      status: 'OPEN',
+      notes: '',
+      createdAt: '2026-10-19T09:00:00Z',
+      updatedAt: '2026-10-19T09:00:00Z',
+    },
+    {
+      id: 'crm-activity-2',
+      leadId: '',
+      opportunityId: 'crm-opportunity-4',
+      branchId: testBranches[0].id,
+      assignedTo: testUser.displayName,
+      activityType: 'MEETING',
+      subject: 'Review the seasonal proposal',
+      dueAt: '2099-11-05T14:00',
+      completedAt: '',
+      status: 'OPEN',
+      notes: '',
+      createdAt: '2026-10-20T09:00:00Z',
+      updatedAt: '2026-10-20T09:00:00Z',
+    },
+  ],
+};

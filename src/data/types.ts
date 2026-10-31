@@ -62,6 +62,68 @@ export type SupplierRequest = {
   status: Supplier['status'];
 };
 
+export type CustomerStatus = 'ACTIVE' | 'INACTIVE' | 'CREDIT_HOLD';
+
+export type CustomerType = 'INDIVIDUAL' | 'BUSINESS';
+
+export type Customer = {
+  id: string;
+  branchId?: string;
+  branchName?: string;
+  customerCode: string;
+  name: string;
+  contactPerson?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  kraPin?: string;
+  customerType: CustomerType;
+  creditLimit: number;
+  outstandingBalance: number;
+  paymentTerms?: string;
+  notes?: string;
+  status: CustomerStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CustomerRequest = {
+  branchId?: string;
+  customerCode: string;
+  name: string;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  address: string;
+  kraPin: string;
+  customerType: CustomerType;
+  creditLimit: number;
+  outstandingBalance: number;
+  paymentTerms: string;
+  notes: string;
+  status: CustomerStatus;
+};
+
+export type CustomerSaleActivity = {
+  reference: string;
+  branchName: string;
+  occurredAt: string;
+  boughtAmount: number;
+  paidAmount: number;
+};
+
+export type CustomerPeriodReport = {
+  customerId: string;
+  customerName: string;
+  from: string;
+  to: string;
+  boughtAmount: number;
+  paidAmount: number;
+  balanceAmount: number;
+  saleCount: number;
+  activities: CustomerSaleActivity[];
+};
+
 export type CurrentUser = {
   userId: string;
   email: string;
@@ -71,504 +133,6 @@ export type CurrentUser = {
   roleKeys: string[];
   roleNames: string[];
   permissionCodes: string[];
-};
-
-export type Department = {
-  id: string;
-  name: string;
-  code: string;
-  description?: string;
-  branchId?: string;
-  branchName?: string;
-  managerUserId?: string;
-  managerUserDisplayName?: string;
-  active: boolean;
-};
-
-export type DepartmentRequest = {
-  name: string;
-  code: string;
-  description: string;
-  branchId: string;
-  managerUserId: string;
-  active: boolean;
-};
-
-export type JobTitle = {
-  id: string;
-  title: string;
-  code: string;
-  description?: string;
-  departmentId: string;
-  departmentName: string;
-  active: boolean;
-};
-
-export type JobTitleRequest = {
-  title: string;
-  code: string;
-  departmentId: string;
-  description: string;
-  active: boolean;
-};
-
-export type EmployeeEmploymentType = 'PERMANENT' | 'CONTRACT' | 'TEMPORARY' | 'INTERN' | 'CASUAL';
-
-export type EmployeeEmploymentStatus =
-  'ACTIVE' | 'PROBATION' | 'SUSPENDED' | 'TERMINATED' | 'RESIGNED' | 'RETIRED';
-
-export type SalaryPaymentMethod = 'UNSPECIFIED' | 'BANK' | 'MPESA';
-
-export type EmployeeSummary = {
-  id: string;
-  employeeNumber: string;
-  fullName: string;
-  preferredName?: string;
-  email?: string;
-  phone?: string;
-  branchId: string;
-  branchName: string;
-  departmentId?: string;
-  departmentName?: string;
-  jobTitleId?: string;
-  jobTitleTitle?: string;
-  employmentType: EmployeeEmploymentType;
-  employmentStatus: EmployeeEmploymentStatus;
-  joiningDate: string;
-  basicSalary: number;
-  salaryPaymentMethod: SalaryPaymentMethod;
-  active: boolean;
-  linkedUserId?: string;
-  linkedUserDisplayName?: string;
-};
-
-export type EmployeeProfileTab = {
-  key: string;
-  label: string;
-};
-
-export type EmployeeProfile = {
-  id: string;
-  employeeNumber: string;
-  firstName: string;
-  middleName?: string;
-  lastName: string;
-  fullName: string;
-  preferredName?: string;
-  email?: string;
-  phone?: string;
-  gender?: string;
-  dateOfBirth?: string;
-  nationalIdNumber?: string;
-  branchId: string;
-  branchName: string;
-  departmentId?: string;
-  departmentName?: string;
-  jobTitleId?: string;
-  jobTitleTitle?: string;
-  employmentType: EmployeeEmploymentType;
-  employmentStatus: EmployeeEmploymentStatus;
-  joiningDate: string;
-  probationEndDate?: string;
-  contractStartDate?: string;
-  contractEndDate?: string;
-  linkedUserId?: string;
-  linkedUserDisplayName?: string;
-  managerEmployeeId?: string;
-  managerEmployeeName?: string;
-  workLocation?: string;
-  emergencyContactName?: string;
-  emergencyContactPhone?: string;
-  address?: string;
-  notes?: string;
-  basicSalary: number;
-  salaryPaymentMethod: SalaryPaymentMethod;
-  bankName?: string;
-  bankAccountNumber?: string;
-  bankAccountName?: string;
-  mpesaNumber?: string;
-  active: boolean;
-  tabs: EmployeeProfileTab[];
-};
-
-export type EmployeeRequest = {
-  employeeNumber: string;
-  firstName: string;
-  middleName: string;
-  lastName: string;
-  preferredName: string;
-  email: string;
-  phone: string;
-  gender: string;
-  dateOfBirth: string;
-  nationalIdNumber: string;
-  primaryBranchId: string;
-  departmentId: string;
-  jobTitleId: string;
-  employmentType: EmployeeEmploymentType;
-  employmentStatus: EmployeeEmploymentStatus;
-  joiningDate: string;
-  probationEndDate: string;
-  contractStartDate: string;
-  contractEndDate: string;
-  userId: string;
-  managerEmployeeId: string;
-  workLocation: string;
-  emergencyContactName: string;
-  emergencyContactPhone: string;
-  address: string;
-  notes: string;
-  basicSalary: number;
-  salaryPaymentMethod: SalaryPaymentMethod;
-  bankName: string;
-  bankAccountNumber: string;
-  bankAccountName: string;
-  mpesaNumber: string;
-  active: boolean;
-};
-
-export type EmployeePage = {
-  items: EmployeeSummary[];
-  total: number;
-};
-
-export type EmployeeUserSyncResult = {
-  totalUsers: number;
-  createdCount: number;
-  skippedCount: number;
-  employees: EmployeeSummary[];
-};
-
-export type EmployeeDocument = {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  employeeNumber: string;
-  branchId: string;
-  branchName: string;
-  documentType: string;
-  title: string;
-  fileName: string;
-  contentType: string;
-  sizeBytes: number;
-  notes?: string;
-  uploadedByUserId?: string;
-  uploadedByUserDisplayName?: string;
-  uploadedAt: string;
-};
-
-export type EmployeeDocumentUploadRequest = {
-  employeeId: string;
-  documentType: string;
-  title: string;
-  notes: string;
-  file: File;
-};
-
-export type AttendanceStatus =
-  'PRESENT' | 'ABSENT' | 'LATE' | 'HALF_DAY' | 'ON_LEAVE' | 'HOLIDAY' | 'OFF_DAY';
-
-export type AttendanceRecord = {
-  id: string;
-  employeeId: string;
-  employeeNumber: string;
-  employeeName: string;
-  branchId: string;
-  branchName: string;
-  departmentName?: string;
-  jobTitleTitle?: string;
-  attendanceDate: string;
-  clockIn?: string;
-  clockOut?: string;
-  status: AttendanceStatus;
-  workedMinutes: number;
-  overtimeMinutes: number;
-  lateMinutes: number;
-  notes?: string;
-  correctionReason?: string;
-  corrected: boolean;
-};
-
-export type AttendanceSummary = {
-  totalRecords: number;
-  presentCount: number;
-  absentCount: number;
-  lateCount: number;
-  leaveCount: number;
-  halfDayCount: number;
-  holidayCount: number;
-  offDayCount: number;
-  correctedCount: number;
-  totalWorkedMinutes: number;
-  totalOvertimeMinutes: number;
-};
-
-export type AttendancePage = {
-  items: AttendanceRecord[];
-  total: number;
-  summary: AttendanceSummary;
-};
-
-export type AttendanceRequest = {
-  employeeId: string;
-  branchId: string;
-  attendanceDate: string;
-  clockIn: string;
-  clockOut: string;
-  status: AttendanceStatus;
-  notes: string;
-  correctionReason: string;
-};
-
-export type LeaveRequestStatus =
-  'DRAFT' | 'SUBMITTED' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
-
-export type LeaveType = {
-  id: string;
-  name: string;
-  code: string;
-  description?: string;
-  requiresBalance: boolean;
-  defaultDays: number;
-  active: boolean;
-};
-
-export type LeaveBalance = {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  leaveTypeId: string;
-  leaveTypeName: string;
-  balanceDays: number;
-  usedDays: number;
-  availableDays: number;
-};
-
-export type LeaveRequestRecord = {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  employeeNumber: string;
-  branchId: string;
-  branchName: string;
-  leaveTypeId: string;
-  leaveTypeName: string;
-  startDate: string;
-  endDate: string;
-  requestedDays: number;
-  reason?: string;
-  approverUserId?: string;
-  approverUserDisplayName?: string;
-  approverComments?: string;
-  status: LeaveRequestStatus;
-  submittedAt?: string;
-  decidedAt?: string;
-};
-
-export type LeavePage = {
-  leaveTypes: LeaveType[];
-  balances: LeaveBalance[];
-  requests: LeaveRequestRecord[];
-};
-
-export type LeaveTypeRequest = {
-  name: string;
-  code: string;
-  description: string;
-  requiresBalance: boolean;
-  defaultDays: number;
-  active: boolean;
-};
-
-export type LeaveRequestInput = {
-  employeeId: string;
-  leaveTypeId: string;
-  startDate: string;
-  endDate: string;
-  reason: string;
-  approverUserId: string;
-  approverComments: string;
-  status: LeaveRequestStatus;
-};
-
-export type PayrollComponentType = 'EARNING' | 'DEDUCTION';
-
-export type PayrollRunStatus =
-  'DRAFT' | 'CALCULATED' | 'REVIEWED' | 'APPROVED' | 'PROCESSED' | 'LOCKED';
-
-export type PayrollPeriodStatus = 'DRAFT' | 'OPEN' | 'CLOSED';
-
-export type EmployeePerformanceEntryType = 'PERFORMANCE_REVIEW' | 'BONUS' | 'LOSS' | 'MANUAL_SALE';
-
-export type EmployeeSalesDay = {
-  salesDate: string;
-  amount: number;
-  receiptCount: number;
-};
-
-export type PayrollComponent = {
-  id: string;
-  name: string;
-  code: string;
-  componentType: PayrollComponentType;
-  taxable: boolean;
-  defaultAmount: number;
-  active: boolean;
-};
-
-export type PayrollSalesBonusRule = {
-  dailySalesTarget: number;
-  bonusPerTargetDay: number;
-  active: boolean;
-};
-
-export type PayrollPeriod = {
-  id: string;
-  branchId?: string;
-  branchName?: string;
-  name: string;
-  periodStart: string;
-  periodEnd: string;
-  paymentDate?: string;
-  status: PayrollPeriodStatus;
-};
-
-export type PayrollEmployee = {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  employeeNumber: string;
-  branchName: string;
-  grossPay: number;
-  basicSalary: number;
-  bonusAmount: number;
-  automaticBonusAmount: number;
-  manualBonusAmount: number;
-  lossAmount: number;
-  salesAmount: number;
-  qualifyingSalesDays: number;
-  salesBonusTarget: number;
-  salesBonusPerDay: number;
-  performanceScore?: number;
-  totalDeductions: number;
-  netPay: number;
-  paymentMethod: SalaryPaymentMethod;
-  paymentDestination?: string;
-  notes?: string;
-};
-
-export type PayrollRun = {
-  id: string;
-  payrollPeriodId: string;
-  payrollPeriodName: string;
-  branchId?: string;
-  branchName?: string;
-  name: string;
-  status: PayrollRunStatus;
-  processedAt?: string;
-  employees: PayrollEmployee[];
-};
-
-export type PayrollPage = {
-  components: PayrollComponent[];
-  periods: PayrollPeriod[];
-  runs: PayrollRun[];
-  salesBonusRule: PayrollSalesBonusRule;
-};
-
-export type PayrollComponentRequest = {
-  name: string;
-  code: string;
-  componentType: PayrollComponentType;
-  taxable: boolean;
-  defaultAmount: number;
-  active: boolean;
-};
-
-export type PayrollPeriodRequest = {
-  branchId: string;
-  name: string;
-  periodStart: string;
-  periodEnd: string;
-  paymentDate: string;
-  status: PayrollPeriodStatus;
-};
-
-export type PayrollRunRequest = {
-  payrollPeriodId: string;
-  name: string;
-  status: PayrollRunStatus;
-};
-
-export type PayrollEmployeeAdjustmentRequest = {
-  bonusAmount: number;
-  lossAmount: number;
-  notes: string;
-};
-
-export type PayrollSalesBonusRuleRequest = PayrollSalesBonusRule;
-
-export type EmployeePerformanceEntry = {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  employeeNumber: string;
-  branchId: string;
-  branchName: string;
-  entryType: EmployeePerformanceEntryType;
-  entryDate: string;
-  title: string;
-  amount?: number;
-  score?: number;
-  notes?: string;
-  createdByUserId?: string;
-  createdByUserDisplayName?: string;
-};
-
-export type EmployeePerformanceSummary = {
-  employeeId: string;
-  employeeName: string;
-  employeeNumber: string;
-  branchId: string;
-  branchName: string;
-  departmentId?: string;
-  departmentName?: string;
-  jobTitleTitle?: string;
-  basicSalary: number;
-  salaryPaymentMethod: SalaryPaymentMethod;
-  paymentDestination: string;
-  actualSalesAmount: number;
-  manualSalesAmount: number;
-  totalSalesAmount: number;
-  bonusAmount: number;
-  automaticBonusAmount: number;
-  manualBonusAmount: number;
-  lossAmount: number;
-  projectedNetPay: number;
-  qualifyingSalesDays: number;
-  salesBonusTarget: number;
-  salesBonusPerDay: number;
-  averagePerformanceScore?: number;
-  entryCount: number;
-  salesDays: EmployeeSalesDay[];
-};
-
-export type EmployeePerformancePage = {
-  fromDate: string;
-  toDate: string;
-  salesBonusRule: PayrollSalesBonusRule;
-  summaries: EmployeePerformanceSummary[];
-  entries: EmployeePerformanceEntry[];
-};
-
-export type EmployeePerformanceEntryRequest = {
-  employeeId: string;
-  entryType: EmployeePerformanceEntryType;
-  entryDate: string;
-  title: string;
-  amount: number;
-  score?: number;
-  notes: string;
 };
 
 export type Role = {
@@ -634,6 +198,13 @@ export type ProductCategoryRequest = {
 };
 
 export type Product = {
+  productType?: 'SIMPLE' | 'VARIABLE';
+  parentProductId?: string;
+  parentProductName?: string;
+  variantName?: string;
+  variantAttributes?: Record<string, string>;
+  reorderLevel?: number;
+  sellable?: boolean;
   id: string;
   name: string;
   sku: string;
@@ -653,6 +224,10 @@ export type Product = {
 };
 
 export type ProductRequest = {
+  productType?: 'SIMPLE' | 'VARIABLE';
+  parentProductId?: string;
+  variantAttributes?: Record<string, string>;
+  reorderLevel?: number;
   name: string;
   sku: string;
   barcode: string;
@@ -669,6 +244,8 @@ export type ProductRequest = {
 };
 
 export type ProductVatCategory = 'A' | 'G';
+
+export type PaymentMethod = 'CASH' | 'MPESA' | 'CARD' | 'BANK_TRANSFER';
 
 export type InventoryItem = {
   id: string;
@@ -752,33 +329,6 @@ export type StockAdjustmentSummary = {
   netValue: number;
 };
 
-export type StockTransfer = {
-  id: string;
-  sourceBranchId: string;
-  sourceBranchName: string;
-  destinationBranchId: string;
-  destinationBranchName: string;
-  productId: string;
-  productName: string;
-  sku: string;
-  quantity: number;
-  status: 'COMPLETED' | 'CANCELLED';
-  referenceNumber?: string;
-  notes?: string;
-  transferredAt: string;
-};
-
-export type StockTransferRequest = {
-  sourceBranchId: string;
-  destinationBranchId: string;
-  productId: string;
-  quantity: number;
-  referenceNumber: string;
-  notes: string;
-};
-
-export type PaymentMethod = 'MPESA' | 'CASH' | 'CARD';
-
 export type ExpensePaymentMethod = 'MPESA' | 'CASH' | 'CARD' | 'BANK_TRANSFER';
 
 export type ExpenseStatus = 'PENDING' | 'PAID' | 'VOID';
@@ -825,7 +375,6 @@ export type SalePaymentRequest = {
 
 export type SaleRequest = {
   branchId: string;
-  soldByEmployeeId?: string;
   customerName: string;
   paymentMethod?: PaymentMethod;
   paymentReference?: string;
@@ -836,6 +385,9 @@ export type SaleRequest = {
 };
 
 export type SaleLine = {
+  parentProductId?: string;
+  parentProductName?: string;
+  variantAttributes?: Record<string, string>;
   productId: string;
   productName: string;
   sku: string;
@@ -864,9 +416,6 @@ export type Sale = {
   saleNumber: string;
   branchId: string;
   branchName: string;
-  soldByEmployeeId?: string;
-  soldByEmployeeName?: string;
-  soldByEmployeeNumber?: string;
   customerName?: string;
   subtotalAmount: number;
   discountAmount: number;
@@ -879,12 +428,7 @@ export type Sale = {
 };
 
 export type AccountingAccountType =
-  | 'ASSET'
-  | 'LIABILITY'
-  | 'EQUITY'
-  | 'REVENUE'
-  | 'COGS'
-  | 'EXPENSE';
+  'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'COGS' | 'EXPENSE';
 
 export type AccountingAccount = {
   id: string;

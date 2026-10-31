@@ -2,6 +2,11 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
+// These existing checkout scenarios exercise manual tender recording with STK integration disabled.
+vi.mock('../services/mpesa', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/mpesa')>()),
+  getMpesaConfig: vi.fn(async () => ({ enabled: false })),
+}));
 import {
   testBranches,
   testExpenses,
@@ -85,16 +90,16 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: "Today's Dashboard" })).toBeInTheDocument();
-    expect(screen.getByAltText('KEEN HR and POS')).toBeInTheDocument();
+    expect(screen.getByAltText('KEEN ERP')).toBeInTheDocument();
     expect(screen.getByText('Copyright @CRENVIX MORAVA SYSTEMS')).toBeInTheDocument();
     expect(screen.getByText('Online')).toBeInTheDocument();
-    expect(screen.getByLabelText(/active branch/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/active branch/i)).not.toBeInTheDocument();
     expect(screen.getByText("Today's Sales Performance")).toBeInTheDocument();
     expect(screen.queryByLabelText(/sales chart interval/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/search anything/i)).not.toBeInTheDocument();
   });
 
-  it('generates and shares commercial quotations from the commercial page', async () => {
+  it('generates and shares commercial invoices from the commercial page', async () => {
     window.history.pushState({}, '', '/commercial');
     const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
     const windowOpen = vi.spyOn(window, 'open').mockImplementation(() => null);
@@ -138,6 +143,7 @@ describe('App', () => {
       await screen.findByRole('heading', { name: 'Quotations & Invoicing' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Document Builder')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /quotation/i })).not.toBeInTheDocument();
     expect(screen.getByText('Document Preview')).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/customer name/i), 'John Doe');
@@ -145,13 +151,15 @@ describe('App', () => {
     await userEvent.type(screen.getByLabelText(/whatsapp number/i), '0712345678');
     await userEvent.clear(screen.getByLabelText(/^rate$/i));
     await userEvent.type(screen.getByLabelText(/^rate$/i), '5000');
-    await userEvent.click(screen.getByRole('button', { name: /save quotation/i }));
+    await userEvent.click(screen.getByRole('button', { name: /save invoice/i }));
 
-    expect(await screen.findByText(/Quotation QT-0001 saved/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Invoice INV-0001 saved/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getAllByRole('button', { name: /share link/i })[0]);
 
-    expect(clipboardWriteText).toHaveBeenCalledWith(expect.stringContaining('/commercial?document='));
+    expect(clipboardWriteText).toHaveBeenCalledWith(
+      expect.stringContaining('/commercial?document='),
+    );
     expect(await screen.findByText(/Share link copied to clipboard/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getAllByRole('button', { name: /whatsapp/i })[0]);
@@ -213,12 +221,16 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Procurement' })).toBeInTheDocument();
     expect(screen.getByText('Purchase Order Builder')).toBeInTheDocument();
+    expect(screen.queryByText('P.O Preview')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByRole('button', { name: /preview/i })[0]);
     expect(screen.getByText('P.O Preview')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /close purchase order preview/i }));
 
     await screen.findByRole('option', { name: testSuppliers[0].name });
     await userEvent.selectOptions(screen.getByLabelText(/^supplier$/i), testSuppliers[0].id);
     await screen.findByPlaceholderText(/search product name/i);
-    await userEvent.click(screen.getByLabelText(/product 1/i));
+    await userEvent.click(screen.getByLabelText(/search products to add/i));
     await userEvent.click(await screen.findByRole('option', { name: testProducts[0].name }));
     await userEvent.click(screen.getByRole('button', { name: /save p\.o/i }));
 
@@ -239,7 +251,7 @@ describe('App', () => {
     );
   });
 
-  it('captures CRM leads, converts opportunities, and schedules follow-ups', async () => {
+  it('opens the CRM overview from the back office navigation', async () => {
     window.history.pushState({}, '', '/crm');
     vi.stubGlobal(
       'fetch',
@@ -257,16 +269,6 @@ describe('App', () => {
           return jsonResponse(testBranches);
         }
 
-        if (url.endsWith('/api/v1/crm/summary')) {
-          return jsonResponse({
-            moduleKey: 'crm',
-            title: 'CRM',
-            description: 'Leads, opportunities, activities, and customer follow-up pipeline.',
-            metrics: [],
-            workItems: [],
-          });
-        }
-
         return Promise.reject(new Error('API unavailable in frontend test'));
       }),
     );
@@ -274,35 +276,12 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'CRM' })).toBeInTheDocument();
-    expect(screen.getByText('Opportunity Pipeline')).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('button', { name: /leads/i }));
-    await userEvent.type(screen.getByLabelText(/^name$/i), 'Mary Buyer');
-    await userEvent.type(screen.getByLabelText(/^company$/i), 'Nairobi Retail');
-    await userEvent.type(screen.getByLabelText(/^phone$/i), '0700000002');
-    await userEvent.clear(screen.getByLabelText(/estimated value/i));
-    await userEvent.type(screen.getByLabelText(/estimated value/i), '25000');
-    await userEvent.click(screen.getByRole('button', { name: /save lead/i }));
-
-    expect(await screen.findByText(/Lead LEAD-0001 saved/i)).toBeInTheDocument();
-    expect(screen.getByText('Mary Buyer')).toBeInTheDocument();
-
-    await userEvent.click(screen.getAllByRole('button', { name: /^convert$/i })[0]);
-
-    expect(await screen.findByText(/converted to OPP-0001/i)).toBeInTheDocument();
-    expect(screen.getByText('Opportunity Builder')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Nairobi Retail opportunity')).toBeInTheDocument();
-
-    await userEvent.click(screen.getAllByRole('button', { name: /^follow-up$/i })[0]);
-
-    expect(await screen.findByText(/Follow-up prepared for OPP-0001/i)).toBeInTheDocument();
-    expect(screen.getByText('Activity Planner')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Follow up on Nairobi Retail opportunity')).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('button', { name: /save activity/i }));
-
+    expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('heading', { name: 'Pipeline performance' })).toBeInTheDocument();
     expect(
-      await screen.findByText(/Activity "Follow up on Nairobi Retail opportunity" saved/i),
+      within(screen.getByRole('navigation', { name: 'CRM navigation' })).getByRole('link', {
+        name: 'CRM',
+      }),
     ).toBeInTheDocument();
   });
 
@@ -430,13 +409,13 @@ describe('App', () => {
     render(<App />);
 
     const reorderInput = await screen.findByRole('spinbutton', {
-      name: /reorder level for Oxford Shirt at Flagship Branch/i,
+      name: /reorder level for Oxford Shirt/i,
     });
     await user.clear(reorderInput);
     await user.type(reorderInput, '10');
     await user.click(
       screen.getByRole('button', {
-        name: /save reorder level for Oxford Shirt at Flagship Branch/i,
+        name: /save reorder level for Oxford Shirt/i,
       }),
     );
 
@@ -449,8 +428,8 @@ describe('App', () => {
     const restrictedUser = {
       ...testUser,
       displayName: 'Samuel Kamau',
-      roleKeys: ['SHOP_MANAGER', 'CASHIER'],
-      roleNames: ['Shop Manager', 'Cashier'],
+      roleKeys: ['SHOP_MANAGER'],
+      roleNames: ['Shop Manager'],
       permissionCodes: ['pos:sell', 'pos:supervise', 'profit:view', 'reports:view', 'sales:view'],
     };
 
@@ -501,81 +480,18 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: "Today's Dashboard" })).toBeInTheDocument();
-    expect(screen.getByText('Shop Manager / Cashier')).toBeInTheDocument();
+    expect(screen.getByText('Shop Manager')).toBeInTheDocument();
     expect(screen.queryByText('Owner')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Branches' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Product Catalog' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Suppliers' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Add Stock' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Transfers' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Reports' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'HR' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /export/i })).not.toBeInTheDocument();
     expect(screen.queryByText('Gross Profit')).not.toBeInTheDocument();
     expect(screen.queryByText('Estimated Contribution')).not.toBeInTheDocument();
     expect(screen.getAllByText('Expenses').length).toBeGreaterThan(0);
-  });
-
-  it('redirects non-admin users with HR permissions away from HR', async () => {
-    window.history.pushState({}, '', '/hr');
-    const hrPermissionUser = {
-      ...testUser,
-      displayName: 'Grace Wanjiru',
-      roleKeys: ['SHOP_MANAGER'],
-      roleNames: ['Shop Manager'],
-      permissionCodes: ['hr:dashboard:view', 'hr:employee:view', 'reports:view', 'sales:view'],
-    };
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.endsWith('/api/v1/me')) {
-          return jsonResponse(hrPermissionUser);
-        }
-
-        if (url.endsWith('/api/v1/organization/current')) {
-          return jsonResponse(testOrganization);
-        }
-
-        if (url.endsWith('/api/v1/branches')) {
-          return jsonResponse(testBranches);
-        }
-
-        if (url.endsWith('/api/v1/inventory')) {
-          return jsonResponse(testInventory);
-        }
-
-        if (url.endsWith('/api/v1/sales')) {
-          return jsonResponse([]);
-        }
-
-        if (url.endsWith('/api/v1/expenses')) {
-          return jsonResponse(testExpenses);
-        }
-
-        if (url.endsWith('/api/v1/stock-adjustments/summary')) {
-          return jsonResponse({
-            lossItems: 0,
-            excessItems: 0,
-            totalLossQuantity: 0,
-            totalExcessQuantity: 0,
-            totalLossValue: 0,
-            totalExcessValue: 0,
-            netValue: 0,
-          });
-        }
-
-        return Promise.reject(new Error(`Unexpected request: ${url}`));
-      }),
-    );
-
-    render(<App />);
-
-    expect(await screen.findByRole('heading', { name: "Today's Dashboard" })).toBeInTheDocument();
-    expect(screen.getByText('Shop Manager')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'HR' })).not.toBeInTheDocument();
   });
 
   it('shows dashboard sales and payment totals from recorded sales', async () => {
@@ -776,7 +692,9 @@ describe('App', () => {
     );
     await user.click(await screen.findByRole('button', { name: /login/i }));
 
-    expect(await screen.findByRole('heading', { name: "Today's Dashboard" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /All your business on one platform/ }),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /log out/i }));
 
@@ -790,16 +708,7 @@ describe('App', () => {
     );
   });
 
-  it('registers a branch through the API', async () => {
-    const user = userEvent.setup();
-    const branch = {
-      id: 'branch-001',
-      name: 'Nakuru Store',
-      code: 'NAK',
-      timeZone: 'Africa/Nairobi',
-      status: 'ACTIVE' as const,
-    };
-    let branches: typeof testBranches = [];
+  it('redirects the legacy branch route to settings', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? 'GET';
@@ -813,20 +722,7 @@ describe('App', () => {
       }
 
       if (url.endsWith('/api/v1/branches') && method === 'GET') {
-        return jsonResponse(branches);
-      }
-
-      if (url.endsWith('/api/v1/branches') && method === 'POST') {
-        expect(init?.body).toBe(
-          JSON.stringify({
-            name: 'Nakuru Store',
-            code: 'NAK',
-            timeZone: 'Africa/Nairobi',
-            status: 'ACTIVE',
-          }),
-        );
-        branches = [branch];
-        return jsonResponse(branch, 201);
+        return jsonResponse(testBranches);
       }
 
       return Promise.reject(new Error(`Unexpected request: ${url}`));
@@ -837,14 +733,8 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Branches' })).toBeInTheDocument();
-    await user.type(screen.getByLabelText(/branch name/i), 'Nakuru Store');
-    await user.type(screen.getByLabelText(/branch code/i), 'NAK');
-    await user.clear(screen.getByLabelText(/time zone/i));
-    await user.type(screen.getByLabelText(/time zone/i), 'Africa/Nairobi');
-    await user.click(screen.getByRole('button', { name: /^Register Branch$/i }));
-
-    expect((await screen.findAllByText('Nakuru Store')).length).toBeGreaterThan(0);
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Branches' })).not.toBeInTheDocument();
   });
 
   it('registers a supplier through the API', async () => {
@@ -908,10 +798,19 @@ describe('App', () => {
     });
   });
 
-  it('registers roles with editable keys and assigned permissions', async () => {
+  it('edits shop manager permissions without creating extra roles', async () => {
     const user = userEvent.setup();
-    let roles = [...testRoles];
-    let createdRequest: unknown;
+    const legacyAuditorRole = {
+      id: '00000000-0000-4000-8000-000000000409',
+      name: 'Auditor',
+      key: 'AUDITOR',
+      description: 'Legacy checkout access',
+      assignedUsers: 1,
+      permissionIds: [testPermissions[2].id],
+      permissionCodes: [testPermissions[2].code],
+    };
+    let roles = [...testRoles, legacyAuditorRole];
+    let updatedRequest: unknown;
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? 'GET';
@@ -936,19 +835,16 @@ describe('App', () => {
         return jsonResponse(roles);
       }
 
-      if (url.endsWith('/api/v1/roles') && method === 'POST') {
-        createdRequest = JSON.parse(String(init?.body));
+      if (url.endsWith(`/api/v1/roles/${testRoles[0].id}`) && method === 'PUT') {
+        updatedRequest = JSON.parse(String(init?.body));
         const savedRole = {
-          id: '00000000-0000-4000-8000-000000000408',
-          name: 'Shop Supervisor',
-          key: 'SHOP_SUPERVISOR',
-          description: 'Front of house supervision',
-          assignedUsers: 0,
+          ...testRoles[0],
+          description: 'Shop operations and reporting',
           permissionIds: [testPermissions[1].id, testPermissions[2].id],
           permissionCodes: [testPermissions[1].code, testPermissions[2].code],
         };
-        roles = [...roles, savedRole];
-        return jsonResponse(savedRole, 201);
+        roles = roles.map((role) => (role.id === savedRole.id ? savedRole : role));
+        return jsonResponse(savedRole);
       }
 
       return Promise.reject(new Error(`Unexpected request: ${url}`));
@@ -961,21 +857,25 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Roles' })).toBeInTheDocument();
     expect(screen.queryByLabelText(/^Role Name$/i)).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /^New Role$/i }));
-    expect(await screen.findByRole('dialog', { name: /^Register Role$/i })).toBeInTheDocument();
-    await user.type(screen.getByLabelText(/^Role Name$/i), 'Shop Supervisor');
-    expect(screen.getByLabelText(/^Role Key$/i)).toHaveValue('SHOP_SUPERVISOR');
-    await user.type(screen.getAllByLabelText(/^Description$/i)[0], 'Front of house supervision');
-    await user.click(screen.getByLabelText(/pos:sell/i));
-    await user.click(screen.getByLabelText(/reports:view/i));
-    await user.click(screen.getByRole('button', { name: /^Register Role$/i }));
+    expect(screen.queryByRole('button', { name: /^New Role$/i })).not.toBeInTheDocument();
+    expect(await screen.findByText('Shop Manager')).toBeInTheDocument();
+    expect(screen.getByText('3 of 3 roles')).toBeInTheDocument();
+    expect(screen.getByText('Cashier')).toBeInTheDocument();
+    expect(screen.queryByText('Auditor')).not.toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: /^Edit$/i })[0]);
+    expect(await screen.findByRole('dialog', { name: /^Edit Role$/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Role Key$/i)).toHaveValue('SHOP_MANAGER');
+    await user.clear(screen.getAllByLabelText(/^Description$/i)[0]);
+    await user.type(screen.getAllByLabelText(/^Description$/i)[0], 'Shop operations and reporting');
+    await user.click(screen.getByLabelText(/sales:view/i));
+    await user.click(screen.getByRole('button', { name: /^Save Changes$/i }));
 
-    expect(await screen.findByText('Shop Supervisor saved.')).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: /^Register Role$/i })).not.toBeInTheDocument();
-    expect(createdRequest).toMatchObject({
-      name: 'Shop Supervisor',
-      key: 'SHOP_SUPERVISOR',
-      description: 'Front of house supervision',
+    expect(await screen.findByText('Shop Manager saved.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /^Edit Role$/i })).not.toBeInTheDocument();
+    expect(updatedRequest).toMatchObject({
+      name: 'Shop Manager',
+      key: 'SHOP_MANAGER',
+      description: 'Shop operations and reporting',
       permissionIds: [testPermissions[1].id, testPermissions[2].id],
     });
   });
@@ -1029,7 +929,7 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument();
     expect(await screen.findByText('Jane Cashier')).toBeInTheDocument();
     expect(screen.getByText('sales:view')).toBeInTheDocument();
-    await user.click(screen.getByLabelText('Cashier (CASHIER)'));
+    await user.click(screen.getByLabelText('Shop Manager (SHOP_MANAGER)'));
 
     expect((await screen.findAllByText('pos:sell')).length).toBeGreaterThan(1);
   });
@@ -1091,7 +991,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText(/^Display Name$/i), 'New User');
     await user.type(screen.getByLabelText(/^Email$/i), 'new-user@example.com');
     await user.type(screen.getByLabelText(/^Password$/i), 'new-user-password');
-    await user.click(screen.getByLabelText('Cashier (CASHIER)'));
+    await user.click(screen.getByLabelText('Shop Manager (SHOP_MANAGER)'));
     await user.click(screen.getByRole('button', { name: /^Register User$/i }));
 
     expect(await screen.findByText('New User saved.')).toBeInTheDocument();
@@ -1327,7 +1227,8 @@ describe('App', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Product Catalog' })).toBeInTheDocument();
-    expect(await screen.findAllByRole('button', { name: /^Reactivate$/i })).toHaveLength(2);
+    expect(await screen.findAllByRole('button', { name: /^Reactivate$/i })).toHaveLength(1);
+    expect(screen.queryByRole('table', { name: 'Product categories' })).not.toBeInTheDocument();
 
     await user.click(screen.getAllByRole('button', { name: /^Reactivate$/i })[0]);
 
@@ -1339,6 +1240,13 @@ describe('App', () => {
       status: 'ACTIVE',
     });
 
+    await user.click(
+      within(screen.getByRole('navigation', { name: 'Product modules' })).getByRole('link', {
+        name: 'Product Categories',
+      }),
+    );
+    expect(await screen.findByRole('table', { name: 'Product categories' })).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'Products' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Reactivate$/i }));
 
     expect(await screen.findByText('Shirts category reactivated.')).toBeInTheDocument();
@@ -1363,6 +1271,17 @@ describe('App', () => {
     const products = [testProducts[0], alternateProduct];
     let stockIntakes: unknown[] = [];
     const postedRequests: unknown[] = [];
+    let draft:
+      | {
+          id: string;
+          branchId: string;
+          payload: { form: unknown; lines: Record<string, unknown>[] };
+          version: number;
+          status: string;
+          createdAt: string;
+          updatedAt: string;
+        }
+      | undefined;
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? 'GET';
@@ -1393,6 +1312,46 @@ describe('App', () => {
 
       if (url.endsWith('/api/v1/stock-intakes') && method === 'GET') {
         return jsonResponse(stockIntakes);
+      }
+
+      if (url.endsWith('/api/v1/pos-preferences'))
+        return jsonResponse({
+          dailySummaryEnabled: true,
+          inAppEnabled: true,
+          emailEnabled: false,
+          recipientIds: [],
+          inactivityMinutes: 5,
+          longEntryMinutes: 10,
+          timeZone: 'Africa/Nairobi',
+        });
+      if (url.endsWith('/api/v1/stock-operations') && method === 'GET')
+        return jsonResponse(draft?.status === 'DRAFT' ? [draft] : []);
+      if (url.includes('/api/v1/stock-operations/') && method === 'PUT') {
+        const request = JSON.parse(String(init?.body));
+        draft = {
+          id: url.split('/').at(-1)!,
+          branchId: request.branchId,
+          payload: request,
+          version: request.version + 1,
+          status: 'DRAFT',
+          createdAt: '2026-09-10T09:00:00Z',
+          updatedAt: '2026-09-10T09:00:00Z',
+        };
+        return jsonResponse(draft);
+      }
+      if (
+        url.includes('/api/v1/stock-operations/') &&
+        url.endsWith('/complete') &&
+        method === 'POST' &&
+        draft
+      ) {
+        for (const line of draft.payload.lines) {
+          const { id, branchName, productName, sku, ...request } = line;
+          postedRequests.push(request);
+          stockIntakes.push({ ...line, receivedAt: '2026-09-10T09:00:00Z' });
+        }
+        draft.status = 'COMPLETED';
+        return jsonResponse(draft);
       }
 
       if (url.endsWith('/api/v1/stock-intakes') && method === 'POST') {

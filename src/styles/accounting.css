@@ -1,0 +1,131 @@
+.accounting-workspace {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.accounting-section,
+.accounting-workspace .accounting-reports-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.accounting-workspace .panel-card,
+.accounting-workspace .responsive-table {
+  min-width: 0;
+}
+
+.accounting-workspace .accounting-form-panel {
+  position: static;
+}
+
+.accounting-workspace .accounting-report-tabs {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.accounting-report-tabs button {
+  flex: 1 1 180px;
+}
+
+.accounting-workspace .responsive-table table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.accounting-workspace th,
+.accounting-workspace td {
+  vertical-align: top;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.accounting-workspace .table-label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  width: 100%;
+  min-width: 0;
+}
+
+.accounting-workspace .table-label > span {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.accounting-workspace td > small {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.accounting-workspace td small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.accounting-journal-help h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1rem;
+}
+
+.accounting-journal-help p,
+.accounting-journal-steps,
+.accounting-line-guidance {
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.accounting-journal-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem 2rem;
+  padding-left: 1.2rem;
+  margin: 1rem 0;
+}
+
+.accounting-journal-steps strong,
+.accounting-journal-steps span {
+  display: block;
+}
+
+.accounting-journal-steps span {
+  margin-top: 0.25rem;
+  color: var(--muted);
+}
+
+.accounting-journal-help summary,
+.accounting-entry-options summary {
+  min-height: 36px;
+  padding-block: 0.4rem;
+  color: var(--text-link);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.accounting-journal-note {
+  margin: 0.75rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.accounting-entry-options {
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.accounting-entry-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-block: 0.75rem;
+}
+
+.accounting-line-guidance {
+  margin: 0;
+  color: var(--muted);
+}

@@ -1,0 +1,28 @@
+.cashier-shift-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+.cashier-shift-totals > div {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.cashier-shift-totals dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.cashier-shift-totals dd {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 700;
+}
+.cashier-shifts-workspace .record-form {
+  max-width: 680px;
+}
+.cashier-shifts-workspace .form-actions a {
+  text-decoration: none;
+}

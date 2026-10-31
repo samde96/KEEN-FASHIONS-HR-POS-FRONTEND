@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import react from '@vitejs/plugin-react';
 import { configDefaults, defineConfig } from 'vitest/config';
 import { VitePWA } from 'vite-plugin-pwa';
+import { appDescription, appName } from './src/appBrand';
 
 const packageJson = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf-8'),
@@ -99,9 +100,9 @@ export default defineConfig(({ command }) => {
         },
         includeAssets: ['favicon.svg'],
         manifest: {
-          name: 'KEEN Fashion POS',
-          short_name: 'KEEN POS',
-          description: 'Multi-branch fashion POS and inventory workspace',
+          name: appName,
+          short_name: appName,
+          description: appDescription,
           theme_color: '#0f766e',
           background_color: '#f7f8f5',
           display: 'standalone',
