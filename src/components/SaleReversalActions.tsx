@@ -29,6 +29,8 @@ export default function SaleReversalActions({ sale }: { sale: Sale }) {
     },
   });
   if (!admin) return null;
+  if (sale.syncStatus === 'pending')
+    return <span className="table-subtext">Sync before refunding</span>;
   const reversal = reversals.data?.find((r) => r.sale_id === sale.id);
   if (reversal)
     return (

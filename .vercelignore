@@ -3,6 +3,8 @@
 .idea/
 .vscode/
 .env
+keen-device-backup-*.json
+*.offline-backup.json
 .env.*
 .envrc
 .npmrc

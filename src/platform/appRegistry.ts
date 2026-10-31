@@ -115,6 +115,12 @@ export const navItems: NavItem[] = [
   },
   { to: '/pos', label: 'Checkout', icon: 'bi-bag', anyPermissions: ['admin:manage', 'pos:sell'] },
   {
+    to: '/stock-transfers',
+    label: 'Stock transfers',
+    icon: 'bi-arrow-left-right',
+    anyPermissions: ['admin:manage', 'inventory:adjust'],
+  },
+  {
     to: '/shifts',
     label: 'My Shifts',
     icon: 'bi-clock-history',
@@ -264,8 +270,8 @@ export const appRegistry: BusinessApp[] = [
     tone: 'teal',
     category: 'Operations',
     description: 'Receive stock and review goods received.',
-    routes: ['/add-stock', '/apps/warehouse/receipts'],
-    upcoming: ['Stock transfers', 'Stock requests', 'Dispatching'],
+    routes: ['/add-stock', '/apps/warehouse/receipts', '/stock-transfers'],
+    upcoming: ['Stock requests', 'Dispatching'],
   },
   {
     id: 'purchases',

@@ -53,6 +53,7 @@ import {
   configureOfflineApi,
   getOfflineAuthEpoch,
   getOfflineScope,
+  getOfflineIdentity,
   isOfflineAccessLocked,
   markConnected,
   markOffline,
@@ -63,6 +64,28 @@ import {
   removeOfflineResponse,
   unlockOfflineAccess,
 } from './offline';
+import { enrollOfflineLogin, offlineLogin } from './offlineLogin';
+import {
+  configureDeviceTransport,
+  effectiveInventory,
+  effectiveProducts,
+  localRecords,
+  localStockReceipts,
+  queueAdjustment,
+  queueIntake,
+  queueSale,
+} from './offlineOperations';
+import { readDevice, updateDevice } from './deviceStore';
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
 
 const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 const isDevelopment = import.meta.env.DEV;
@@ -102,16 +125,20 @@ let csrfToken: string | null = null;
 let csrfHeaderName = fallbackCsrfHeaderName;
 let csrfTokenRequest: Promise<string> | null = null;
 
-export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+export async function requestJson<T>(
+  path: string,
+  init?: RequestInit,
+  options?: { onlineOnly?: boolean },
+): Promise<T> {
   const isRead = (init?.method ?? 'GET').toUpperCase() === 'GET';
   const isIdentity = path === '/api/v1/me';
   const epoch = getOfflineAuthEpoch();
   const scope = getOfflineScope();
-  if (isIdentity && isOfflineAccessLocked()) {
+  if (isIdentity && isOfflineAccessLocked() && !options?.onlineOnly) {
     throw new Error('Sign in online to continue.');
   }
   async function savedResponse(): Promise<{ data: T } | undefined> {
-    if (!isRead) return undefined;
+    if (!isRead || options?.onlineOnly) return undefined;
     if (isIdentity) {
       const user = await readOfflineUser();
       return user ? { data: user as T } : undefined;
@@ -122,10 +149,19 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
   let securedInit: RequestInit | undefined;
   try {
     securedInit = await withCsrf(path, init);
-    response = await fetchApi(path, securedInit);
+    const timeout = AbortSignal.timeout(20_000);
+    response = await fetchApi(path, {
+      ...securedInit,
+      signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
+    });
   } catch (error) {
     if (init?.signal?.aborted) throw error;
-    if (!(error instanceof TypeError) && !(error instanceof OfflineError)) throw error;
+    if (
+      !(error instanceof TypeError) &&
+      !(error instanceof OfflineError) &&
+      !(error instanceof DOMException && ['TimeoutError', 'AbortError'].includes(error.name))
+    )
+      throw error;
     markOffline();
     const saved = await savedResponse();
     if (saved) return saved.data;
@@ -140,6 +176,10 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
     markOffline();
     const saved = await savedResponse();
     if (saved) return saved.data;
+    if (!isRead)
+      throw new OfflineError(
+        'The backend is temporarily unavailable. Your saved transaction remains on this device for retry.',
+      );
   } else {
     markConnected();
   }
@@ -148,10 +188,13 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
     if (response.status === 403 && isUnsafeMethod(securedInit?.method)) {
       clearCsrfToken();
     }
-    if (response.status === 401 || (isIdentity && response.status === 403))
+    if (
+      !options?.onlineOnly &&
+      (response.status === 401 || (isIdentity && response.status === 403))
+    )
       await clearOfflineSession();
     if (response.status === 403 && isRead) await removeOfflineResponse(scope, path);
-    throw new Error(await getErrorMessage(response));
+    throw new ApiError(await getErrorMessage(response), response.status);
   }
 
   if (response.status === 204) {
@@ -185,6 +228,7 @@ async function fetchApi(path: string, init?: RequestInit) {
 function fetchWithBaseUrl(baseUrl: string, path: string, init?: RequestInit) {
   return fetch(`${baseUrl}${path}`, {
     ...init,
+    signal: init?.signal ?? AbortSignal.timeout(20_000),
     credentials: 'include',
     headers: {
       Accept: 'application/json',
@@ -222,6 +266,8 @@ async function getCsrfToken() {
   if (!csrfTokenRequest) {
     csrfTokenRequest = fetchApi(csrfTokenPath, { method: 'GET' })
       .then(async (response) => {
+        if (response.status >= 500)
+          throw new OfflineError('The backend is temporarily unavailable.');
         if (!response.ok) {
           throw new Error(await getErrorMessage(response));
         }
@@ -345,8 +391,18 @@ export function updateOrganizationVatSettings(defaultProductVatCategory: Product
   });
 }
 
-export function getBranches() {
-  return requestJson<Branch[]>('/api/v1/branches');
+export async function getBranches() {
+  const branches = await requestJson<Branch[]>('/api/v1/branches');
+  const user = getOfflineIdentity();
+  if (user)
+    await updateDevice(
+      user,
+      (data) => {
+        data.branches = branches;
+      },
+      false,
+    ).catch(() => undefined);
+  return branches;
 }
 
 export function createBranch(branch: BranchRequest) {
@@ -376,6 +432,13 @@ export function deactivateBranch(branchId: string) {
 }
 
 export function getSuppliers() {
+  const user = getOfflineIdentity();
+  if (
+    user &&
+    !user.permissionCodes.includes('admin:manage') &&
+    user.permissionCodes.includes('inventory:receive')
+  )
+    return requestJson<Supplier[]>('/api/v1/offline/operations/suppliers');
   return requestJson<Supplier[]>('/api/v1/suppliers');
 }
 
@@ -761,7 +824,7 @@ export function deactivateProductCategory(categoryId: string) {
 }
 
 export function getProducts() {
-  return requestJson<Product[]>('/api/v1/catalog/products');
+  return effectiveProducts(() => requestJson<Product[]>('/api/v1/catalog/products'));
 }
 
 export function createProduct(product: ProductRequest) {
@@ -791,7 +854,11 @@ export function deactivateProduct(productId: string) {
 }
 
 export function getInventory() {
-  return requestJson<InventoryItem[]>('/api/v1/inventory');
+  // The operation store owns the stock baseline. An old HTTP snapshot must not
+  // overwrite inventory returned with a newly acknowledged transaction.
+  return effectiveInventory(() =>
+    requestJson<InventoryItem[]>('/api/v1/inventory', undefined, { onlineOnly: true }),
+  );
 }
 
 export function updateInventoryReorderLevel(
@@ -807,22 +874,25 @@ export function updateInventoryReorderLevel(
   });
 }
 
-export function getStockIntakes() {
-  return requestJson<StockIntake[]>('/api/v1/stock-intakes');
+export async function getStockIntakes() {
+  let rows: StockIntake[];
+  try {
+    rows = await requestJson<StockIntake[]>('/api/v1/stock-intakes');
+  } catch (error) {
+    if (!(error instanceof OfflineError)) throw error;
+    rows = [];
+  }
+  return localStockReceipts(await localRecords(rows, 'STOCK_INTAKE'));
 }
 
 export function addStock(stockIntake: StockIntakeRequest) {
-  return requestJson<StockIntake>('/api/v1/stock-intakes', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(stockIntake),
-  });
+  return queueIntake(stockIntake);
 }
 
 export function getStockAdjustments() {
-  return requestJson<StockAdjustment[]>('/api/v1/stock-adjustments');
+  return requestJson<StockAdjustment[]>('/api/v1/stock-adjustments').then((rows) =>
+    localRecords(rows, 'STOCK_ADJUSTMENT'),
+  );
 }
 
 export function getStockAdjustmentSummary() {
@@ -830,29 +900,41 @@ export function getStockAdjustmentSummary() {
 }
 
 export function createStockAdjustment(stockAdjustment: StockAdjustmentRequest) {
-  return requestJson<StockAdjustment>('/api/v1/stock-adjustments', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(stockAdjustment),
-  });
+  return queueAdjustment(stockAdjustment);
 }
 
-export function getSales(params?: URLSearchParams) {
+export async function getSales(params?: URLSearchParams) {
   const suffix = params && Array.from(params).length > 0 ? `?${params.toString()}` : '';
-  return requestJson<Sale[]>(`/api/v1/sales${suffix}`);
+  let rows: Sale[];
+  try {
+    rows = await requestJson<Sale[]>(`/api/v1/sales${suffix}`);
+  } catch (error) {
+    if (!(error instanceof OfflineError)) throw error;
+    rows = [];
+  }
+  const timeZone = getOfflineIdentity()
+    ? await readDevice()
+        .then((data) => data.organization?.timeZone)
+        .catch(() => undefined)
+    : undefined;
+  return localRecords(rows, 'SALE', (op) => {
+    const parts = new Intl.DateTimeFormat('en', {
+      timeZone: timeZone ?? 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(op.occurredAt));
+    const part = (name: string) => parts.find((value) => value.type === name)?.value ?? '';
+    const day = `${part('year')}-${part('month')}-${part('day')}`;
+    return (
+      (!params?.get('from') || day >= params.get('from')!) &&
+      (!params?.get('to') || day <= params.get('to')!)
+    );
+  });
 }
 
-export function createSale(sale: SaleRequest, idempotencyKey: string) {
-  return requestJson<Sale>('/api/v1/sales', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Idempotency-Key': idempotencyKey,
-    },
-    body: JSON.stringify(sale),
-  });
+export function createSale(sale: SaleRequest, idempotencyKey: string, manualMpesa = false) {
+  return queueSale(sale, idempotencyKey, manualMpesa);
 }
 
 export function getExpenses() {
@@ -905,17 +987,56 @@ function normalizeNullableRequest<T extends Record<string, unknown>>(payload: T)
 }
 
 export async function login(credentials: LoginCredentials) {
-  const currentUser = await requestJson<CurrentUser>('/api/v1/auth/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(credentials),
-  });
+  let currentUser: CurrentUser;
+  try {
+    currentUser = await requestJson<CurrentUser>('/api/v1/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(credentials),
+    });
+  } catch (error) {
+    if (error instanceof OfflineError)
+      return offlineLogin(credentials.username, credentials.password);
+    throw error;
+  }
   await unlockOfflineAccess(currentUser);
+  await enrollOfflineLogin(
+    credentials.username,
+    credentials.password,
+    currentUser,
+    credentials.rememberDevice,
+  ).catch(() => undefined);
   await refreshCsrfToken();
   return currentUser;
 }
+
+configureDeviceTransport({
+  get: <T>(path: string) => requestJson<T>(path, undefined, { onlineOnly: true }),
+  send: async (operation) => {
+    const pendingIds = (await readDevice()).operations
+      .filter((op) => op.status !== 'applied')
+      .slice(0, 5000)
+      .map((op) => op.id);
+    return requestJson(
+      '/api/v1/offline/operations',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: operation.id,
+          userId: operation.userId,
+          occurredAt: operation.occurredAt,
+          kind: operation.kind,
+          payload: operation.payload,
+          pendingIds,
+        }),
+      },
+      { onlineOnly: true },
+    );
+  },
+});
 
 export async function logout() {
   try {

@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import type { Branch, InventoryItem } from '../../src/data/types';
 import {
   testBranches,
   testExpenses,
@@ -12,7 +13,13 @@ import {
   testUser,
 } from '../../src/test/fixtures';
 
-export async function mockApi(page: Page) {
+export async function mockApi(
+  page: Page,
+  options: { branches?: Branch[]; loseFirstOperationResponse?: boolean } = {},
+) {
+  const operations = new Map<string, { result: unknown; appliedAt: string }>();
+  let operationCalls = 0;
+  let revision = 0;
   const drafts = new Map<
     string,
     {
@@ -25,9 +32,9 @@ export async function mockApi(page: Page) {
       updatedAt: string;
     }
   >();
-  const inventory =
+  const inventory: InventoryItem[] =
     testInventory.length > 0
-      ? testInventory
+      ? structuredClone(testInventory)
       : [
           {
             id: 'inventory-001',
@@ -142,7 +149,7 @@ export async function mockApi(page: Page) {
     }
 
     if (path === '/api/v1/branches') {
-      await route.fulfill({ json: testBranches });
+      await route.fulfill({ json: options.branches ?? testBranches });
       return;
     }
 
@@ -239,6 +246,129 @@ export async function mockApi(page: Page) {
       return;
     }
 
+    if (path === '/api/v1/offline/operations') {
+      const operation = request.postDataJSON();
+      operationCalls++;
+      let saved = operations.get(operation.id);
+      if (!saved) {
+        const payload = operation.payload;
+        let result: unknown;
+        if (operation.kind === 'SALE') {
+          const sale = payload.sale;
+          const lines = sale.lines.map((line: { productId: string; quantity: number }) => {
+            const product = testProducts.find((p) => p.id === line.productId)!;
+            const row = inventory.find(
+              (i) => i.productId === line.productId && i.branchId === sale.branchId,
+            )!;
+            row.quantityOnHand -= line.quantity;
+            row.quantityAvailable -= line.quantity;
+            return {
+              ...line,
+              productName: product.name,
+              sku: product.sku,
+              categoryName: product.categoryName,
+              unitPrice: product.unitPrice,
+              lineTotal: product.unitPrice * line.quantity,
+              vatCategory: product.vatCategory,
+            };
+          });
+          const subtotalAmount = lines.reduce(
+            (sum: number, line: { lineTotal: number }) => sum + line.lineTotal,
+            0,
+          );
+          const totalAmount = sale.payments.reduce(
+            (sum: number, p: { amount: number }) => sum + p.amount,
+            0,
+          );
+          result = {
+            id: `server-${operation.id}`,
+            saleNumber: `SALE-${String(operations.size + 1).padStart(3, '0')}`,
+            ...sale,
+            branchName: testBranches[0].name,
+            subtotalAmount,
+            totalAmount,
+            taxAmount: totalAmount - subtotalAmount,
+            status: 'COMPLETED',
+            soldAt: operation.occurredAt,
+            lines,
+            payments: sale.payments.map((p: object, index: number) => ({
+              ...p,
+              id: `${operation.id}:${index}`,
+              status: 'SETTLED',
+            })),
+          };
+          sales = [result, ...sales];
+        } else if (operation.kind === 'STOCK_RECEIPT') {
+          for (const [index, line] of payload.lines.entries()) {
+            const row = inventory.find(
+              (i) => i.productId === line.productId && i.branchId === line.branchId,
+            )!;
+            row.quantityOnHand += line.quantity;
+            row.quantityAvailable += line.quantity;
+            stockIntakes.unshift({
+              ...line,
+              id: `${operation.id}:${index}`,
+              receivedAt: operation.occurredAt,
+            });
+          }
+          result = {
+            id: payload.draftId,
+            branchId: payload.branchId,
+            status: 'COMPLETED',
+            payload,
+            version: payload.version + 1,
+            completedAt: operation.occurredAt,
+          };
+          drafts.delete(payload.draftId);
+        } else if (operation.kind === 'STOCK_TRANSFER') {
+          for (const line of payload.lines) {
+            const source = inventory.find(
+              (i) => i.branchId === payload.sourceBranchId && i.productId === line.productId,
+            )!;
+            source.quantityOnHand -= line.quantity;
+            source.quantityAvailable -= line.quantity;
+            let target = inventory.find(
+              (i) => i.branchId === payload.destinationBranchId && i.productId === line.productId,
+            );
+            if (!target) {
+              target = {
+                ...source,
+                id: `target-${operation.id}`,
+                branchId: payload.destinationBranchId,
+                branchName:
+                  options.branches?.find((b) => b.id === payload.destinationBranchId)?.name ??
+                  'Warehouse',
+                quantityOnHand: 0,
+                quantityAvailable: 0,
+              };
+              inventory.push(target);
+            }
+            target.quantityOnHand += line.quantity;
+            target.quantityAvailable += line.quantity;
+          }
+          result = payload;
+        } else {
+          await route.fulfill({
+            status: 400,
+            json: { detail: 'Unsupported operation in this browser fixture' },
+          });
+          return;
+        }
+        saved = { result, appliedAt: new Date().toISOString() };
+        operations.set(operation.id, saved);
+        if (options.loseFirstOperationResponse && operationCalls === 1) {
+          await route.abort('connectionreset');
+          return;
+        }
+      }
+      const confirmed = (operation.pendingIds ?? [operation.id])
+        .filter((id: string) => operations.has(id))
+        .map((id: string) => ({ id, ...operations.get(id)! }));
+      await route.fulfill({
+        json: { id: operation.id, ...saved, inventory, confirmed, revision: ++revision },
+      });
+      return;
+    }
     if (path === '/api/v1/sales') {
       if (request.method() === 'POST') {
         const sale = {
@@ -383,4 +513,5 @@ export async function mockApi(page: Page) {
 
     await route.fulfill({ status: 404, json: { detail: `No browser fixture for ${path}` } });
   });
+  return { operations, inventory, operationCalls: () => operationCalls };
 }

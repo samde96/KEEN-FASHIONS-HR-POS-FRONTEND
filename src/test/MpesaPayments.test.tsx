@@ -1,3 +1,4 @@
+import { useLegacyOperationFixtures } from './legacyOperationFixtures';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -21,6 +22,7 @@ function open() {
   render(<App />);
 }
 beforeEach(() => {
+  useLegacyOperationFixtures();
   transaction = undefined;
   pushes = [];
   completed = [];
@@ -194,7 +196,7 @@ it('blocks completion when M-Pesa availability cannot be checked', async () => {
   await user.click(screen.getByRole('button', { name: /Pay KSh 3,248/i }));
   await user.selectOptions(screen.getByLabelText('Payment method'), 'MPESA');
   const dialog = screen.getByRole('dialog', { name: 'Payment' });
-  await within(dialog).findByText(/M-Pesa is unavailable/);
+  await within(dialog).findByText(/STK push requires internet/);
   expect(within(dialog).getByRole('button', { name: /Complete Sale/ })).toBeDisabled();
   expect(pushes).toHaveLength(0);
   expect(completed).toHaveLength(0);

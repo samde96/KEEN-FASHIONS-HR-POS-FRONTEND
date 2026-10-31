@@ -37,6 +37,97 @@
 .pos-local-draft-message {
   margin: 0.6rem 1rem;
 }
+.offline-tools {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.82rem;
+  background: #f3f6fa;
+  color: #334155;
+}
+.device-sync-dialog {
+  background: white;
+  border-radius: 12px;
+  padding: 1.25rem;
+  width: min(860px, 96vw);
+  max-height: 90dvh;
+  overflow: auto;
+  color: #1e293b;
+}
+.device-sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.device-sync-actions input[type='file'] {
+  max-width: 200px;
+  font-size: 0.75rem;
+}
+.device-operation-list {
+  list-style: none;
+  padding: 0;
+}
+.device-operation-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.8rem 0;
+  overflow-wrap: anywhere;
+}
+.device-operation-list small {
+  display: block;
+  color: #475569;
+  margin-top: 0.3rem;
+}
+.device-operation-list p {
+  font-size: 0.85rem;
+  margin: 0.4rem 0 0;
+}
+.manual-mpesa-option {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.75rem;
+  background: #f0fdf4;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+.manual-mpesa-option input {
+  width: auto;
+}
+.manual-mpesa-option small {
+  width: 100%;
+  color: #334155;
+}
+.stock-transfer-page {
+  padding: 1.5rem;
+}
+.stock-transfer-page fieldset {
+  border: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.stock-transfer-page label {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+}
+.stock-transfer-page input,
+.stock-transfer-page select,
+.stock-transfer-page textarea {
+  padding: 0.65rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  width: 100%;
+}
 
 @media (max-width: 560px) {
   .offline-banner {

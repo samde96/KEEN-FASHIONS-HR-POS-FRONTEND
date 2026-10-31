@@ -1,4 +1,41 @@
 import '@testing-library/jest-dom/vitest';
+import 'fake-indexeddb/auto';
+import { webcrypto } from 'node:crypto';
+import { beforeEach } from 'vitest';
+import { configure } from '@testing-library/dom';
+import { clearOfflineSession, markConnected } from '../services/offline';
+import { deviceDatabase } from '../services/deviceStore';
+
+Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
+configure({ asyncUtilTimeout: 5000 });
+beforeEach(async () => {
+  await clearOfflineSession();
+  localStorage.clear();
+  markConnected();
+  const db = await deviceDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(['devices', 'accounts', 'archive'], 'readwrite');
+    tx.objectStore('devices').clear();
+    tx.objectStore('accounts').clear();
+    tx.objectStore('archive').clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('keen-offline-v1', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('records', { keyPath: 'key' });
+    request.onsuccess = () => {
+      const tx = request.result.transaction('records', 'readwrite');
+      tx.objectStore('records').clear();
+      tx.oncomplete = () => {
+        request.result.close();
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+    };
+    request.onerror = () => reject(request.error);
+  });
+});
 
 class ResizeObserverMock {
   private callback: ResizeObserverCallback;

@@ -17,3 +17,5 @@
 **/.env.*
 **/*.pem
 **/*.key
+keen-device-backup-*.json
+*.offline-backup.json

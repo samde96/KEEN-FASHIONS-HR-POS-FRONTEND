@@ -17,6 +17,8 @@ blob-report/
 reports-check.png
 
 # Local environment and logs
+keen-device-backup-*.json
+*.offline-backup.json
 .env
 .env.*
 !.env.example

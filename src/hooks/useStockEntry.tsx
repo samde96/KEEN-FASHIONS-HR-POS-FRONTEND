@@ -3,7 +3,6 @@ import { useBlocker } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getCurrentUser } from '../services/api';
 import {
-  completeStockDraft,
   discardStockDraft,
   getPosPreferences,
   getStockDrafts,
@@ -11,6 +10,7 @@ import {
 } from '../services/posOperations';
 import type { StockDraft } from '../services/posOperations';
 import type { StockIntakeRequest } from '../data/types';
+import { queueStockReceipt } from '../services/offlineOperations';
 import { useStockNavigationGuard } from './StockNavigationGuard';
 import {
   isOfflineError,
@@ -229,7 +229,7 @@ export default function useStockEntry<
           }
           if (idRef.current === operationId) {
             setStatus(
-              'Draft saved on this device. Reconnect to save it to the server or receive stock.',
+              'Draft saved on this device. You can receive stock offline; it will synchronize when connected.',
             );
             setError('');
           }
@@ -327,15 +327,14 @@ export default function useStockEntry<
   async function complete() {
     // Preserve the operation ID across retries, including a lost completion response.
     await saving.current.catch(() => undefined);
-    let result;
-    try {
-      await save();
-    } catch (saveError) {
-      // A previous completion may have committed while its response was lost.
-      if (!(saveError instanceof Error) || !saveError.message.includes('already finished'))
-        throw saveError;
-    }
-    result = await completeStockDraft(idRef.current);
+    const data = latest.current;
+    const result = await queueStockReceipt(
+      idRef.current,
+      data.form.branchId,
+      data.form,
+      data.lines,
+      version.current,
+    );
     reset();
     void client.invalidateQueries({ queryKey: ['stock-drafts'] });
     return result;

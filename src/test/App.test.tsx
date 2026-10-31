@@ -2,6 +2,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
+import { useLegacyOperationFixtures } from './legacyOperationFixtures';
 // These existing checkout scenarios exercise manual tender recording with STK integration disabled.
 vi.mock('../services/mpesa', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/mpesa')>()),
@@ -22,6 +23,7 @@ import {
 
 describe('App', () => {
   beforeEach(() => {
+    useLegacyOperationFixtures();
     document.cookie = 'XSRF-TOKEN=test-csrf-token; path=/';
     vi.stubGlobal(
       'fetch',

@@ -28,15 +28,19 @@ Enter the location name, a unique code, timezone, and status, then select **Save
 
 The list supports search, status filtering, editing, deactivation, and reactivation. Deactivating a location removes it from active choices while keeping its history. Locations are saved through the existing backend branch API; this screen does not introduce a separate Shop/Warehouse classification.
 
+## Product photos
+
+In **Products → New Product**, use **Product photo** to choose a JPG, PNG or WebP image from your device (up to 10 MB). The form shows a preview and automatically resizes the photo before saving it with the product. The same picker in **Edit Product** replaces an existing photo; **Remove photo** clears it. Product photos are included with the saved catalogue for offline use after preparation.
+
 ## Offline work
 
-After opening the production app online, the service worker saves its shell, local images, and fonts for offline reloads. Successfully fetched JSON records are saved in IndexedDB with a local-storage fallback, partitioned by backend, organization, user, assigned branches, roles, and permissions. Only previously fetched records are available offline. Saved identity and business snapshots expire after 24 hours; first-time sign-in always requires a connection.
+Deploy the backend with migration V34 before this frontend. Sign in online with **Remember this device** and wait for **Offline ready**. Products, inventory and locations are prepared automatically, including products never opened in POS. The production service worker saves app code, local branding and fonts for offline reloads. Offline password sign-in lasts 30 days after online password sign-in; plaintext passwords are never stored.
 
-The connection badge and offline banner show when saved data is being used. Network failures and temporary server failures can use eligible snapshots; authentication, permission, and validation errors are never treated as successful offline responses. Reconnection refreshes active screens automatically, and the banner offers a manual retry. M-Pesa status, login credentials, CSRF tokens, and mutation responses are excluded from the snapshot cache.
+Complete cash or manually recorded M-Pesa sales, receive stock, transfer stock between authorized locations, and record physical stock counts offline. Select **Record M-Pesa manually (no STK push)** for payments already received. STK requests and live provider verification require internet. Existing STK checkouts cannot switch to manual. Other administrative/accounting changes and server shift opening/closing still require internet.
 
-POS carts are saved per backend, user, and location and restored after a reload. Stock drafts can be saved and recovered locally while disconnected; their last server version is retained until an actual server save. Reconnect to submit drafts, receive stock, complete sales, or confirm payments. This version does **not** queue transactions or claim offline payments are settled. New location/product/user records and financial postings also require the server.
+Transactions save in an IndexedDB queue before forms clear. They keep immutable IDs and synchronize in order when the app is open and connectivity returns. PostgreSQL commits each mutation with its permanent acknowledgement. Lost responses, reloads and overlapping tabs retry the same IDs. Captured published prices/VAT and the original sale time are retained. Counts and stock conflicts stay saved for review instead of silently overwriting changes or disappearing.
 
-Signing out clears the saved identity and business snapshots and blocks offline reopening until explicit online sign-in. Unsubmitted carts and stock drafts are retained under their user/location keys for recovery after signing back in. Browser data removal or unavailable/full device storage can remove/prevent local recovery; the app displays a warning when it cannot save locally. The Help page explains the offline workflow.
+Open **Offline & sync** to prepare products, inspect pending/synced/review records, reopen sale receipts, retry, or export/restore a device backup. Signing out locks access and retains work. Sync requires the original operator's authenticated backend session; an expired session requires online sign-in. Keep the API address and frontend domain unchanged while work is pending. Browser clearing or device failure can remove local storage, so retain backups. Backup files exclude credentials and are ignored by Git and deployment uploads. See [the offline guide](OFFLINE.md) for recovery and limitations.
 
 Offline shell behavior is enabled in production builds. Development deliberately unregisters service workers to avoid stale development assets. Verify the real offline flow with:
 
@@ -44,7 +48,7 @@ Offline shell behavior is enabled in production builds. Development deliberately
 npm run test:offline
 ```
 
-This builds the app and tests a production preview in Chromium with networking disabled, including offline reload, cart recovery, reconnection, and offline sign-out. It uses mocked business APIs and does not contact a production database or payment provider.
+This builds the app and tests a production preview in Chromium with networking disabled: prepared products, completed cash/manual M-Pesa sales, offline password login, reload recovery, stock receipt/transfer synchronization and lost acknowledgements. Business APIs are fixtures; live payment providers and production databases are not contacted.
 
 ## Vercel deployment
 

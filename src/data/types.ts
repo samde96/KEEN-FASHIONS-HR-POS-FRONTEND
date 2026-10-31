@@ -412,6 +412,8 @@ export type SalePayment = {
 };
 
 export type Sale = {
+  syncStatus?: 'pending';
+  deviceOperationId?: string;
   id: string;
   saleNumber: string;
   branchId: string;

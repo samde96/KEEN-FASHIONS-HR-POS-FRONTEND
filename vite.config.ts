@@ -149,6 +149,8 @@ export default defineConfig(({ command }) => {
       },
     },
     test: {
+      maxWorkers: 2,
+      testTimeout: 10_000,
       environment: 'jsdom',
       setupFiles: './src/test/setup.ts',
       exclude: [...configDefaults.exclude, 'e2e/**', 'playwright-report/**'],

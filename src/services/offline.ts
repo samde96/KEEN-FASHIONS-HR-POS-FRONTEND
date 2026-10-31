@@ -1,7 +1,8 @@
 import type { CurrentUser } from '../data/types';
 
 const storagePrefix = 'keen:offline:v1:';
-const maxSnapshotAge = 24 * 60 * 60 * 1000;
+// Operational snapshots must survive extended outages. Their age is shown to staff.
+const maxSnapshotAge = 30 * 24 * 60 * 60 * 1000;
 const maxCachedRecords = 200;
 let namespace = 'same-origin';
 let identity: CurrentUser | null = null;
@@ -192,7 +193,7 @@ async function storedKeys(): Promise<string[]> {
   return [...keys];
 }
 
-function scopeFor(user: CurrentUser) {
+export function scopeFor(user: CurrentUser) {
   return JSON.stringify([
     user.organizationId,
     user.userId,
@@ -208,6 +209,8 @@ export function offlineOwnerKey(user: CurrentUser) {
 
 export const getOfflineAuthEpoch = () => authEpoch;
 export const getOfflineScope = () => (identity ? scopeFor(identity) : undefined);
+export const getOfflineIdentity = () => identity;
+export const getOfflineNamespace = () => namespace;
 
 export function isOfflineAccessLocked() {
   try {
@@ -217,29 +220,38 @@ export function isOfflineAccessLocked() {
   }
 }
 
-export async function rememberOfflineUser(user: CurrentUser, epoch = authEpoch) {
+export async function rememberOfflineUser(
+  user: CurrentUser,
+  epoch = authEpoch,
+  expiresAt = Date.now() + maxSnapshotAge,
+) {
   if (epoch !== authEpoch || isOfflineAccessLocked()) return;
   identity = user;
-  await writeOfflineValue('session', { user, savedAt: Date.now() });
+  await writeOfflineValue('session', { user, savedAt: Date.now(), expiresAt });
 }
 
-export async function unlockOfflineAccess(user: CurrentUser) {
+export async function unlockOfflineAccess(user: CurrentUser, expiresAt?: number) {
   authEpoch += 1;
   try {
     localStorage.removeItem(storagePrefix + keyFor('signed-out'));
   } catch {
     publish({ storageAvailable: false });
   }
-  await rememberOfflineUser(user);
+  await rememberOfflineUser(user, authEpoch, expiresAt);
 }
 
 export async function readOfflineUser() {
   if (isOfflineAccessLocked()) return undefined;
-  const session = await readOfflineValue<{ user: CurrentUser; savedAt: number }>('session');
+  const session = await readOfflineValue<{
+    user: CurrentUser;
+    savedAt: number;
+    expiresAt?: number;
+  }>('session');
   if (
     !session ||
     !Number.isFinite(session.savedAt) ||
-    Date.now() - session.savedAt > maxSnapshotAge
+    Date.now() - session.savedAt > maxSnapshotAge ||
+    Date.now() > (session.expiresAt ?? session.savedAt + maxSnapshotAge)
   )
     return undefined;
   const user = session.user;
@@ -264,12 +276,9 @@ export async function clearOfflineSession() {
   } catch {
     publish({ storageAvailable: false });
   }
-  // Session and cached business reads are purged. Unsubmitted user-scoped drafts
-  // are retained so explicit sign-in can recover work after an offline sign-out.
-  const keys = await storedKeys();
-  await Promise.all(
-    keys.filter((key) => key === 'session' || key.startsWith('cache:')).map(removeOfflineValue),
-  );
+  // Lock access, retaining account-scoped data and queued transactions for a
+  // subsequent verified sign-in. Signing out must never erase unposted work.
+  await removeOfflineValue('session');
   publish({ cachedAt: null });
 }
 
@@ -300,7 +309,15 @@ export async function cacheOfflineResponse<T>(scope: string | undefined, path: s
     keys.map(async (key) => ({ key, record: await readOfflineValue<CachedRecord<unknown>>(key) })),
   );
   entries.sort((a, b) => (b.record?.savedAt ?? 0) - (a.record?.savedAt ?? 0));
-  await Promise.all(entries.slice(maxCachedRecords).map((entry) => removeOfflineValue(entry.key)));
+  const essential =
+    /:\/api\/v1\/(?:organization\/current|branches|catalog\/(?:products|categories)|inventory)$/;
+  const protectedCount = entries.filter((entry) => essential.test(entry.key)).length;
+  await Promise.all(
+    entries
+      .filter((entry) => !essential.test(entry.key))
+      .slice(Math.max(0, maxCachedRecords - protectedCount))
+      .map((entry) => removeOfflineValue(entry.key)),
+  );
 }
 
 export async function readOfflineResponse<T>(

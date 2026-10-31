@@ -1,3 +1,10 @@
+import ReceiptDialog from './components/ReceiptDialog';
+import {
+  formatMoney,
+  formatDateTime,
+  formatSalePayments,
+  formatPaymentMethod,
+} from './services/receiptFormatting';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   QueryClient,
@@ -48,7 +55,13 @@ import CashierShiftsPage from './components/CashierShiftsPage';
 import JournalHelp from './components/JournalHelp';
 import MpesaPaymentPanel from './components/MpesaPaymentPanel';
 import LocationsPage from './components/LocationsPage';
-import OfflineStatus, { ConnectionBadge, OfflineCoordinator } from './components/OfflineStatus';
+import ProductPhotoInput from './components/ProductPhotoInput';
+import OfflineStatus, {
+  ConnectionBadge,
+  OfflineCoordinator,
+  DeviceCoordinator,
+} from './components/OfflineStatus';
+import StockTransfersPage from './components/StockTransfersPage';
 import useOffline from './hooks/useOffline';
 import { offlineOwnerKey } from './services/offline';
 import { readPosDraft, savePosDraft } from './services/posDrafts';
@@ -529,6 +542,7 @@ function AppShell() {
       user={currentUser}
       branches={branches}
     >
+      <DeviceCoordinator user={currentUser} />
       <PlatformRoutes
         currentUser={currentUser}
         organization={organization}
@@ -590,6 +604,7 @@ function PlatformRoutes({
           element={<CashierShiftsPage user={currentUser} organization={organization} />}
         />
         <Route path="/home" element={<AppsHome user={currentUser} organization={organization} />} />
+        <Route path="/stock-transfers" element={<StockTransfersPage />} />
         <Route path="/apps" element={<AppsHome user={currentUser} organization={organization} />} />
         <Route
           path="/favorites"
@@ -882,7 +897,8 @@ function LoginPage() {
 
           {!offline.connected && (
             <p className="message-banner" role="status">
-              Connect to sign in. Previously saved records are available offline only for the last signed-in account on this device.
+              Use your saved email and password to sign in offline. This account must have signed in
+              online on this device with Remember this device enabled within the last 30 days.
             </p>
           )}
           <p className="login-powered">Powered by CRENVIXMORAVA SYSTEMS</p>
@@ -1020,8 +1036,15 @@ function PosWorkspace({
   const vat = taxAmountForProductLines(cartProducts, discount);
   const total = subtotal - discount + vat;
   const completeSaleMutation = useMutation({
-    mutationFn: ({ payload, idempotencyKey }: { payload: SaleRequest; idempotencyKey: string }) =>
-      createSale(payload, idempotencyKey),
+    mutationFn: ({
+      payload,
+      idempotencyKey,
+      manualMpesa,
+    }: {
+      payload: SaleRequest;
+      idempotencyKey: string;
+      manualMpesa?: boolean;
+    }) => createSale(payload, idempotencyKey, manualMpesa),
     onSuccess: async (sale) => {
       clearMpesaRecovery(mpesaStorageKey);
       setMpesaLocked(false);
@@ -1033,7 +1056,11 @@ function PosWorkspace({
       setCustomer('Walk-in Customer');
       setCheckoutIdempotencyKey(newSaleIdempotencyKey());
       setSaleError('');
-      setSaleMessage(`Sale ${sale.saleNumber} recorded.`);
+      setSaleMessage(
+        sale.syncStatus === 'pending'
+          ? `Sale ${sale.saleNumber} completed on this device. Pending backend synchronization.`
+          : `Sale ${sale.saleNumber} recorded.`,
+      );
       setCompletedSale(sale);
       await queryClient.invalidateQueries({ queryKey: ['sales'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory'] });
@@ -1048,7 +1075,11 @@ function PosWorkspace({
     setCustomer(recovery?.sale.customerName || cartDraft?.customer || 'Walk-in Customer');
     setCheckoutIdempotencyKey(recovery?.key ?? cartDraft?.checkoutKey ?? newSaleIdempotencyKey());
     setLoadedCartKey(cartStorageKey);
-    setCartRecoveryMessage(cartDraft ? 'Saved cart restored from this device. Review current prices and stock before taking payment.' : '');
+    setCartRecoveryMessage(
+      cartDraft
+        ? 'Saved cart restored from this device. Review current prices and stock before taking payment.'
+        : '',
+    );
     setMpesaLocked(Boolean(recovery));
     setPaymentOpen(Boolean(recovery));
     setSaleMessage('');
@@ -1166,10 +1197,6 @@ function PosWorkspace({
   function openPayment() {
     setSaleMessage('');
     setSaleError('');
-    if (!offline.connected) {
-      setSaleError('Keep this cart as a draft. Reconnect before taking payment or completing the sale.');
-      return;
-    }
     if (!registerBranch) {
       setSaleError('Set up the shop location before completing a sale.');
       return;
@@ -1181,7 +1208,7 @@ function PosWorkspace({
     setPaymentOpen(true);
   }
 
-  async function completeSale(payments: SalePaymentRequest[]) {
+  async function completeSale(payments: SalePaymentRequest[], manualMpesa = false) {
     setSaleMessage('');
     setSaleError('');
     if (!registerBranch) {
@@ -1197,6 +1224,7 @@ function PosWorkspace({
     try {
       await completeSaleMutation.mutateAsync({
         idempotencyKey: checkoutIdempotencyKey,
+        manualMpesa,
         payload: {
           branchId: registerBranch.id,
           customerName: customer === 'Walk-in Customer' ? '' : customer,
@@ -1247,7 +1275,9 @@ function PosWorkspace({
 
         <PosAppNavigation user={currentUser} disabled={cart.length > 0} />
         <OfflineStatus />
-        {cartRecoveryMessage && <p className="message-banner pos-local-draft-message">{cartRecoveryMessage}</p>}
+        {cartRecoveryMessage && (
+          <p className="message-banner pos-local-draft-message">{cartRecoveryMessage}</p>
+        )}
         <main className="pos-workspace">
           <section
             id="pos-products"
@@ -1307,7 +1337,7 @@ function PosWorkspace({
 
             <FormMessages error={saleError} message={saleMessage} />
 
-            {productsQuery.isPending ? (
+            {productsQuery.isPending || inventoryQuery.isPending ? (
               <LoadingPanel label="Loading products..." />
             ) : productsQuery.isError ? (
               <EmptyState
@@ -1540,6 +1570,10 @@ function PosWorkspace({
         <ReceiptDialog
           organization={organization}
           sale={completedSale}
+          onSynchronized={(sale) => {
+            setCompletedSale(sale);
+            setSaleMessage(`Sale ${sale.saleNumber} recorded.`);
+          }}
           onClose={() => setCompletedSale(null)}
         />
       ) : null}
@@ -1671,7 +1705,7 @@ type PaymentDialogProps = {
   error: string;
   isSubmitting: boolean;
   onClose: () => void;
-  onFinalize: (payments: SalePaymentRequest[]) => Promise<void> | void;
+  onFinalize: (payments: SalePaymentRequest[], manualMpesa?: boolean) => Promise<void> | void;
 };
 
 function PaymentDialog({
@@ -1688,7 +1722,9 @@ function PaymentDialog({
   onClose,
   onFinalize,
 }: PaymentDialogProps) {
+  const offline = useOffline();
   const [saved] = useState(() => readMpesaRecovery(storageKey));
+  const [manualMpesa, setManualMpesa] = useState(() => !offline.connected && !saved);
   const restoredTenders = saved?.sale.payments?.map((payment) => ({
     id: newSaleIdempotencyKey(),
     method: payment.method,
@@ -1715,12 +1751,17 @@ function PaymentDialog({
   const mpesaConfig = useQuery({
     queryKey: ['mpesa-config'],
     queryFn: getMpesaConfig,
-    enabled: hasMpesa,
+    enabled: hasMpesa && !manualMpesa && offline.connected,
     retry: false,
     staleTime: 30_000,
   });
-  const requiresStk = hasMpesa && mpesaConfig.data?.enabled === true;
-  const mpesaBlocked = hasMpesa && (!mpesaConfig.isSuccess || (requiresStk && !verifiedReceipt));
+  const requiresStk = hasMpesa && !manualMpesa && mpesaConfig.data?.enabled === true;
+  const mpesaBlocked =
+    hasMpesa &&
+    !manualMpesa &&
+    ((!offline.connected && !verifiedReceipt) ||
+      !mpesaConfig.isSuccess ||
+      (requiresStk && !verifiedReceipt));
   const [localError, setLocalError] = useState('');
   const totalCents = moneyToCents(amount);
   const selectedPaymentOption = paymentMethodOptions.find(
@@ -1758,7 +1799,7 @@ function PaymentDialog({
       return;
     }
 
-    void onFinalize(paymentResult.payments);
+    void onFinalize(paymentResult.payments, hasMpesa && !requiresStk);
   }
 
   function updateSplitPayment(id: string, changes: Partial<PaymentDraft>) {
@@ -1823,6 +1864,19 @@ function PaymentDialog({
         </div>
 
         <fieldset className="payment-tenders" disabled={mpesaLocked || isSubmitting}>
+          {hasMpesa && (
+            <label className="manual-mpesa-option">
+              <input
+                type="checkbox"
+                checked={manualMpesa}
+                onChange={(event) => setManualMpesa(event.target.checked)}
+              />
+              Record M-Pesa manually (no STK push)
+              <small>
+                Record a payment already received. This does not verify payment with Safaricom.
+              </small>
+            </label>
+          )}
           <div className="payment-mode-tabs" aria-label="Payment type">
             <button
               className={paymentMode === 'single' ? 'active' : ''}
@@ -2112,10 +2166,12 @@ function PaymentDialog({
               />
             );
           })()}
-        {hasMpesa && mpesaConfig.isPending && <p role="status">Checking M-Pesa availability…</p>}
-        {hasMpesa && mpesaConfig.isError && (
+        {hasMpesa && !manualMpesa && offline.connected && mpesaConfig.isPending && (
+          <p role="status">Checking M-Pesa availability…</p>
+        )}
+        {hasMpesa && !manualMpesa && (!offline.connected || mpesaConfig.isError) && (
           <p className="message-banner error" role="alert">
-            M-Pesa is unavailable. Check your connection before continuing.
+            STK push requires internet. Choose manual M-Pesa to record a payment already received.
           </p>
         )}
 
@@ -2294,169 +2350,6 @@ function isInteractiveEventTarget(target: EventTarget | null) {
   return Boolean(interactiveElement);
 }
 
-function ReceiptDialog({
-  organization,
-  onClose,
-  sale,
-}: {
-  organization: Organization;
-  onClose: () => void;
-  sale: Sale;
-}) {
-  const itemCount = sale.lines.reduce((sum, line) => sum + line.quantity, 0);
-  const cashReceivedTotal = sale.payments.reduce(
-    (sum, payment) => sum + (payment.cashReceived ?? 0),
-    0,
-  );
-  const changeDueTotal = sale.payments.reduce((sum, payment) => sum + (payment.changeDue ?? 0), 0);
-
-  useEffect(() => {
-    function handleReceiptShortcut(event: KeyboardEvent) {
-      if (event.key !== 'Enter') {
-        return;
-      }
-
-      event.preventDefault();
-      window.print();
-    }
-
-    window.addEventListener('keydown', handleReceiptShortcut);
-    return () => window.removeEventListener('keydown', handleReceiptShortcut);
-  }, []);
-
-  return (
-    <div className="dialog-backdrop receipt-backdrop" role="presentation">
-      <section
-        className="receipt-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="receipt-title"
-      >
-        <div className="dialog-header receipt-actions">
-          <div>
-            <p className="eyebrow">Sale complete</p>
-            <h2 id="receipt-title">Receipt</h2>
-          </div>
-          <button
-            className="icon-button"
-            type="button"
-            aria-label="Close receipt"
-            onClick={onClose}
-          >
-            <i className="bi bi-x-lg" aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="receipt-print-area">
-          <div className="receipt-business">
-            <strong>{organization.name}</strong>
-            <span>{sale.branchName}</span>
-            {organization.taxRegistrationNumber ? (
-              <span>PIN: {organization.taxRegistrationNumber}</span>
-            ) : null}
-          </div>
-
-          <div className="receipt-meta">
-            <div>
-              <span className="receipt-meta-label">Receipt</span>
-              <span className="receipt-meta-value">{sale.saleNumber}</span>
-            </div>
-            <div>
-              <span className="receipt-meta-label">Date</span>
-              <span className="receipt-meta-value">{formatDateTime(sale.soldAt)}</span>
-            </div>
-          </div>
-
-          <div className="receipt-lines">
-            <div className="receipt-line receipt-line-head">
-              <span>Item</span>
-              <span>Qty</span>
-              <span>Price</span>
-              <span>Total</span>
-            </div>
-            {sale.lines.map((line) => (
-              <div className="receipt-line" key={`${sale.id}-${line.productId}`}>
-                <span>{line.productName}</span>
-                <span>{line.quantity}</span>
-                <span>{formatMoney(line.unitPrice, organization.currencyCode)}</span>
-                <span>{formatMoney(line.lineTotal, organization.currencyCode)}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="receipt-total-block">
-            <div>
-              <span>Total Qty</span>
-              <strong>{itemCount}</strong>
-            </div>
-            <div>
-              <span>Subtotal</span>
-              <strong>{formatMoney(sale.subtotalAmount, organization.currencyCode)}</strong>
-            </div>
-            <div>
-              <span>Discount</span>
-              <strong>{formatMoney(sale.discountAmount || 0, organization.currencyCode)}</strong>
-            </div>
-            <div>
-              <span>VAT</span>
-              <strong>{formatMoney(sale.taxAmount, organization.currencyCode)}</strong>
-            </div>
-            <div className="receipt-grand-total">
-              <span>Total</span>
-              <strong>{formatMoney(sale.totalAmount, organization.currencyCode)}</strong>
-            </div>
-          </div>
-
-          <div className="receipt-payment">
-            <div>
-              <span>{sale.payments.length === 1 ? 'Payment' : 'Payments'}</span>
-              <strong>{formatSalePayments(sale)}</strong>
-            </div>
-            {sale.payments.map((payment, index) => (
-              <div className="receipt-payment-line" key={payment.id}>
-                <span>{sale.payments.length === 1 ? 'Tender' : `Tender ${index + 1}`}</span>
-                <strong>
-                  {formatPaymentMethod(payment.method)}{' '}
-                  {formatMoney(payment.amount, organization.currencyCode)}
-                  {payment.reference ? ` (${payment.reference})` : ''}
-                </strong>
-              </div>
-            ))}
-            {cashReceivedTotal > 0 ? (
-              <div>
-                <span>Cash Received</span>
-                <strong>{formatMoney(cashReceivedTotal, organization.currencyCode)}</strong>
-              </div>
-            ) : null}
-            {changeDueTotal > 0 ? (
-              <div>
-                <span>Change</span>
-                <strong>{formatMoney(changeDueTotal, organization.currencyCode)}</strong>
-              </div>
-            ) : null}
-          </div>
-
-          <p className="receipt-thanks">Thank you for shopping with us.</p>
-        </div>
-
-        <div className="receipt-actions receipt-footer-actions">
-          <button className="secondary-action compact-action" type="button" onClick={onClose}>
-            Close
-          </button>
-          <button
-            className="primary-action compact-action"
-            type="button"
-            onClick={() => window.print()}
-          >
-            <i className="bi bi-printer" aria-hidden="true" />
-            Print Receipt <kbd>Enter</kbd>
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function SalesPage({ organization }: { organization: Organization }) {
   const { branchId: platformBranchId } = usePlatform();
   const reversalsQuery = useQuery({ queryKey: ['sale-reversals'], queryFn: getSaleReversals });
@@ -2585,19 +2478,23 @@ function SalesPage({ organization }: { organization: Organization }) {
                   <td data-label="Status">
                     <StatusPill
                       status={
+                        sale.syncStatus === 'pending' ||
                         reversalsQuery.data?.some((r) => r.sale_id === sale.id)
                           ? 'pending'
                           : 'posted'
                       }
                       label={
-                        reversalsQuery.data?.find((r) => r.sale_id === sale.id)?.kind === 'REFUND'
-                          ? 'Refunded'
+                        sale.syncStatus === 'pending'
+                          ? 'Saved · pending sync'
                           : reversalsQuery.data?.find((r) => r.sale_id === sale.id)?.kind ===
-                              'CANCELLATION'
-                            ? 'Cancelled'
-                            : reversalsQuery.isError
-                              ? 'Status unavailable'
-                              : 'Completed'
+                              'REFUND'
+                            ? 'Refunded'
+                            : reversalsQuery.data?.find((r) => r.sale_id === sale.id)?.kind ===
+                                'CANCELLATION'
+                              ? 'Cancelled'
+                              : reversalsQuery.isError
+                                ? 'Status unavailable'
+                                : 'Completed'
                       }
                     />
                   </td>
@@ -14739,6 +14636,7 @@ function ProductsPage({
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
   const [isProductDialogOpen, setIsProductDialogOpen] = useState(false);
+  const [isPhotoProcessing, setIsPhotoProcessing] = useState(false);
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
   const [form, setForm] = useState<ProductFormState>(() => defaultProductForm([], 0));
   const [categoryName, setCategoryName] = useState('');
@@ -14787,6 +14685,7 @@ function ProductsPage({
   });
 
   function resetProductForm() {
+    setIsPhotoProcessing(false);
     setEditingProductId(null);
     setForm(defaultProductForm(categories, products.length));
     setError('');
@@ -14795,6 +14694,7 @@ function ProductsPage({
   }
 
   function editProduct(product: Product) {
+    setIsPhotoProcessing(false);
     setEditingProductId(product.id);
     setForm({
       name: product.variantName ?? product.name,
@@ -14824,6 +14724,10 @@ function ProductsPage({
     event.preventDefault();
     setError('');
     setMessage('');
+    if (isPhotoProcessing) {
+      setError('Wait for the photo to finish preparing before saving.');
+      return;
+    }
     try {
       await saveProductMutation.mutateAsync({
         ...form,
@@ -15124,17 +15028,15 @@ function ProductsPage({
                   }
                 />
               </label>
-              <label className="field-stack wide-field">
-                <span>Image URL</span>
-                <input
-                  maxLength={1000}
-                  type="url"
+              <div className="field-stack wide-field">
+                <ProductPhotoInput
+                  key={editingProductId ?? 'new'}
                   value={form.imageUrl}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, imageUrl: event.target.value }))
-                  }
+                  disabled={saveProductMutation.isPending}
+                  onBusyChange={setIsPhotoProcessing}
+                  onChange={(imageUrl) => setForm((current) => ({ ...current, imageUrl }))}
                 />
-              </label>
+              </div>
               <FormMessages error={error} message="" />
               <div className="form-actions">
                 <button
@@ -15147,7 +15049,9 @@ function ProductsPage({
                 <button
                   className="primary-action compact-action"
                   type="submit"
-                  disabled={saveProductMutation.isPending || categories.length === 0}
+                  disabled={
+                    saveProductMutation.isPending || isPhotoProcessing || categories.length === 0
+                  }
                 >
                   <i className="bi bi-check2" aria-hidden="true" />
                   {saveProductMutation.isPending
@@ -16248,7 +16152,6 @@ function InventoryTableRow({
   useEffect(() => {
     setReorderLevel(String(item.reorderLevel));
     setError('');
-    setStatusMessage('');
   }, [item.reorderLevel]);
 
   function handleReorderSubmit(event: FormEvent<HTMLFormElement>) {
@@ -19372,21 +19275,29 @@ function HelpPage() {
       <div className="help-card-grid">
         <section className="help-info-card" aria-labelledby="help-offline-title">
           <div className="help-card-heading">
-            <span className="help-card-icon"><i className="bi bi-wifi-off" aria-hidden="true" /></span>
-            <div><h2 id="help-offline-title">Working offline</h2></div>
+            <span className="help-card-icon">
+              <i className="bi bi-wifi-off" aria-hidden="true" />
+            </span>
+            <div>
+              <h2 id="help-offline-title">Working offline</h2>
+            </div>
           </div>
           <p>
-            Open the pages you need while connected. Saved records can be reopened on this device
-            for up to 24 hours after your last online sign-in or session check.
+            Sign in online with Remember this device enabled, then wait for Offline ready. Products,
+            stock and locations are downloaded automatically, including products you have not
+            opened. You can sign in with your saved password offline for 30 days after online
+            sign-in.
           </p>
           <p>
-            POS carts and stock drafts stay on the device so you can continue entering them offline.
-            Reconnect before taking payments, completing sales, or receiving stock. Saved stock
-            levels and prices may have changed while you were disconnected.
+            Complete cash and manual M-Pesa sales, receive stock, transfer stock and record counts
+            offline. STK push needs internet. Transactions save on this device before forms clear,
+            then synchronize in order when connected. Open Offline &amp; sync to check progress.
           </p>
           <p>
-            Signing out removes access to saved business records. Your unsubmitted drafts can be
-            recovered after signing back in online with the same account.
+            Sign-out locks access and retains saved work. Failed sync attempts retain their
+            transaction IDs and details for retry or review. Export a backup before clearing site
+            data or changing devices. Stock conflicts across devices may need review; they are never
+            silently discarded.
           </p>
         </section>
         <section className="help-info-card" aria-labelledby="help-about-title">
@@ -20907,13 +20818,6 @@ function productTileBackground(product: Pick<Product, 'categoryName'>, index: nu
   return `${overlay}, url(${bannerImageUrl})`;
 }
 
-function formatMoney(amount: number, currencyCode: string) {
-  const prefix = currencyCode === 'KES' ? 'KSh' : currencyCode;
-  return `${prefix} ${new Intl.NumberFormat('en-KE', {
-    maximumFractionDigits: 0,
-  }).format(amount)}`;
-}
-
 function formatPayslipAmount(amount: number) {
   return new Intl.NumberFormat('en-KE', {
     minimumFractionDigits: 2,
@@ -20957,13 +20861,6 @@ function formatChartNumber(value: number) {
   return new Intl.NumberFormat('en-KE', {
     maximumFractionDigits: absoluteValue > 0 && absoluteValue < 10 ? 1 : 0,
   }).format(value);
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat('en-KE', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value));
 }
 
 function formatFileSize(sizeBytes: number) {
@@ -21032,38 +20929,6 @@ function expenseStatusPillStatus(status: ExpenseStatus): 'posted' | 'review' | '
     return 'review';
   }
   return 'pending';
-}
-
-function formatSalePayments(sale: Sale, currencyCode?: string) {
-  if (sale.payments.length === 0) {
-    return 'N/A';
-  }
-
-  if (sale.payments.length === 1) {
-    return formatPaymentMethod(sale.payments[0]?.method);
-  }
-
-  const paymentLabels = sale.payments.map((payment) => {
-    const label = formatPaymentMethod(payment.method);
-    return currencyCode ? `${label} ${formatMoney(payment.amount, currencyCode)}` : label;
-  });
-  return `Split: ${paymentLabels.join(' + ')}`;
-}
-
-function formatPaymentMethod(method: PaymentMethod | undefined) {
-  if (method === 'MPESA') {
-    return 'M-Pesa';
-  }
-  if (method === 'CASH') {
-    return 'Cash';
-  }
-  if (method === 'CARD') {
-    return 'Card';
-  }
-  if (method === 'BANK_TRANSFER') {
-    return 'Bank Transfer';
-  }
-  return 'N/A';
 }
 
 const SHIFT_STORAGE_KEY = 'keen-fashion-shifts';

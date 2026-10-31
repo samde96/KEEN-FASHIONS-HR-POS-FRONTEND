@@ -109,7 +109,7 @@ describe('Offline API snapshots and session isolation', () => {
   });
 
   it.each([401, 403])(
-    'purges saved business data on a server identity %i and prevents cached-session recovery',
+    'locks saved business data on a server identity %i and prevents cached-session recovery',
     async (status) => {
       await getCurrentUser();
       await getProducts();
@@ -134,14 +134,14 @@ describe('Offline API snapshots and session isolation', () => {
     await login({ username: testUser.email, password: 'mock-test-password', rememberDevice: true });
     expect(await getCurrentUser()).toEqual(testUser);
     disconnected();
-    await expect(getProducts()).rejects.toThrow('not saved for offline use');
+    expect(await getProducts()).toEqual(testProducts);
   });
 
-  it('expires business snapshots and offline session access after 24 hours', async () => {
+  it('expires offline authorization after 30 days without erasing saved transactions', async () => {
     await getCurrentUser();
     await getProducts();
     const now = Date.now();
-    vi.spyOn(Date, 'now').mockReturnValue(now + 24 * 60 * 60 * 1000 + 1);
+    vi.spyOn(Date, 'now').mockReturnValue(now + 30 * 24 * 60 * 60 * 1000 + 1);
     disconnected();
     await expect(getCurrentUser()).rejects.toThrow('not saved for offline use');
     await expect(getProducts()).rejects.toThrow('not saved for offline use');
