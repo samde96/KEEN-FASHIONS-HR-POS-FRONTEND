@@ -708,7 +708,7 @@ describe('App', () => {
     );
   });
 
-  it('redirects the legacy branch route to settings', async () => {
+  it('opens location management at the branch route', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? 'GET';
@@ -733,8 +733,9 @@ describe('App', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Branches' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Shops & warehouses' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save location' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/branches');
   });
 
   it('registers a supplier through the API', async () => {

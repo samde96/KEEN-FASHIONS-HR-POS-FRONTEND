@@ -47,6 +47,7 @@ import DailySalesReportsPanel from './components/DailySalesReportsPanel';
 import CashierShiftsPage from './components/CashierShiftsPage';
 import JournalHelp from './components/JournalHelp';
 import MpesaPaymentPanel from './components/MpesaPaymentPanel';
+import LocationsPage from './components/LocationsPage';
 import { clearMpesaRecovery, getMpesaConfig, readMpesaRecovery } from './services/mpesa';
 import useStockEntry from './hooks/useStockEntry';
 import { StockNavigationProvider, useStockNavigationGuard } from './hooks/StockNavigationGuard';
@@ -617,7 +618,7 @@ function PlatformRoutes({
             <Dashboard branches={branches} currentUser={currentUser} organization={organization} />
           }
         />
-        <Route path="/branches" element={<Navigate to="/settings" replace />} />
+        <Route path="/branches" element={<LocationsPage timeZone={organization.timeZone} />} />
         <Route path="/roles" element={<RolesPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/product-catalog" element={<ProductsPage organization={organization} />} />
@@ -19215,6 +19216,11 @@ function SettingsPage({ organization }: { organization: Organization }) {
       <PageHeader
         title="Settings"
         subtitle="Organization controls for taxes and default product behavior."
+        action={
+          <NavLink className="secondary-action compact-action" to="/branches">
+            <i className="bi bi-shop" aria-hidden="true" /> Shops &amp; warehouses
+          </NavLink>
+        }
       />
 
       <PosPreferencesPanel />

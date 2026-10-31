@@ -20,6 +20,14 @@ Validate the production bundle:
 npm run build
 ```
 
+## Shops and warehouses
+
+Sign in as an administrator, then open **Apps > Administration > Shops & warehouses** (or `/branches`). Settings also includes a shortcut.
+
+Enter the location name, a unique code, timezone, and status, then select **Save location**. Active locations become available in the business branch selector. Use **Users** to assign staff to the locations they should access.
+
+The list supports search, status filtering, editing, deactivation, and reactivation. Deactivating a location removes it from active choices while keeping its history. Locations are saved through the existing backend branch API; this screen does not introduce a separate Shop/Warehouse classification.
+
 ## Vercel deployment
 
 1. Push this folder's repository to GitHub, including `package-lock.json`, `src/`, `public/`, the Vite/TypeScript configuration, and `vercel.json`.

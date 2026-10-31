@@ -43,6 +43,12 @@ export const navItems: NavItem[] = [
   },
   { to: '/users', label: 'Users', icon: 'bi-people', anyPermissions: ['admin:manage'] },
   {
+    to: '/branches',
+    label: 'Shops & warehouses',
+    icon: 'bi-shop',
+    anyPermissions: ['admin:manage'],
+  },
+  {
     to: '/product-catalog',
     label: 'Product Catalog',
     icon: 'bi-tags',
@@ -327,9 +333,17 @@ export const appRegistry: BusinessApp[] = [
     icon: 'bi-gear',
     tone: 'slate',
     category: 'Administration',
-    description: 'Users, roles, permissions and business settings.',
-    routes: ['/users', '/roles', '/settings', '/notifications', '/audit'],
-    keywords: ['branches', 'timezone', 'recipients', 'reminders'],
+    description: 'Shops, warehouses, users, roles and business settings.',
+    routes: ['/branches', '/users', '/roles', '/settings', '/notifications', '/audit'],
+    keywords: [
+      'branches',
+      'locations',
+      'shops',
+      'warehouses',
+      'timezone',
+      'recipients',
+      'reminders',
+    ],
   },
 ];
 export const appPath = (app: BusinessApp) => `/apps/${app.id}`;
