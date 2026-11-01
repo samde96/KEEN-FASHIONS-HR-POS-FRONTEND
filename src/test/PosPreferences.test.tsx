@@ -6,6 +6,7 @@ import PosPreferencesPanel from '../components/PosPreferencesPanel';
 import { getUsers } from '../services/api';
 import {
   getPosPreferences,
+  getNotificationEmailStatus,
   savePosPreferences,
   type PosPreferences,
 } from '../services/posOperations';
@@ -13,6 +14,7 @@ import {
 vi.mock('../services/api', () => ({ getUsers: vi.fn() }));
 vi.mock('../services/posOperations', () => ({
   getPosPreferences: vi.fn(),
+  getNotificationEmailStatus: vi.fn(),
   savePosPreferences: vi.fn(),
 }));
 let stored: PosPreferences;
@@ -34,10 +36,72 @@ beforeEach(() => {
     inactivityMinutes: 2880,
     longEntryMinutes: 10,
     timeZone: 'Africa/Nairobi',
+    notificationEmail: '',
   };
   vi.mocked(getUsers).mockResolvedValue([]);
+  vi.mocked(getNotificationEmailStatus).mockResolvedValue({
+    provider: 'Resend',
+    configured: false,
+    fromEmail: '',
+    missingSettings: ['RESEND_API_KEY', 'RESEND_FROM_EMAIL'],
+  });
   vi.mocked(getPosPreferences).mockImplementation(async () => stored);
   vi.mocked(savePosPreferences).mockImplementation(async (value) => (stored = value));
+});
+
+it('shows pending Resend setup and saves email copies with system summaries', async () => {
+  stored.inAppEnabled = false;
+  const user = userEvent.setup();
+  mount();
+  expect(await screen.findByText(/Email is awaiting server configuration/)).toBeInTheDocument();
+  await user.click(screen.getByLabelText('Email a copy of system notifications'));
+  expect(screen.getByLabelText('In-system daily summary')).toBeChecked();
+  expect(screen.getByLabelText('In-system daily summary')).toBeDisabled();
+  await user.click(screen.getByRole('button', { name: 'Save reminder settings' }));
+  await screen.findByText('Reminder settings saved.');
+  expect(stored.emailEnabled).toBe(true);
+  expect(stored.inAppEnabled).toBe(true);
+});
+
+it('shows the configured sender without exposing an API key', async () => {
+  vi.mocked(getNotificationEmailStatus).mockResolvedValue({
+    provider: 'Resend',
+    configured: true,
+    fromEmail: 'KEEN Fashions <alerts@example.com>',
+    missingSettings: [],
+  });
+  mount();
+  expect(await screen.findByText('KEEN Fashions <alerts@example.com>')).toBeInTheDocument();
+  expect(screen.getByText(/Resend is configured/)).toBeInTheDocument();
+});
+
+it('saves the notification recipient email and restores it after reloading settings', async () => {
+  const user = userEvent.setup();
+  mount();
+  const email = await screen.findByLabelText('Notification recipient email');
+  await user.type(email, 'reports@example.com');
+  await user.click(screen.getByRole('button', { name: 'Save reminder settings' }));
+  await screen.findByText('Reminder settings saved.');
+  expect(stored.notificationEmail).toBe('reports@example.com');
+  cleanup();
+  mount();
+  expect(await screen.findByLabelText('Notification recipient email')).toHaveValue(
+    'reports@example.com',
+  );
+  await user.clear(screen.getByLabelText('Notification recipient email'));
+  await user.click(screen.getByRole('button', { name: 'Save reminder settings' }));
+  await screen.findByText('Reminder settings saved.');
+  expect(stored.notificationEmail).toBe('');
+});
+
+it('rejects an invalid notification recipient email before saving', async () => {
+  const user = userEvent.setup();
+  mount();
+  const email = await screen.findByLabelText('Notification recipient email');
+  await user.type(email, 'invalid-address');
+  await user.click(screen.getByRole('button', { name: 'Save reminder settings' }));
+  expect(email).toBeInvalid();
+  expect(savePosPreferences).not.toHaveBeenCalled();
 });
 afterEach(() => {
   cleanup();

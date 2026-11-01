@@ -1260,7 +1260,7 @@ describe('App', () => {
     });
   });
 
-  it('stages add-stock lines and posts the supplier receipt after invoice review', async () => {
+  it('selects and stages several products, then posts their quantities and costs after invoice review', async () => {
     const user = userEvent.setup();
     const alternateProduct = {
       ...testProducts[0],
@@ -1393,25 +1393,43 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Add Stock' })).toBeInTheDocument();
     expect(await screen.findByDisplayValue('1200')).toBeInTheDocument();
 
-    const productInput = screen.getByLabelText(/^Product$/i);
-    await user.clear(productInput);
-    await user.type(productInput, 'denim');
-    await user.click(await screen.findByRole('option', { name: /Denim Jacket/i }));
+    const productInput = screen.getByRole('searchbox', { name: 'Search products' });
+    await user.type(productInput, 'DNM-002');
+    await user.click(await screen.findByRole('checkbox', { name: /Select Denim Jacket/i }));
     expect(await screen.findByDisplayValue('900')).toBeInTheDocument();
+    await user.clear(productInput);
+    expect(screen.getByRole('checkbox', { name: /Select Oxford Shirt/i })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Select Denim Jacket/i })).toBeChecked();
 
     await user.selectOptions(screen.getByLabelText(/^Supplier$/i), 'Keen Supplier');
     await user.type(screen.getByLabelText(/^Reference$/i), 'INV-220');
-    await user.type(screen.getByLabelText(/^Quantity$/i), '3');
-    await user.click(screen.getByRole('button', { name: /^Add Line$/i }));
+    await user.type(screen.getByLabelText(/Quantity for Oxford Shirt/i), '2');
+    await user.clear(screen.getByLabelText(/Unit Cost for Oxford Shirt/i));
+    await user.type(screen.getByLabelText(/Unit Cost for Oxford Shirt/i), '1250');
+    await user.click(screen.getByRole('button', { name: 'Add 2 Lines' }));
+    expect(screen.getByRole('dialog', { name: 'Supplier Receipt' })).toBeInTheDocument();
+    expect(screen.getByText('No invoice lines')).toBeInTheDocument();
+    expect(postedRequests).toHaveLength(0);
+    await user.type(screen.getByLabelText(/Quantity for Denim Jacket/i), '3');
+    await user.click(screen.getByRole('button', { name: 'Add 2 Lines' }));
 
     expect(postedRequests).toHaveLength(0);
     expect(await screen.findByText('Total Invoice Amount')).toBeInTheDocument();
-    expect((await screen.findAllByText('KSh 2,700')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('KSh 5,200')).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: /^Post Receipt$/i }));
 
-    expect(await screen.findByText(/Posted 1 stock line/)).toBeInTheDocument();
+    expect(await screen.findByText(/Posted 2 stock lines \(5 units\)/)).toBeInTheDocument();
     expect(postedRequests).toEqual([
+      {
+        branchId: testBranches[0].id,
+        productId: testProducts[0].id,
+        supplierName: 'Keen Supplier',
+        referenceNumber: 'INV-220',
+        quantity: 2,
+        unitCost: 1250,
+        notes: '',
+      },
       {
         branchId: testBranches[0].id,
         productId: alternateProduct.id,

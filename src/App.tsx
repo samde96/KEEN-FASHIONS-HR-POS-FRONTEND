@@ -1,4 +1,5 @@
 import ReceiptDialog from './components/ReceiptDialog';
+import DialogBackdrop from './components/DialogBackdrop';
 import {
   formatMoney,
   formatDateTime,
@@ -62,6 +63,8 @@ import OfflineStatus, {
   DeviceCoordinator,
 } from './components/OfflineStatus';
 import StockTransfersPage from './components/StockTransfersPage';
+import StockReceiptProducts from './components/StockReceiptProducts';
+import type { StockReceiptProduct } from './components/StockReceiptProducts';
 import useOffline from './hooks/useOffline';
 import { offlineOwnerKey } from './services/offline';
 import { readPosDraft, savePosDraft } from './services/posDrafts';
@@ -422,7 +425,9 @@ const reportGroups = [
   },
 ];
 
-type ReportPeriod = 'today' | 'yesterday' | 'week' | 'month' | 'custom';
+type ReportQuarter = 'q1' | 'q2' | 'q3' | 'q4';
+
+type ReportPeriod = 'today' | 'yesterday' | 'week' | 'month' | 'custom' | ReportQuarter | 'year';
 
 type ReportDateRange = {
   from: string;
@@ -437,6 +442,11 @@ const reportPeriodOptions: { period: ReportPeriod; label: string; icon: string }
   { period: 'week', label: 'This Week', icon: 'bi-calendar-week' },
   { period: 'month', label: 'This Month', icon: 'bi-calendar-month' },
   { period: 'custom', label: 'Custom', icon: 'bi-sliders' },
+  { period: 'q1', label: 'Q1 (Jan–Mar)', icon: 'bi-calendar3' },
+  { period: 'q2', label: 'Q2 (Apr–Jun)', icon: 'bi-calendar3' },
+  { period: 'q3', label: 'Q3 (Jul–Sep)', icon: 'bi-calendar3' },
+  { period: 'q4', label: 'Q4 (Oct–Dec)', icon: 'bi-calendar3' },
+  { period: 'year', label: 'Whole year', icon: 'bi-calendar-range' },
 ];
 
 const PRODUCT_IMAGE_MAX_BYTES = 1_000_000;
@@ -4842,10 +4852,6 @@ function ProcurementPage({
       ?.querySelector<HTMLButtonElement>('[aria-label="Close purchase order preview"]')
       ?.focus({ preventScroll: true });
     function handlePreviewKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        setIsPreviewOpen(false);
-      }
       if (event.key !== 'Tab') return;
       const targets = focusable();
       if (!targets.length) return;
@@ -5532,18 +5538,13 @@ function ProcurementPage({
       </div>
 
       {isPreviewOpen ? (
-        <div
-          className="dialog-backdrop procurement-preview-dialog-backdrop"
-          role="presentation"
-          onMouseDown={() => setIsPreviewOpen(false)}
-        >
+        <DialogBackdrop className="dialog-backdrop procurement-preview-dialog-backdrop">
           <section
             aria-labelledby="procurement-preview-title"
             aria-modal="true"
             className="procurement-preview-dialog"
             role="dialog"
             ref={purchasePreviewPanel}
-            onMouseDown={(event) => event.stopPropagation()}
           >
             <header className="dialog-header procurement-preview-dialog-header">
               <div>
@@ -5581,7 +5582,7 @@ function ProcurementPage({
               <PurchaseOrderPreview purchaseOrder={draft} organization={organization} />
             </div>
           </section>
-        </div>
+        </DialogBackdrop>
       ) : null}
 
       <section className="panel-card commercial-documents-panel">
@@ -6413,10 +6414,6 @@ function CommercialPage({ organization }: { organization: Organization }) {
       ].filter((element) => element.getClientRects().length > 0);
     focusable()[0]?.focus({ preventScroll: true });
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        setShowMobilePreview(false);
-      }
       if (event.key !== 'Tab') return;
       const targets = focusable();
       if (!targets.length) return;
@@ -7177,12 +7174,7 @@ function CommercialPage({ organization }: { organization: Organization }) {
       </div>
 
       {showMobilePreview ? (
-        <div
-          className="commercial-preview-backdrop"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setShowMobilePreview(false);
-          }}
-        >
+        <DialogBackdrop className="commercial-preview-backdrop">
           <section
             className="panel-card commercial-preview-modal-panel"
             ref={previewPanel}
@@ -7206,7 +7198,7 @@ function CommercialPage({ organization }: { organization: Organization }) {
               <CommercialDocumentPreview document={draft} organization={organization} />
             </div>
           </section>
-        </div>
+        </DialogBackdrop>
       ) : null}
 
       <section className="panel-card commercial-documents-panel">
@@ -8329,8 +8321,13 @@ function NotificationsPage({ organization }: { organization: Organization }) {
   const summaryQuery = useQuery({
     queryKey: ['notifications-summary'],
     queryFn: getNotificationsSummary,
+    refetchInterval: 30_000,
   });
-  const notificationsQuery = useQuery({ queryKey: ['notifications'], queryFn: getNotifications });
+  const notificationsQuery = useQuery({
+    queryKey: ['notifications'],
+    queryFn: getNotifications,
+    refetchInterval: 30_000,
+  });
   const notifications = notificationsQuery.data ?? [];
 
   return (
@@ -8385,7 +8382,7 @@ function NotificationsPage({ organization }: { organization: Organization }) {
                         <i className="bi bi-bell" aria-hidden="true" />
                         <span>
                           <strong>{notification.title}</strong>
-                          <small>{notification.message}</small>
+                          <small className="notification-message">{notification.message}</small>
                         </span>
                       </span>
                     </td>
@@ -11769,30 +11766,32 @@ function salesTrendFromSales(sales: Sale[], interval: SalesTrendInterval = 'dail
     });
 }
 
-function reportSalesTrendRowsFromSales(sales: Sale[], range: ReportDateRange) {
-  const normalizedRange = normalizeReportDateRange(range);
-  const fromDate = normalizedRange.from
-    ? dateInputToLocalDate(normalizedRange.from)
-    : startOfLocalDay(new Date());
-  const toDate = normalizedRange.to
-    ? dateInputToLocalDate(normalizedRange.to)
-    : startOfLocalDay(fromDate);
+function reportSalesTrendRowsFromSales(sales: Sale[], ranges: ReportDateRange[]) {
   const rowsByDay = new Map<
     string,
     { day: string; grossProfit: number; retailSales: number; sortKey: number }
   >();
 
-  for (
-    let cursor = startOfLocalDay(fromDate);
-    cursor.getTime() <= endOfLocalDay(toDate).getTime();
-    cursor = addLocalDays(cursor, 1)
-  ) {
-    rowsByDay.set(dateInputValue(cursor), {
-      day: new Intl.DateTimeFormat('en-KE', { day: 'numeric', month: 'short' }).format(cursor),
-      grossProfit: 0,
-      retailSales: 0,
-      sortKey: cursor.getTime(),
-    });
+  for (const range of ranges) {
+    const normalizedRange = normalizeReportDateRange(range);
+    const fromDate = normalizedRange.from
+      ? dateInputToLocalDate(normalizedRange.from)
+      : startOfLocalDay(new Date());
+    const toDate = normalizedRange.to
+      ? dateInputToLocalDate(normalizedRange.to)
+      : startOfLocalDay(fromDate);
+    for (
+      let cursor = startOfLocalDay(fromDate);
+      cursor.getTime() <= endOfLocalDay(toDate).getTime();
+      cursor = addLocalDays(cursor, 1)
+    ) {
+      rowsByDay.set(dateInputValue(cursor), {
+        day: new Intl.DateTimeFormat('en-KE', { day: 'numeric', month: 'short' }).format(cursor),
+        grossProfit: 0,
+        retailSales: 0,
+        sortKey: cursor.getTime(),
+      });
+    }
   }
 
   for (const sale of sales) {
@@ -12084,7 +12083,11 @@ function expensesTotal(expenses: Expense[]) {
   return expenses.reduce((sum, expense) => sum + expense.amount, 0);
 }
 
-function reportPeriodRange(period: ReportPeriod): ReportDateRange {
+function isReportQuarter(period: ReportPeriod): period is ReportQuarter {
+  return period === 'q1' || period === 'q2' || period === 'q3' || period === 'q4';
+}
+
+function reportPeriodRange(period: ReportPeriod, year = new Date().getFullYear()): ReportDateRange {
   const today = startOfLocalDay(new Date());
   const yesterday = addLocalDays(today, -1);
 
@@ -12098,6 +12101,21 @@ function reportPeriodRange(period: ReportPeriod): ReportDateRange {
 
   if (period === 'week') {
     return { from: dateInputValue(startOfWeek(today)), to: dateInputValue(today) };
+  }
+
+  if (period === 'year') {
+    return {
+      from: dateInputValue(new Date(year, 0, 1)),
+      to: dateInputValue(new Date(year, 11, 31)),
+    };
+  }
+
+  const quarterIndex = ['q1', 'q2', 'q3', 'q4'].indexOf(period);
+  if (quarterIndex !== -1) {
+    return {
+      from: dateInputValue(new Date(year, quarterIndex * 3, 1)),
+      to: dateInputValue(new Date(year, quarterIndex * 3 + 3, 0)),
+    };
   }
 
   const firstMonthDay = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -13808,21 +13826,6 @@ function RolesPage() {
     }
   }
 
-  useEffect(() => {
-    if (roleDialog == null) {
-      return undefined;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setRoleDialog(null);
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [roleDialog]);
-
   async function handlePermissionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
@@ -13901,15 +13904,7 @@ function RolesPage() {
 
       <div className="management-grid roles-permissions-grid roles-main-grid">
         {roleDialog === 'role' ? (
-          <div
-            className="dialog-backdrop role-management-dialog-backdrop"
-            role="presentation"
-            onClick={(event) => {
-              if (event.target === event.currentTarget) {
-                setRoleDialog(null);
-              }
-            }}
-          >
+          <DialogBackdrop className="dialog-backdrop role-management-dialog-backdrop">
             <section
               className="panel-card branch-form-panel role-management-dialog"
               role="dialog"
@@ -14015,7 +14010,7 @@ function RolesPage() {
                 </div>
               </form>
             </section>
-          </div>
+          </DialogBackdrop>
         ) : null}
 
         <div className="access-management-stack">
@@ -14103,15 +14098,7 @@ function RolesPage() {
           </section>
 
           {roleDialog === 'permission' ? (
-            <div
-              className="dialog-backdrop role-management-dialog-backdrop"
-              role="presentation"
-              onClick={(event) => {
-                if (event.target === event.currentTarget) {
-                  setRoleDialog(null);
-                }
-              }}
-            >
+            <DialogBackdrop className="dialog-backdrop role-management-dialog-backdrop">
               <section
                 className="panel-card branch-list-panel permissions-catalog-panel role-management-dialog permissions-management-dialog"
                 role="dialog"
@@ -14229,7 +14216,7 @@ function RolesPage() {
                   </div>
                 )}
               </section>
-            </div>
+            </DialogBackdrop>
           ) : null}
         </div>
       </div>
@@ -14645,18 +14632,6 @@ function ProductsPage({
   const [message, setMessage] = useState('');
   const editingProduct = products.find((product) => product.id === editingProductId);
 
-  useEffect(() => {
-    if (!isProductDialogOpen && !isCategoryDialogOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsProductDialogOpen(false);
-        setIsCategoryDialogOpen(false);
-      }
-    };
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [isProductDialogOpen, isCategoryDialogOpen]);
-
   const saveProductMutation = useMutation({
     mutationFn: (payload: ProductRequest) =>
       editingProductId ? updateProduct(editingProductId, payload) : createProduct(payload),
@@ -14854,15 +14829,7 @@ function ProductsPage({
       </nav>
       <FormMessages error={error} message={message} />
       {isProductDialogOpen ? (
-        <div
-          className="dialog-backdrop catalog-dialog-backdrop"
-          role="presentation"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              setIsProductDialogOpen(false);
-            }
-          }}
-        >
+        <DialogBackdrop className="dialog-backdrop catalog-dialog-backdrop">
           <section
             className="panel-card branch-form-panel catalog-dialog-card catalog-product-dialog"
             role="dialog"
@@ -15063,7 +15030,7 @@ function ProductsPage({
               </div>
             </form>
           </section>
-        </div>
+        </DialogBackdrop>
       ) : null}
 
       {view === 'products' ? (
@@ -15266,13 +15233,7 @@ function ProductsPage({
         </section>
       )}
       {isCategoryDialogOpen ? (
-        <div
-          className="dialog-backdrop catalog-dialog-backdrop"
-          role="presentation"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setIsCategoryDialogOpen(false);
-          }}
-        >
+        <DialogBackdrop className="dialog-backdrop catalog-dialog-backdrop">
           <section
             className="panel-card catalog-dialog-card catalog-category-dialog"
             role="dialog"
@@ -15332,7 +15293,7 @@ function ProductsPage({
               </div>
             </form>
           </section>
-        </div>
+        </DialogBackdrop>
       ) : null}
     </section>
   );
@@ -15473,21 +15434,6 @@ function Inventory({
     }
   }, [filteredInventory, selectedInventoryId]);
 
-  useEffect(() => {
-    if (inventoryDialog == null) {
-      return undefined;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setInventoryDialog(null);
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [inventoryDialog]);
-
   return (
     <section className="inventory-workspace">
       <PageHeader
@@ -15535,15 +15481,7 @@ function Inventory({
       ) : null}
 
       {inventoryDialog ? (
-        <div
-          className="dialog-backdrop inventory-insight-dialog-backdrop"
-          role="presentation"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              setInventoryDialog(null);
-            }
-          }}
-        >
+        <DialogBackdrop className="dialog-backdrop inventory-insight-dialog-backdrop">
           {inventoryDialog === 'category' ? (
             <section
               className="panel-card inventory-category-panel inventory-insight-dialog"
@@ -15697,7 +15635,7 @@ function Inventory({
               )}
             </section>
           ) : null}
-        </div>
+        </DialogBackdrop>
       ) : null}
 
       {adjustingItem ? (
@@ -16343,15 +16281,7 @@ function StockAdjustmentDialog({
   }
 
   return (
-    <div
-      className="dialog-backdrop stock-adjustment-dialog-backdrop"
-      role="presentation"
-      onClick={(event) => {
-        if (event.target === event.currentTarget && !adjustmentMutation.isPending) {
-          onClose();
-        }
-      }}
-    >
+    <DialogBackdrop className="dialog-backdrop stock-adjustment-dialog-backdrop">
       <section
         aria-labelledby={titleId}
         aria-modal="true"
@@ -16462,7 +16392,7 @@ function StockAdjustmentDialog({
           </div>
         </form>
       </section>
-    </div>
+    </DialogBackdrop>
   );
 }
 
@@ -16718,6 +16648,7 @@ type StockIntakeFormState = {
   quantity: string;
   unitCost: string;
   notes: string;
+  selectedProducts?: StockReceiptProduct[];
 };
 
 type StockReceiptLine = StockIntakeRequest & {
@@ -17016,9 +16947,16 @@ function AddStockPage({
     0,
   );
   const receiptUnits = receiptLines.reduce((sum, line) => sum + line.quantity, 0);
-  const currentLineTotal =
-    (Number(form.quantity) > 0 ? Number(form.quantity) : 0) *
-    (Number(form.unitCost) >= 0 ? Number(form.unitCost) : 0);
+  // Older drafts store a single product directly on the form.
+  const selectedReceiptProducts =
+    form.selectedProducts ??
+    (form.productId
+      ? [{ productId: form.productId, quantity: form.quantity, unitCost: form.unitCost }]
+      : []);
+  const currentLineTotal = selectedReceiptProducts.reduce(
+    (total, line) => total + (Number(line.quantity) || 0) * (Number(line.unitCost) || 0),
+    0,
+  );
 
   useEffect(() => {
     setForm((current) => {
@@ -17046,21 +16984,6 @@ function AddStockPage({
       };
     });
   }, [firstActiveBranchId, firstActiveProductId, firstActiveSupplierName, productById]);
-
-  useEffect(() => {
-    if (!isReceiptDialogOpen) {
-      return undefined;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setIsReceiptDialogOpen(false);
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isReceiptDialogOpen]);
 
   const postReceiptMutation = useMutation({
     mutationFn: async (lines: StockReceiptLine[]) => {
@@ -17114,21 +17037,36 @@ function AddStockPage({
     setMessage('');
 
     try {
-      const receiptLine = buildStockReceiptLine(form, activeBranches, activeProducts);
-      const selectedProduct = productById.get(receiptLine.productId);
-      setReceiptLines((current) => [...current, receiptLine]);
+      if (selectedReceiptProducts.length === 0) {
+        throw new Error('Select at least one product before adding stock lines.');
+      }
+      const newLines = selectedReceiptProducts.map((line) => {
+        try {
+          return buildStockReceiptLine({ ...form, ...line }, activeBranches, activeProducts);
+        } catch (caughtError) {
+          const name = productById.get(line.productId)?.name ?? 'Unavailable product';
+          throw new Error(
+            `${name}: ${caughtError instanceof Error ? caughtError.message : 'Invalid stock line'}`,
+          );
+        }
+      });
+      const lastLine = newLines[newLines.length - 1];
+      const selectedProduct = productById.get(lastLine.productId);
+      setReceiptLines((current) => [...current, ...newLines]);
       stockEntry.markChanged();
       setForm((current) => ({
         ...current,
-        productId: receiptLine.productId,
+        productId: lastLine.productId,
         quantity: '',
         unitCost:
           selectedProduct?.costPrice == null ? current.unitCost : String(selectedProduct.costPrice),
         notes: '',
+        selectedProducts: undefined,
       }));
       setIsReceiptDialogOpen(false);
+      const units = newLines.reduce((total, line) => total + line.quantity, 0);
       setMessage(
-        `Added ${receiptLine.quantity} units of ${receiptLine.productName} to the supplier invoice.`,
+        `Added ${newLines.length} stock line${newLines.length === 1 ? '' : 's'} (${units} units) to the supplier invoice.`,
       );
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Unable to add invoice line');
@@ -17139,8 +17077,12 @@ function AddStockPage({
     setError('');
     setMessage('');
 
-    if (form.quantity.trim() || form.notes.trim()) {
-      setError('Add the current stock line to the invoice, or clear it, before posting.');
+    if (
+      selectedReceiptProducts.some((line) => line.quantity.trim()) ||
+      (form.selectedProducts?.length ?? 0) > 0 ||
+      form.notes.trim()
+    ) {
+      setError('Add the selected stock lines to the invoice, or clear them, before posting.');
       setIsReceiptDialogOpen(true);
       return;
     }
@@ -17266,15 +17208,7 @@ function AddStockPage({
 
       <div className="management-grid add-stock-grid">
         {isReceiptDialogOpen ? (
-          <div
-            className="dialog-backdrop stock-receipt-dialog-backdrop"
-            role="presentation"
-            onClick={(event) => {
-              if (event.target === event.currentTarget) {
-                setIsReceiptDialogOpen(false);
-              }
-            }}
-          >
+          <DialogBackdrop className="dialog-backdrop stock-receipt-dialog-backdrop">
             <section
               className="panel-card branch-form-panel stock-receipt-dialog"
               role="dialog"
@@ -17297,25 +17231,6 @@ function AddStockPage({
               />
               <form className="record-form" onSubmit={handleAddReceiptLine}>
                 <div className="wide-field">{stockEntry.controls}</div>
-                <div className="field-stack">
-                  <span>Product</span>
-                  <ProductSearchSelect
-                    products={activeProducts}
-                    value={form.productId}
-                    onChange={(productId, selectedProduct) => {
-                      setForm((current) => ({
-                        ...current,
-                        productId,
-                        unitCost:
-                          selectedProduct == null
-                            ? current.unitCost
-                            : selectedProduct.costPrice == null
-                              ? current.unitCost
-                              : String(selectedProduct.costPrice),
-                      }));
-                    }}
-                  />
-                </div>
                 <label className="field-stack">
                   <span>Supplier</span>
                   <select
@@ -17350,32 +17265,16 @@ function AddStockPage({
                     }
                   />
                 </label>
-                <label className="field-stack">
-                  <span>Quantity</span>
-                  <input
-                    required
-                    min="1"
-                    step="1"
-                    type="number"
-                    value={form.quantity}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, quantity: event.target.value }))
-                    }
-                  />
-                </label>
-                <label className="field-stack">
-                  <span>Unit Cost</span>
-                  <input
-                    required
-                    min="0"
-                    step="0.01"
-                    type="number"
-                    value={form.unitCost}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, unitCost: event.target.value }))
-                    }
-                  />
-                </label>
+                <StockReceiptProducts
+                  products={activeProducts}
+                  value={selectedReceiptProducts}
+                  currencyCode={organization.currencyCode}
+                  disabled={isStockBusy}
+                  onChange={(selectedProducts) => {
+                    setForm((current) => ({ ...current, selectedProducts }));
+                    stockEntry.markChanged();
+                  }}
+                />
                 <label className="field-stack wide-field">
                   <span>Notes</span>
                   <input
@@ -17387,7 +17286,9 @@ function AddStockPage({
                   />
                 </label>
                 <div className="receipt-line-total">
-                  <span>Line Total</span>
+                  <span>
+                    {selectedReceiptProducts.length > 1 ? 'Selected Products Total' : 'Line Total'}
+                  </span>
                   <strong>{formatMoney(currentLineTotal, organization.currencyCode)}</strong>
                 </div>
 
@@ -17397,15 +17298,19 @@ function AddStockPage({
                   <button
                     className="primary-action compact-action"
                     type="submit"
-                    disabled={isStockBusy}
+                    disabled={isStockBusy || selectedReceiptProducts.length === 0}
                   >
                     <i className="bi bi-plus-lg" aria-hidden="true" />
-                    {isStockBusy ? 'Saving...' : 'Add Line'}
+                    {isStockBusy
+                      ? 'Saving...'
+                      : selectedReceiptProducts.length > 1
+                        ? `Add ${selectedReceiptProducts.length} Lines`
+                        : 'Add Line'}
                   </button>
                 </div>
               </form>
             </section>
-          </div>
+          </DialogBackdrop>
         ) : null}
 
         <div className="stock-receipt-stack">
@@ -18113,12 +18018,16 @@ function ReportsHub({
   const [selectedBranchId, setSelectedBranchId] = useState(platformBranchId);
   useEffect(() => setSelectedBranchId(platformBranchId), [platformBranchId]);
   const [selectedPeriod, setSelectedPeriod] = useState<ReportPeriod>('month');
+  const [selectedQuarters, setSelectedQuarters] = useState<ReportQuarter[]>([]);
+  const [selectedReportYear, setSelectedReportYear] = useState(() => new Date().getFullYear());
   const [activeDetailTab, setActiveDetailTab] = useState<ReportDetailTab>('sales');
   const [areReportFiltersOpen, setAreReportFiltersOpen] = useState(false);
   const [draftDateRange, setDraftDateRange] = useState<ReportDateRange>(() =>
     reportPeriodRange('month'),
   );
-  const [dateRange, setDateRange] = useState<ReportDateRange>(() => reportPeriodRange('month'));
+  const [dateRanges, setDateRanges] = useState<ReportDateRange[]>(() => [
+    reportPeriodRange('month'),
+  ]);
   const salesQuery = useQuery({ queryKey: ['sales'], queryFn: () => getSales() });
   const expensesQuery = useQuery({ queryKey: ['expenses'], queryFn: getExpenses });
   const inventoryQuery = useQuery({ queryKey: ['inventory'], queryFn: getInventory });
@@ -18132,24 +18041,39 @@ function ReportsHub({
   const inventory = inBranch(inventoryQuery.data ?? [], platformBranchId);
   const stockIntakes = inBranch(stockIntakesQuery.data ?? [], platformBranchId);
   const stockAdjustments = inBranch(stockAdjustmentsQuery.data ?? [], platformBranchId);
+  const isCalendarPeriod = ['q1', 'q2', 'q3', 'q4', 'year'].includes(selectedPeriod);
+  const reportYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const recordYears = [
+      ...sales.map((sale) => sale.soldAt),
+      ...expenses.map((expense) => expense.incurredAt),
+      ...stockIntakes.map((intake) => intake.receivedAt),
+      ...stockAdjustments.map((adjustment) => adjustment.adjustedAt),
+    ]
+      .map((value) => new Date(value).getFullYear())
+      .filter(Number.isFinite);
+    const firstYear = Math.min(currentYear - 5, selectedReportYear, ...recordYears);
+    const lastYear = Math.max(currentYear, selectedReportYear, ...recordYears);
+    return Array.from({ length: lastYear - firstYear + 1 }, (_, index) => lastYear - index);
+  }, [expenses, sales, selectedReportYear, stockAdjustments, stockIntakes]);
   const reportBranches = activeBranches;
   const filteredSales = useMemo(
     () =>
       sales.filter(
         (sale) =>
           matchesReportBranch(sale.branchId, selectedBranchId) &&
-          isWithinReportRange(sale.soldAt, dateRange),
+          dateRanges.some((range) => isWithinReportRange(sale.soldAt, range)),
       ),
-    [dateRange, sales, selectedBranchId],
+    [dateRanges, sales, selectedBranchId],
   );
   const filteredExpenses = useMemo(
     () =>
       expenses.filter(
         (expense) =>
           matchesReportBranch(expense.branchId, selectedBranchId) &&
-          isWithinReportRange(expense.incurredAt, dateRange),
+          dateRanges.some((range) => isWithinReportRange(expense.incurredAt, range)),
       ),
-    [dateRange, expenses, selectedBranchId],
+    [dateRanges, expenses, selectedBranchId],
   );
   const filteredInventory = useMemo(
     () => inventory.filter((item) => matchesReportBranch(item.branchId, selectedBranchId)),
@@ -18160,18 +18084,18 @@ function ReportsHub({
       stockIntakes.filter(
         (intake) =>
           matchesReportBranch(intake.branchId, selectedBranchId) &&
-          isWithinReportRange(intake.receivedAt, dateRange),
+          dateRanges.some((range) => isWithinReportRange(intake.receivedAt, range)),
       ),
-    [dateRange, selectedBranchId, stockIntakes],
+    [dateRanges, selectedBranchId, stockIntakes],
   );
   const filteredStockAdjustments = useMemo(
     () =>
       stockAdjustments.filter(
         (adjustment) =>
           matchesReportBranch(adjustment.branchId, selectedBranchId) &&
-          isWithinReportRange(adjustment.adjustedAt, dateRange),
+          dateRanges.some((range) => isWithinReportRange(adjustment.adjustedAt, range)),
       ),
-    [dateRange, selectedBranchId, stockAdjustments],
+    [dateRanges, selectedBranchId, stockAdjustments],
   );
   const summary = useMemo(
     () =>
@@ -18214,12 +18138,12 @@ function ReportsHub({
   const canExport = !isLoading && !loadError;
   const overviewCards = reportOverviewCards(summary, organization);
   const reportSalesTrendRows = useMemo(
-    () => reportSalesTrendRowsFromSales(filteredSales, dateRange),
-    [dateRange, filteredSales],
+    () => reportSalesTrendRowsFromSales(filteredSales, dateRanges),
+    [dateRanges, filteredSales],
   );
-  const reportRangeLabel = `${formatReportDateInput(dateRange.from)} to ${formatReportDateInput(
-    dateRange.to,
-  )}`;
+  const reportRangeLabel = dateRanges
+    .map((range) => `${formatReportDateInput(range.from)} to ${formatReportDateInput(range.to)}`)
+    .join(' + ');
   const reportDetailTabs: {
     count: number;
     icon: string;
@@ -18255,29 +18179,56 @@ function ReportsHub({
   }, [activeBranches, selectedBranchId]);
 
   function applyPreset(period: ReportPeriod) {
-    setSelectedPeriod(period);
-    if (period === 'custom') {
-      const nextRange = normalizeReportDateRange(draftDateRange);
-      setDraftDateRange(nextRange);
-      setDateRange(nextRange);
+    if (isReportQuarter(period)) {
+      const nextQuarters = selectedQuarters.includes(period)
+        ? selectedQuarters.length > 1
+          ? selectedQuarters.filter((quarter) => quarter !== period)
+          : selectedQuarters
+        : [...selectedQuarters, period].sort();
+      setSelectedQuarters(nextQuarters);
+      setSelectedPeriod(nextQuarters[0]);
+      applyReportRanges(
+        nextQuarters.map((quarter) => reportPeriodRange(quarter, selectedReportYear)),
+      );
       return;
     }
 
-    const nextRange = reportPeriodRange(period);
-    setDraftDateRange(nextRange);
-    setDateRange(nextRange);
+    setSelectedPeriod(period);
+    setSelectedQuarters([]);
+    if (period === 'custom') {
+      const nextRange = normalizeReportDateRange(draftDateRange);
+      applyReportRanges([nextRange]);
+      return;
+    }
+
+    applyReportRanges([reportPeriodRange(period, selectedReportYear)]);
+  }
+
+  function applyReportRanges(ranges: ReportDateRange[]) {
+    setDateRanges(ranges);
+    setDraftDateRange({ from: ranges[0].from, to: ranges[ranges.length - 1].to });
+  }
+
+  function updateReportYear(year: number) {
+    setSelectedReportYear(year);
+    applyReportRanges(
+      selectedQuarters.length > 0
+        ? selectedQuarters.map((quarter) => reportPeriodRange(quarter, year))
+        : [reportPeriodRange(selectedPeriod, year)],
+    );
   }
 
   function updateDraftDateRange(field: keyof ReportDateRange, value: string) {
     setSelectedPeriod('custom');
+    setSelectedQuarters([]);
     setDraftDateRange((current) => ({ ...current, [field]: value }));
   }
 
   function applyDraftDateRange() {
     const nextRange = normalizeReportDateRange(draftDateRange);
     setSelectedPeriod('custom');
-    setDraftDateRange(nextRange);
-    setDateRange(nextRange);
+    setSelectedQuarters([]);
+    applyReportRanges([nextRange]);
   }
 
   return (
@@ -18292,7 +18243,7 @@ function ReportsHub({
               className="primary-action compact-action report-excel-action"
               type="button"
               disabled={!canExport}
-              onClick={() => exportReportsWorkbook(summary, organization, scopeLabel, dateRange)}
+              onClick={() => exportReportsWorkbook(summary, organization, scopeLabel, dateRanges)}
             >
               <i className="bi bi-file-earmark-spreadsheet" aria-hidden="true" />
               Excel
@@ -18322,26 +18273,75 @@ function ReportsHub({
             type="button"
             aria-label="Toggle report date filters"
             aria-expanded={areReportFiltersOpen}
+            aria-controls="report-date-filters"
             onClick={() => setAreReportFiltersOpen((isOpen) => !isOpen)}
           >
-            <i className="bi bi-three-dots-vertical" aria-hidden="true" />
+            <i className="bi bi-funnel" aria-hidden="true" />
+            Filters
           </button>
         </div>
-        <div className={`report-filter-controls ${areReportFiltersOpen ? 'open' : ''}`}>
-          <div className="report-period-row" aria-label="Report period presets">
-            {reportPeriodOptions.map((option) => (
-              <button
-                className={`report-period-button ${selectedPeriod === option.period ? 'active' : ''}`}
-                key={option.period}
-                type="button"
-                onClick={() => applyPreset(option.period)}
-              >
-                <i className={`bi ${option.icon}`} aria-hidden="true" />
-                {option.label}
-              </button>
-            ))}
+        <div
+          className={`report-filter-controls ${areReportFiltersOpen ? 'open' : ''}`}
+          id="report-date-filters"
+        >
+          <div className="report-period-row" role="group" aria-label="Report period presets">
+            {reportPeriodOptions.map((option) => {
+              const isActive = isReportQuarter(option.period)
+                ? selectedQuarters.includes(option.period)
+                : selectedPeriod === option.period;
+              return (
+                <button
+                  className={`report-period-button ${isActive ? 'active' : ''}`}
+                  key={option.period}
+                  type="button"
+                  aria-pressed={isActive}
+                  aria-describedby={
+                    isReportQuarter(option.period) ? 'report-quarter-hint' : undefined
+                  }
+                  onClick={() => applyPreset(option.period)}
+                >
+                  <i
+                    className={`bi ${isReportQuarter(option.period) && isActive ? 'bi-check-square-fill' : option.icon}`}
+                    aria-hidden="true"
+                  />
+                  {option.label}
+                </button>
+              );
+            })}
           </div>
-          <div className="report-date-grid">
+          <p className="report-quarter-hint" id="report-quarter-hint">
+            Select one or more quarters to combine their reports. Keep at least one quarter
+            selected.
+          </p>
+          {isCalendarPeriod ? (
+            <label className="report-date-field report-year-field">
+              <span>Report year</span>
+              <select
+                aria-label="Report year"
+                value={selectedReportYear}
+                onChange={(event) => updateReportYear(Number(event.target.value))}
+              >
+                {reportYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {selectedQuarters.length > 1 ? (
+            <ul className="report-selected-ranges" aria-label="Selected quarter date ranges">
+              {dateRanges.map((range, index) => (
+                <li key={range.from}>
+                  <strong>{selectedQuarters[index].toUpperCase()}</strong>
+                  <span>
+                    {formatReportDateInput(range.from)} to {formatReportDateInput(range.to)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="report-date-grid" hidden={selectedQuarters.length > 1}>
             <label className="report-date-field">
               <span>From date</span>
               <input
@@ -21202,12 +21202,25 @@ function exportReportsWorkbook(
   summary: ReturnType<typeof buildReportSummary>,
   organization: Organization,
   scopeLabel: string,
-  dateRange: ReportDateRange,
+  dateRanges: ReportDateRange[],
 ) {
+  const periodRows: (string | number)[][] =
+    dateRanges.length === 1
+      ? [
+          ['From date', formatReportDateInput(dateRanges[0].from)],
+          ['Date to', formatReportDateInput(dateRanges[0].to)],
+        ]
+      : [
+          ['Selected quarters', 'From date', 'Date to'],
+          ...dateRanges.map((range) => [
+            `Q${Math.floor(dateInputToLocalDate(range.from).getMonth() / 3) + 1}`,
+            formatReportDateInput(range.from),
+            formatReportDateInput(range.to),
+          ]),
+        ];
   downloadWorkbookRows('keen-reports-center.xlsx', 'Reports', [
     ['Scope', scopeLabel],
-    ['From date', formatReportDateInput(dateRange.from)],
-    ['Date to', formatReportDateInput(dateRange.to)],
+    ...periodRows,
     ['Currency', organization.currencyCode],
     [],
     ['Metric', 'Value'],

@@ -15,7 +15,11 @@ import {
 
 export async function mockApi(
   page: Page,
-  options: { branches?: Branch[]; loseFirstOperationResponse?: boolean } = {},
+  options: {
+    branches?: Branch[];
+    inventory?: InventoryItem[];
+    loseFirstOperationResponse?: boolean;
+  } = {},
 ) {
   const operations = new Map<string, { result: unknown; appliedAt: string }>();
   let operationCalls = 0;
@@ -32,8 +36,9 @@ export async function mockApi(
       updatedAt: string;
     }
   >();
-  const inventory: InventoryItem[] =
-    testInventory.length > 0
+  const inventory: InventoryItem[] = options.inventory
+    ? structuredClone(options.inventory)
+    : testInventory.length > 0
       ? structuredClone(testInventory)
       : [
           {
@@ -197,6 +202,18 @@ export async function mockApi(
           inactivityMinutes: 2880,
           longEntryMinutes: 10,
           timeZone: 'Africa/Nairobi',
+        },
+      });
+      return;
+    }
+
+    if (path === '/api/v1/document-delivery/email/status') {
+      await route.fulfill({
+        json: {
+          provider: 'Resend',
+          configured: false,
+          fromEmail: '',
+          missingSettings: ['RESEND_API_KEY', 'RESEND_FROM_EMAIL'],
         },
       });
       return;

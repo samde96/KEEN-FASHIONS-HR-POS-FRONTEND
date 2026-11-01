@@ -224,7 +224,7 @@ for (const width of [1536, 1024, 390]) {
     await expect(page.getByLabel('Category Name', { exact: true })).toBeFocused();
     const dialogContrast = await auditTextContrast(page, '[role="dialog"]');
     expect(dialogContrast.filter((item) => item.ratio < 7 || item.opacity < 0.99)).toEqual([]);
-    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Close category dialog', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await page.reload();
     await expect(
@@ -256,7 +256,7 @@ test('inventory insight panels open from top buttons', async ({ page }) => {
   const branchDialog = page.getByRole('dialog', { name: 'Branch Stock' });
   await expect(branchDialog).toBeVisible();
   await expect(branchDialog.getByText('Flagship Branch')).toBeVisible();
-  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Close branch stock', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Branch Stock' })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Stock Alerts' }).click();
@@ -476,7 +476,7 @@ test('apps platform mobile layout and accessible launcher', async ({ page }, tes
   await page.getByRole('button', { name: 'Open app launcher' }).click();
   await expect(page.getByRole('dialog', { name: 'Switch application' })).toBeVisible();
   await expect(page.getByLabel('Find an application')).toBeFocused();
-  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Close app launcher', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Open app launcher' })).toBeFocused();
   await page.getByRole('button', { name: 'Open menu', exact: true }).click();
   await expect(page.getByRole('navigation', { name: 'Platform navigation' })).toBeVisible();

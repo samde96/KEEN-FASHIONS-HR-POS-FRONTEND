@@ -7,6 +7,7 @@ import { appName } from '../appBrand';
 import { appForPath, appModules, appPath, canAccessPath, visibleApps } from './appRegistry';
 import { usePlatform } from './PlatformContext';
 import OfflineStatus, { ConnectionBadge } from '../components/OfflineStatus';
+import DialogBackdrop from '../components/DialogBackdrop';
 
 function WorkspaceBackLink() {
   const { pathname } = useLocation();
@@ -73,10 +74,6 @@ export function AppLauncher({ user, onClose }: { user: CurrentUser; onClose: () 
   useEffect(() => {
     root.current?.querySelector<HTMLInputElement>('input')?.focus();
     const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-      }
       if (event.key !== 'Tab') return;
       const targets = root.current?.querySelectorAll<HTMLElement>('input,button,a[href]');
       if (!targets?.length) return;
@@ -90,17 +87,12 @@ export function AppLauncher({ user, onClose }: { user: CurrentUser; onClose: () 
     };
     document.addEventListener('keydown', keydown);
     return () => document.removeEventListener('keydown', keydown);
-  }, [onClose]);
+  }, []);
   const apps = visibleApps(user).filter((app) =>
     `${app.title} ${app.description}`.toLowerCase().includes(query.toLowerCase()),
   );
   return (
-    <div
-      className="platform-launcher-backdrop"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
+    <DialogBackdrop className="platform-launcher-backdrop">
       <section
         className="platform-launcher"
         ref={root}
@@ -143,7 +135,7 @@ export function AppLauncher({ user, onClose }: { user: CurrentUser; onClose: () 
           View all applications <i className="bi bi-arrow-right" aria-hidden="true" />
         </Link>
       </section>
-    </div>
+    </DialogBackdrop>
   );
 }
 

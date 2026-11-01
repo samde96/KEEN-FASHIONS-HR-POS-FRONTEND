@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getUsers } from '../services/api';
-import { getPosPreferences, savePosPreferences } from '../services/posOperations';
+import {
+  getNotificationEmailStatus,
+  getPosPreferences,
+  savePosPreferences,
+} from '../services/posOperations';
 import type { PosPreferences } from '../services/posOperations';
 import {
   maxStockInactivityMinutes,
@@ -14,11 +18,15 @@ export default function PosPreferencesPanel() {
   const client = useQueryClient();
   const query = useQuery({ queryKey: ['pos-preferences'], queryFn: getPosPreferences });
   const users = useQuery({ queryKey: ['users'], queryFn: getUsers });
+  const emailStatus = useQuery({
+    queryKey: ['notification-email-status'],
+    queryFn: getNotificationEmailStatus,
+  });
   const [form, setForm] = useState<PosPreferences>();
   const [inactivityUnit, setInactivityUnit] = useState<StockInactivityUnit>('days');
   useEffect(() => {
     if (query.data) {
-      setForm(query.data);
+      setForm({ ...query.data, notificationEmail: query.data.notificationEmail ?? '' });
       setInactivityUnit(stockInactivityUnit(query.data.inactivityMinutes));
     }
   }, [query.data]);
@@ -33,7 +41,7 @@ export default function PosPreferencesPanel() {
   if (!form) return <p role="alert">Reminder settings could not be loaded.</p>;
   return (
     <section className="panel-card operations-panel">
-      <h2>Sales summaries & stock reminders</h2>
+      <h2>Notifications, sales summaries & stock reminders</h2>
       <form
         className="record-form"
         onSubmit={(e) => {
@@ -60,24 +68,73 @@ export default function PosPreferencesPanel() {
         <label>
           <input
             type="checkbox"
-            checked={form.inAppEnabled}
+            checked={form.inAppEnabled || form.emailEnabled}
+            disabled={form.emailEnabled}
             onChange={(e) => setForm({ ...form, inAppEnabled: e.target.checked })}
           />{' '}
-          In-app notification
+          In-system daily summary
         </label>
         <label>
           <input
             type="checkbox"
             checked={form.emailEnabled}
-            onChange={(e) => setForm({ ...form, emailEnabled: e.target.checked })}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                emailEnabled: e.target.checked,
+                inAppEnabled: e.target.checked || form.inAppEnabled,
+              })
+            }
           />{' '}
-          Email summary
+          Email a copy of system notifications
         </label>
+        <label className="field-stack wide-field">
+          <span>Notification recipient email</span>
+          <input
+            type="email"
+            name="notificationEmail"
+            autoComplete="email"
+            maxLength={254}
+            placeholder="notifications@yourcompany.com"
+            aria-describedby="notification-recipient-guidance"
+            value={form.notificationEmail ?? ''}
+            onChange={(event) => setForm({ ...form, notificationEmail: event.target.value })}
+          />
+        </label>
+        <p className="wide-field" id="notification-recipient-guidance">
+          Send notification emails and daily summaries to this inbox. Leave blank to use each
+          recipient’s account email. A shared inbox receives one copy of each alert or daily
+          summary.
+        </p>
+        <div className="wide-field notification-delivery-status" role="status">
+          <p>
+            Email copies contain the same title and message as the system inbox. Enabling email also
+            keeps daily summaries in the inbox. Alerts follow the recipients’ shop access. Existing
+            alerts are not emailed when you enable email or change the recipient address.
+          </p>
+          {emailStatus.isPending ? (
+            <p>Checking email configuration…</p>
+          ) : emailStatus.isError ? (
+            <p>Email configuration could not be checked. Refresh Settings to try again.</p>
+          ) : emailStatus.data?.configured ? (
+            <p>
+              Resend is configured. Sender: <strong>{emailStatus.data.fromEmail}</strong>.
+            </p>
+          ) : (
+            <p>
+              Email is awaiting server configuration. Add the Resend API key and verified sender
+              address to the backend environment, then restart the backend. System notifications
+              remain available.
+            </p>
+          )}
+        </div>
         <fieldset className="wide-field">
           <legend>Summary recipients</legend>
           <p>
-            Leave all unchecked to send to administrators. Each recipient receives reports only for
-            their authorized shops.
+            Leave all unchecked to send to administrators. Selected users receive daily summaries
+            for their authorized shops in the system inbox. Email copies go to the notification
+            recipient email above, or to each selected user’s account email when that field is
+            blank.
           </p>
           {users.isError && (
             <p role="alert">Recipients could not be loaded. Existing selections are preserved.</p>

@@ -114,21 +114,21 @@ for (const width of [1536, 390]) {
     await page.locator('.platform-launcher-trigger').click();
     await expect(page.getByRole('dialog', { name: 'Switch application' })).toBeVisible();
     await expectReadable(page, '[role="dialog"]');
-    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Close app launcher', exact: true }).click();
 
     await page.goto('/inventory');
     for (const name of ['Category Mix', 'Branch Stock', 'Stock Alerts']) {
       await page.getByRole('button', { name, exact: true }).click();
       await expect(page.getByRole('dialog', { name, exact: true })).toBeVisible();
       await expectReadable(page, '[role="dialog"]');
-      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: new RegExp(`^Close ${name}$`, 'i') }).click();
     }
 
     await page.goto('/roles');
     await page.getByRole('button', { name: 'Permissions', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Permissions', exact: true })).toBeVisible();
     await expectReadable(page, '[role="dialog"]');
-    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Close permissions dialog', exact: true }).click();
 
     await page.goto('/add-stock');
     await expect(page.getByRole('dialog', { name: 'Supplier Receipt' })).toBeVisible();

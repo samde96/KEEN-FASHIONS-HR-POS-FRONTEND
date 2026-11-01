@@ -9,6 +9,7 @@ export type PosPreferences = {
   inactivityMinutes: number;
   longEntryMinutes: number;
   timeZone: string;
+  notificationEmail?: string;
 };
 export type DailyReportRow = {
   id: string | null;
@@ -59,6 +60,14 @@ const body = (value: unknown, method = 'POST'): RequestInit => ({
   body: JSON.stringify(value),
 });
 export const getPosPreferences = () => requestJson<PosPreferences>('/api/v1/pos-preferences');
+export type NotificationEmailStatus = {
+  provider: 'Resend';
+  configured: boolean;
+  fromEmail: string;
+  missingSettings: string[];
+};
+export const getNotificationEmailStatus = () =>
+  requestJson<NotificationEmailStatus>('/api/v1/document-delivery/email/status');
 export const savePosPreferences = (value: PosPreferences) =>
   requestJson<PosPreferences>('/api/v1/pos-preferences', body(value, 'PUT'));
 export const getDailyReports = (branchId: string) =>

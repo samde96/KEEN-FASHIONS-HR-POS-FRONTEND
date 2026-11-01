@@ -67,12 +67,13 @@ for (const width of [320, 390, 768, 812]) {
     expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden');
     await previewButton.click();
     await page.keyboard.press('Escape');
-    await expect(dialog).toHaveCount(0);
-    await expect(previewButton).toBeFocused();
-    await builder.getByRole('button', { name: 'Preview', exact: true }).click();
+    await expect(dialog).toBeVisible();
     await expectTappable(close);
     await page.mouse.click(2, 2);
+    await expect(dialog).toBeVisible();
+    await close.click();
     await expect(dialog).toHaveCount(0);
+    await expect(previewButton).toBeFocused();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
     ).toBeLessThanOrEqual(1);
