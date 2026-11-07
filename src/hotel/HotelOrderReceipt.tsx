@@ -27,8 +27,9 @@ export default function HotelOrderReceipt({
     return () => window.clearTimeout(timer);
   }, [autoPrint, order.id]);
   const hasFood = order.lines.some((line) => line.itemType === 'FOOD');
-  const receiptTitle = branchName.trim() || order.hotelName.trim() || organization.name;
+  const receiptTitle = order.hotelName.trim() || branchName.trim() || organization.name;
   const customerName = order.customerName.trim();
+  const waiterFirstName = order.servedByName.trim().split(/\s+/)[0] ?? '';
   const showCustomerName = customerName !== '' && !/^walk[- ]in customer$/i.test(customerName);
   const copies = hasFood
     ? [
@@ -72,7 +73,10 @@ export default function HotelOrderReceipt({
                     <p>KITCHEN ORDER</p>
                   </header>
                   <div className="hotel-ticket-meta">
-                    <strong>ORDER #: {order.reference}</strong>
+                    <div className="hotel-ticket-order-number">
+                      <span>ORDER #:</span>
+                      <strong>{order.receiptNumber}</strong>
+                    </div>
                     <div>
                       <strong>
                         {order.serviceType === 'DINE_IN' && order.tableNumber
@@ -95,17 +99,16 @@ export default function HotelOrderReceipt({
                 <>
                   <header className="hotel-receipt-brand">
                     <h2>{receiptTitle}</h2>
-                    <p>{branchName}</p>
                     {order.contactPhone && <p>Tel: {order.contactPhone}</p>}
                     <h3>FOOD SALE RECEIPT</h3>
                   </header>
                   <div className="hotel-sale-meta">
                     <span>
-                      Receipt No: <strong>{order.reference}</strong>
+                      Receipt No: <strong>{order.receiptNumber}</strong>
                     </span>
                     <span>Date: {dateLabel}</span>
                     {showCustomerName && <span>Customer: {customerName}</span>}
-                    <span>Cashier: {order.servedByName}</span>
+                    <span>Served by: {waiterFirstName}</span>
                     {order.roomNumber && <span>Room: {order.roomNumber}</span>}
                     <span>Time: {timeLabel}</span>
                   </div>
@@ -116,52 +119,66 @@ export default function HotelOrderReceipt({
                         <th>Item</th>
                         <th className="hotel-numeric">Qty</th>
                         <th className="hotel-numeric">Unit Price</th>
-                        <th className="hotel-numeric">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {lines.map((line, index) => (
                         <tr key={`${line.itemType}-${line.itemId}`}>
                           <td>{index + 1}</td>
-                          <td>{line.itemName}</td>
+                          <td className="hotel-receipt-item-name">{line.itemName}</td>
                           <td className="hotel-numeric">{line.quantity}</td>
                           <td className="hotel-numeric">
-                            {money(line.unitPrice, organization.currencyCode)}
-                          </td>
-                          <td className="hotel-numeric">
-                            {money(line.total, organization.currencyCode)}
+                            {line.unitPrice.toLocaleString('en-KE', {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                   <dl className="hotel-totals hotel-receipt-totals">
-                    <div>
-                      <dt>Subtotal</dt>
-                      <dd>{money(order.total, organization.currencyCode)}</dd>
-                    </div>
                     <div className="hotel-total">
                       <dt>TOTAL</dt>
                       <dd>{money(order.total, organization.currencyCode)}</dd>
                     </div>
                   </dl>
+                  {order.paymentNumber && (
+                    <div className="hotel-receipt-payment-details">
+                      <strong>
+                        {order.paymentType === 'PAYBILL'
+                          ? `PAYBILL: ${order.paymentNumber}`
+                          : `TILL NUMBER: ${order.paymentNumber}`}
+                      </strong>
+                      {order.paymentType === 'PAYBILL' && order.accountNumber && (
+                        <strong>ACC: {order.accountNumber}</strong>
+                      )}
+                    </div>
+                  )}
                   <div className="hotel-sale-payment">
-                    <span>
-                      Payment Method:{' '}
-                      {order.method === 'ROOM'
-                        ? 'Room charge'
-                        : order.method === 'UNPAID'
-                          ? 'Unpaid'
-                          : statusLabel(order.method)}
-                    </span>
-                    {order.tillNumber && <span>M-Pesa Till: {order.tillNumber}</span>}
+                    {order.method !== 'UNPAID' && (
+                      <span>
+                        Payment Method:{' '}
+                        {order.method === 'ROOM' ? 'Room charge' : statusLabel(order.method)}
+                      </span>
+                    )}
                     {order.paymentReference && <span>Reference: {order.paymentReference}</span>}
                   </div>
                   {order.notes && <p className="hotel-sale-notes">Notes: {order.notes}</p>}
                   <footer className="hotel-sale-thanks">
                     <strong>Thank you for dining with us!</strong>
-                    <span>We look forward to serving you again.</span>
                   </footer>
+                  {(order.paymentNumber || order.complaintsPhone) && (
+                    <footer className="hotel-receipt-details-footer">
+                      <span>THIS IS NOT A FISCAL RECEIPT</span>
+                      {order.complaintsPhone && (
+                        <>
+                          <span>FOR COMPLAINTS AND FEEDBACK CALL:</span>
+                          <span>{order.complaintsPhone}</span>
+                        </>
+                      )}
+                    </footer>
+                  )}
                 </>
               )}
             </article>

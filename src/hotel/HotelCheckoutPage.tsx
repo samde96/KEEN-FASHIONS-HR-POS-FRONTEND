@@ -191,12 +191,12 @@ export default function HotelCheckoutPage({
       {launcher && <AppLauncher user={user} onClose={() => setLauncher(false)} />}
       {query.data &&
         (!query.data.waiters.some((w) => w.active) ||
-          !query.data.receiptSettings.tillNumber ||
+          !query.data.receiptSettings.paymentNumber ||
           !query.data.receiptSettings.contactPhone) && (
           <p role="status" className="hotel-note hotel-checkout-setup">
             {!query.data.waiters.some((w) => w.active)
               ? 'Ask the admin to assign waiter accounts or add waiter names before making orders. '
-              : 'Orders can be created now. Ask the admin to add the hotel Till number and contact phone for receipts. '}
+              : 'Orders can be created now. Ask the admin to add hotel payment details and a contact phone for receipts. '}
             {user.permissionCodes.includes('admin:manage') && (
               <Link to="/hotel/service-settings">Set up waiters & receipts</Link>
             )}

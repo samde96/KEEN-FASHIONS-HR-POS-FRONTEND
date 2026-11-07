@@ -186,9 +186,9 @@ export default function HotelServiceSettings({ branchId }: { branchId: string })
       <section className="hotel-panel">
         <h2>Receipt details</h2>
         <p className="hotel-hint">
-          The customer receipt shows the Till number and contact phone. Kitchen tickets show order
-          preparation details only. Changes apply to new orders; saved receipts keep their original
-          details.
+          The customer receipt shows the payment details and contact phone. Kitchen tickets show
+          order preparation details only. Changes apply to new orders; saved receipts keep their
+          original details.
         </p>
         {settings.isPending ? (
           <p role="status">Loading receipt details…</p>
@@ -215,7 +215,7 @@ function ReceiptSettingsForm({
   initial: HotelReceiptSettings;
   saved: () => Promise<void>;
 }) {
-  const [form, setForm] = useState(initial),
+  const [form, setForm] = useState(() => normalizeReceiptSettings(initial)),
     [message, setMessage] = useState('');
   return (
     <>
@@ -236,17 +236,32 @@ function ReceiptSettingsForm({
               onChange={(e) => setForm({ ...form, hotelName: e.target.value })}
             />
           </Field>
-          <Field label="Till number">
+          <Field label="Payment method">
+            <select
+              value={form.paymentType}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  paymentType: e.target.value as HotelReceiptSettings['paymentType'],
+                  accountNumber: e.target.value === 'TILL' ? '' : form.accountNumber,
+                })
+              }
+            >
+              <option value="PAYBILL">Paybill</option>
+              <option value="TILL">Till Number</option>
+            </select>
+          </Field>
+          <Field label={form.paymentType === 'PAYBILL' ? 'Paybill number' : 'Till number'}>
             <input
               required
               inputMode="numeric"
               pattern="[0-9 ]+"
               maxLength={30}
-              value={form.tillNumber}
-              onChange={(e) => setForm({ ...form, tillNumber: e.target.value })}
+              value={form.paymentNumber}
+              onChange={(e) => setForm({ ...form, paymentNumber: e.target.value })}
             />
           </Field>
-          <Field label="Phone for complaints and orders">
+          <Field label="Telephone number shown under the hotel name">
             <input
               required
               type="tel"
@@ -255,8 +270,91 @@ function ReceiptSettingsForm({
               onChange={(e) => setForm({ ...form, contactPhone: e.target.value })}
             />
           </Field>
+          <Field label="Complaints and feedback telephone number">
+            <input
+              required
+              type="tel"
+              maxLength={40}
+              value={form.complaintsPhone}
+              onChange={(e) => setForm({ ...form, complaintsPhone: e.target.value })}
+            />
+          </Field>
+          {form.paymentType === 'PAYBILL' && (
+            <Field label="Account number">
+              <input
+                required
+                maxLength={80}
+                value={form.accountNumber}
+                onChange={(e) => setForm({ ...form, accountNumber: e.target.value })}
+              />
+            </Field>
+          )}
         </div>
       </HotelForm>
+      <section className="hotel-receipt-preview-section" aria-label="Receipt preview">
+        <h3>Receipt preview</h3>
+        <article className="hotel-receipt-copy hotel-customer-receipt hotel-settings-receipt-preview">
+          <header className="hotel-receipt-brand">
+            <h2>{form.hotelName.trim() || 'Hotel name'}</h2>
+            {form.contactPhone.trim() && <p>Tel: {form.contactPhone}</p>}
+            <h3>FOOD SALE RECEIPT</h3>
+          </header>
+          <div className="hotel-sale-meta">
+            <span>
+              Receipt No: <strong>000001</strong>
+            </span>
+            <span>Date: DD/MM/YYYY</span>
+            <span>Cashier: Staff name</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Item</th>
+                <th className="hotel-numeric">Qty</th>
+                <th className="hotel-numeric">Unit Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td className="hotel-receipt-item-name">Sample item</td>
+                <td className="hotel-numeric">1</td>
+                <td className="hotel-numeric">0.00</td>
+              </tr>
+            </tbody>
+          </table>
+          <dl className="hotel-totals hotel-receipt-totals">
+            <div className="hotel-total">
+              <dt>TOTAL</dt>
+              <dd>KES 0.00</dd>
+            </div>
+          </dl>
+          {form.paymentNumber.trim() && (
+            <div className="hotel-receipt-payment-details">
+              <strong>
+                {form.paymentType === 'PAYBILL'
+                  ? `PAYBILL: ${form.paymentNumber}`
+                  : `TILL NUMBER: ${form.paymentNumber}`}
+              </strong>
+              {form.paymentType === 'PAYBILL' && form.accountNumber.trim() && (
+                <strong>ACC: {form.accountNumber}</strong>
+              )}
+            </div>
+          )}
+          {(form.paymentNumber.trim() || form.complaintsPhone.trim()) && (
+            <footer className="hotel-receipt-details-footer">
+              <span>THIS IS NOT A FISCAL RECEIPT</span>
+              {form.complaintsPhone.trim() && (
+                <>
+                  <span>FOR COMPLAINTS AND FEEDBACK CALL:</span>
+                  <span>{form.complaintsPhone}</span>
+                </>
+              )}
+            </footer>
+          )}
+        </article>
+      </section>
       {message && (
         <p role="status" className="hotel-note">
           {message}
@@ -264,4 +362,22 @@ function ReceiptSettingsForm({
       )}
     </>
   );
+}
+
+export function normalizeReceiptSettings(
+  value: Partial<HotelReceiptSettings> & {
+    tillNumber?: string;
+    paybillNumber?: string;
+  },
+): HotelReceiptSettings {
+  const paymentType = value.paymentType ?? (value.paybillNumber?.trim() ? 'PAYBILL' : 'TILL');
+  return {
+    hotelName: value.hotelName ?? '',
+    contactPhone: value.contactPhone ?? '',
+    complaintsPhone: value.complaintsPhone ?? value.contactPhone ?? '',
+    paymentType,
+    paymentNumber:
+      value.paymentNumber?.trim() || value.paybillNumber?.trim() || value.tillNumber?.trim() || '',
+    accountNumber: value.accountNumber ?? '',
+  };
 }

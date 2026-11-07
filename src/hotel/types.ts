@@ -110,7 +110,14 @@ export type HotelWaiterRequest = {
   userId?: string;
   name?: string;
 };
-export type HotelReceiptSettings = { hotelName: string; tillNumber: string; contactPhone: string };
+export type HotelReceiptSettings = {
+  hotelName: string;
+  contactPhone: string;
+  complaintsPhone: string;
+  paymentType: 'PAYBILL' | 'TILL';
+  paymentNumber: string;
+  accountNumber: string;
+};
 export type HotelServiceType = 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY';
 export type HotelOrderLine = {
   lineId: string;
@@ -129,6 +136,7 @@ export type HotelOrder = {
   bookingId?: string;
   roomNumber?: string;
   reference: string;
+  receiptNumber: string;
   customerName: string;
   total: number;
   method: HotelPaymentMethod | 'ROOM' | 'UNPAID';
@@ -142,8 +150,11 @@ export type HotelOrder = {
   status: HotelOrderStatus;
   kitchenStatus: 'PENDING' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
   hotelName: string;
-  tillNumber: string;
   contactPhone: string;
+  complaintsPhone: string;
+  paymentType: 'PAYBILL' | 'TILL';
+  paymentNumber: string;
+  accountNumber: string;
   paidAt?: string;
   createdAt: string;
   lines: HotelOrderLine[];

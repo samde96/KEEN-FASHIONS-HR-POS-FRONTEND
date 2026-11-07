@@ -9,6 +9,7 @@ import HotelPage from '../hotel/HotelPage';
 import HotelKitchenPage from '../hotel/HotelKitchenPage';
 import HotelRegister from '../hotel/HotelRegister';
 import HotelOrderReceipt from '../hotel/HotelOrderReceipt';
+import { normalizeReceiptSettings } from '../hotel/HotelServiceSettings';
 import * as api from '../hotel/api';
 import { appModules, appRegistry, canAccessPath } from '../platform/appRegistry';
 import { addDays, businessDate, nightsBetween, roomIsBookable } from '../hotel/utils';
@@ -114,6 +115,40 @@ afterEach(() => {
 });
 
 describe('Hotel Management', () => {
+  it('normalizes legacy receipt settings returned by the existing API', () => {
+    expect(
+      normalizeReceiptSettings({
+        hotelName: 'Legacy Hotel',
+        tillNumber: '1234567',
+        contactPhone: '0700000000',
+        complaintsPhone: '0700000000',
+        paybillNumber: '',
+        accountNumber: '',
+      }),
+    ).toEqual({
+      hotelName: 'Legacy Hotel',
+      contactPhone: '0700000000',
+      complaintsPhone: '0700000000',
+      paymentType: 'TILL',
+      paymentNumber: '1234567',
+      accountNumber: '',
+    });
+    expect(
+      normalizeReceiptSettings({
+        hotelName: 'Legacy Hotel',
+        tillNumber: '',
+        contactPhone: '0700000000',
+        paybillNumber: '542542',
+        accountNumber: '795987',
+      }),
+    ).toMatchObject({
+      paymentType: 'PAYBILL',
+      paymentNumber: '542542',
+      accountNumber: '795987',
+      complaintsPhone: '0700000000',
+    });
+  });
+
   it('uses the KEEN ERP brand in the restaurant checkout bar', async () => {
     vi.mocked(api.getHotelCheckout).mockResolvedValue(structuredClone(hotelCheckout));
     const client = new QueryClient({
@@ -421,7 +456,7 @@ describe('Hotel Management', () => {
   });
   it('lets a waiter create orders before receipt details are configured', async () => {
     const checkout = structuredClone(hotelCheckout);
-    checkout.receiptSettings.tillNumber = '';
+    checkout.receiptSettings.paymentNumber = '';
     checkout.receiptSettings.contactPhone = '';
     const user = userEvent.setup();
     render(
@@ -572,6 +607,7 @@ describe('Hotel Management', () => {
       id: 'sale',
       branchId: hotelBranchId,
       reference: 'FOOD-001',
+      receiptNumber: '000123',
       operatorId: testUser.userId,
       waiterId: hotelWaiters[0].id,
       servedByName: hotelWaiters[0].name,
@@ -612,24 +648,48 @@ describe('Hotel Management', () => {
       />,
     );
     const kitchen = screen.getByRole('article', { name: 'Kitchen copy' });
-    expect(kitchen.querySelector('h2')).toHaveTextContent('Hotel');
+    expect(kitchen.querySelector('h2')).toHaveTextContent('Test Hotel');
     expect(kitchen).toHaveTextContent('KITCHEN ORDER');
-    expect(kitchen).toHaveTextContent('ORDER #: FOOD-001');
+    expect(kitchen.querySelector('.hotel-ticket-order-number')).toHaveTextContent('ORDER #:000123');
+    expect(kitchen.querySelector('.hotel-ticket-order-number strong')).toHaveTextContent('000123');
+    expect(kitchen).not.toHaveTextContent('FOOD-001');
     expect(kitchen).toHaveTextContent('TABLE: 2');
     expect(kitchen).toHaveTextContent('1 × Rice and stew');
     expect(kitchen).not.toHaveTextContent('250.00');
 
     const customer = screen.getByRole('article', { name: 'Customer copy' });
-    expect(customer.querySelector('h2')).toHaveTextContent('Hotel');
+    expect(customer.querySelector('h2')).toHaveTextContent('Test Hotel');
+    expect(customer.querySelectorAll('.hotel-receipt-brand > p')).toHaveLength(1);
     expect(customer.querySelector('h2')).not.toHaveTextContent(testOrganization.name);
     expect(customer).toHaveTextContent('FOOD SALE RECEIPT');
-    expect(customer).toHaveTextContent('Receipt No: FOOD-001');
+    expect(customer).toHaveTextContent('Receipt No: 000123');
+    expect(customer).not.toHaveTextContent(/unpaid/i);
     expect(customer).toHaveTextContent('Unit Price');
-    expect(customer).toHaveTextContent('Amount');
+    expect(customer).not.toHaveTextContent('Amount');
+    expect(customer).not.toHaveTextContent('Subtotal');
+    expect(customer.querySelectorAll('thead th')).toHaveLength(4);
+    expect(customer.querySelector('thead')).toHaveTextContent('#ItemQtyUnit Price');
+    expect(customer.querySelector('.hotel-receipt-item-name')).toHaveTextContent('Rice and stew');
+    expect(customer.querySelector('tbody tr td:nth-child(4)')).toHaveTextContent('250.00');
+    expect(customer.querySelector('tbody tr td:nth-child(4)')).not.toHaveTextContent(/Ksh|KES/i);
+    expect(customer).toHaveTextContent('TOTAL');
     expect(customer).toHaveTextContent('250.00');
-    expect(customer).toHaveTextContent('Alice Waiter');
-    expect(customer).toHaveTextContent('1234567');
-    expect(customer).toHaveTextContent('+254700000111');
+    expect(customer.querySelector('.hotel-total dd')).toHaveTextContent(/Ksh/i);
+    expect(customer).not.toHaveTextContent('M-Pesa Till');
+    const receiptPaymentDetails = customer.querySelector('.hotel-receipt-payment-details');
+    expect(receiptPaymentDetails).toHaveTextContent('PAYBILL: 542542');
+    expect(receiptPaymentDetails).toHaveTextContent('ACC: 795987');
+    expect(receiptPaymentDetails?.previousElementSibling).toHaveClass('hotel-receipt-totals');
+    expect(customer).toHaveTextContent('THIS IS NOT A FISCAL RECEIPT');
+    expect(customer).toHaveTextContent('FOR COMPLAINTS AND FEEDBACK CALL:');
+    expect(customer).toHaveTextContent('+254711111222');
+    expect(customer).toHaveTextContent('Tel: +254700000111');
+    expect(customer).not.toHaveTextContent('FOR COMPLAINTS AND FEEDBACK CALL: +254700000111');
+    expect(customer).toHaveTextContent('Served by: Alice');
+    expect(customer).not.toHaveTextContent('Alice Waiter');
+    expect(customer).toHaveTextContent('Thank you for dining with us!');
+    expect(customer).not.toHaveTextContent('We look forward to serving you again.');
+    expect(customer.querySelector('.hotel-sale-thanks')).toHaveClass('hotel-sale-thanks');
     expect(customer).not.toHaveTextContent('Table 2');
     expect(customer).not.toHaveTextContent(testUser.displayName);
     await act(async () => vi.advanceTimersByTime(300));
@@ -642,6 +702,7 @@ describe('Hotel Management', () => {
       id: 'sale',
       branchId: hotelBranchId,
       reference: 'PRODUCT-001',
+      receiptNumber: '000124',
       operatorId: testUser.userId,
       waiterId: hotelWaiters[0].id,
       servedByName: hotelWaiters[0].name,
@@ -722,6 +783,7 @@ describe('Hotel Management', () => {
       id: 'walk-in-sale',
       branchId: hotelBranchId,
       reference: 'FOOD-WALKIN-001',
+      receiptNumber: '000125',
       operatorId: testUser.userId,
       waiterId: hotelWaiters[0].id,
       servedByName: hotelWaiters[0].name,
@@ -788,18 +850,44 @@ describe('Hotel Management', () => {
       userId: 'existing-user-account',
       active: true,
     });
+    const preview = screen.getByRole('region', { name: 'Receipt preview' });
+    await user.selectOptions(screen.getByLabelText('Payment method'), 'TILL');
     const till = screen.getByLabelText('Till number');
     await user.clear(till);
     await user.type(till, '772211');
-    const phone = screen.getByLabelText('Phone for complaints and orders');
+    expect(screen.queryByLabelText('Account number')).not.toBeInTheDocument();
+    expect(preview).toHaveTextContent('TILL NUMBER: 772211');
+    expect(preview).not.toHaveTextContent('ACC:');
+    await user.selectOptions(screen.getByLabelText('Payment method'), 'PAYBILL');
+    const paybill = screen.getByLabelText('Paybill number');
+    await user.clear(paybill);
+    await user.type(paybill, '542542');
+    expect(preview).toHaveTextContent('Test Hotel');
+    const phone = screen.getByLabelText('Telephone number shown under the hotel name');
     await user.clear(phone);
     await user.type(phone, '+254700000222');
+    expect(preview).toHaveTextContent('Tel: +254700000222');
+    const complaintsPhone = screen.getByLabelText('Complaints and feedback telephone number');
+    await user.clear(complaintsPhone);
+    await user.type(complaintsPhone, '+254711111333');
+    expect(preview).toHaveTextContent('+254711111333');
+    const account = screen.getByLabelText('Account number');
+    await user.clear(account);
+    await user.type(account, '795987');
+    const previewPaymentDetails = preview.querySelector('.hotel-receipt-payment-details');
+    expect(previewPaymentDetails).toHaveTextContent('PAYBILL: 542542');
+    expect(previewPaymentDetails).toHaveTextContent('ACC: 795987');
+    expect(previewPaymentDetails?.previousElementSibling).toHaveClass('hotel-receipt-totals');
+    expect(screen.getByLabelText('Account number')).toBeRequired();
     await user.click(screen.getByRole('button', { name: 'Save receipt details' }));
     expect(api.saveHotelReceiptSettings).toHaveBeenCalledWith({
       ...hotelReceiptSettings,
       branchId: hotelBranchId,
-      tillNumber: '772211',
       contactPhone: '+254700000222',
+      complaintsPhone: '+254711111333',
+      paymentType: 'PAYBILL',
+      paymentNumber: '542542',
+      accountNumber: '795987',
     });
   });
   it('removes a waiter assignment without deleting the user account', async () => {
@@ -919,6 +1007,7 @@ describe('Hotel Management', () => {
         id: 'order',
         branchId: hotelBranchId,
         reference: 'FOOD-001',
+        receiptNumber: '000126',
         customerName: 'Jane Guest',
         total: 250,
         method: 'ROOM',

@@ -55,7 +55,7 @@ export default function HotelRegister({
     );
   const [waiterId, setWaiterId] = useState(signedInWaiter?.id ?? '');
   const receiptSettingsReady = !!(
-    data.receiptSettings.tillNumber && data.receiptSettings.contactPhone
+    data.receiptSettings.paymentNumber && data.receiptSettings.contactPhone
   );
   const [tableNumber, setTableNumber] = useState(''),
     [tablePicker, setTablePicker] = useState(false),
@@ -336,8 +336,8 @@ export default function HotelRegister({
                     <p>Select the waiter serving this order.</p>
                     {!receiptSettingsReady && (
                       <p className="hotel-checkout-receipt-warning" role="status">
-                        Ask an administrator to add the hotel's Till number and contact phone for
-                        receipts.
+                        Ask an administrator to add the hotel's payment details and contact phone
+                        for receipts.
                       </p>
                     )}
                   </div>

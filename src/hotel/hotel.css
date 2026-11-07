@@ -796,6 +796,9 @@
   min-width: 0;
   table-layout: fixed;
 }
+.hotel-receipt-print {
+  page: hotelReceipt;
+}
 .hotel-receipt-print th,
 .hotel-receipt-print td {
   padding: 10px 4px;
@@ -813,7 +816,10 @@
   margin-bottom: 4px;
 }
 .hotel-receipt-brand p {
-  margin: 4px 0 18px;
+  margin: 4px 0;
+}
+.hotel-customer-receipt .hotel-receipt-brand > h3 {
+  margin-top: 14px;
 }
 .hotel-receipt-print > .hotel-reference {
   text-align: center;
@@ -1846,6 +1852,36 @@
   font-family: 'Courier New', monospace;
   line-height: 1.45;
 }
+.hotel-receipt-preview-section {
+  margin-top: 20px;
+}
+.hotel-receipt-preview-section > h3 {
+  margin-bottom: 10px;
+}
+.hotel-settings-receipt-preview {
+  box-sizing: border-box;
+  width: 80mm;
+  max-width: 80mm;
+  min-width: 0;
+  margin: 0;
+  padding: 18px;
+  border: 1px solid #d5dce3;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 3px 12px #172b4d12;
+}
+.hotel-settings-receipt-preview table {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  table-layout: fixed;
+}
+.hotel-settings-receipt-preview th,
+.hotel-settings-receipt-preview td {
+  padding: 8px 2px;
+  overflow-wrap: anywhere;
+}
 .hotel-receipt-copy h2,
 .hotel-receipt-copy h3,
 .hotel-receipt-copy p {
@@ -1880,70 +1916,121 @@
   margin-top: 8px;
   border-collapse: collapse;
 }
+.hotel-customer-receipt {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.hotel-customer-receipt .hotel-receipt-brand h2 {
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+.hotel-customer-receipt .hotel-receipt-brand h3 {
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+.hotel-customer-receipt .hotel-sale-meta {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
 .hotel-customer-receipt th,
 .hotel-customer-receipt td {
   border-bottom: 1px dashed #c3cbd3;
-  font-size: 0.66rem;
-  padding: 7px 2px;
+  font-size: 0.86rem;
+  font-weight: 700;
+  padding: 8px 2px;
 }
 .hotel-customer-receipt th:nth-child(1),
 .hotel-customer-receipt td:nth-child(1) {
-  width: 6%;
+  width: 8%;
   text-align: left;
 }
 .hotel-customer-receipt th:nth-child(2),
 .hotel-customer-receipt td:nth-child(2) {
-  width: 37%;
+  width: 58%;
   text-align: left;
-  overflow-wrap: anywhere;
+}
+.hotel-customer-receipt .hotel-receipt-item-name {
+  white-space: nowrap;
+  font-size: 0.78rem;
 }
 .hotel-customer-receipt th:nth-child(3),
 .hotel-customer-receipt td:nth-child(3) {
-  width: 8%;
+  width: 10%;
 }
 .hotel-customer-receipt th:nth-child(4),
 .hotel-customer-receipt td:nth-child(4) {
   width: 24%;
 }
-.hotel-customer-receipt th:nth-child(5),
-.hotel-customer-receipt td:nth-child(5) {
-  width: 25%;
-}
 .hotel-receipt-totals {
   margin: 10px 0;
-  border-bottom: 1px dashed #303b48;
+  border-bottom: 0;
 }
 .hotel-receipt-totals > div {
   padding: 5px 0;
   border: 0;
-  font-size: 0.75rem;
+  font-size: 1rem;
+  font-weight: 800;
 }
 .hotel-receipt-totals .hotel-total {
   border-top: 1px dashed #303b48;
-  font-size: 1.1rem;
+  font-size: 1.35rem;
   text-transform: uppercase;
 }
 .hotel-sale-payment {
   display: grid;
   gap: 4px;
-  padding: 8px 0;
-  border-bottom: 1px dashed #303b48;
-  font-size: 0.7rem;
+  padding: 0;
+  border: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
 }
 .hotel-sale-notes {
-  font-size: 0.7rem;
+  font-size: 0.88rem;
+  font-weight: 700;
 }
 .hotel-sale-thanks {
-  display: grid;
-  gap: 4px;
+  display: block;
   margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px dashed #303b48;
+  padding: 10px 0 0;
+  border-top: 0;
   text-align: center;
-  font-size: 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .hotel-sale-thanks strong {
-  font-size: 0.83rem;
+  font-size: 1rem;
+  font-weight: 800;
+}
+.hotel-receipt-details-footer {
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.hotel-receipt-details-footer strong {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.015em;
+}
+.hotel-receipt-payment-details {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3em;
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.hotel-receipt-payment-details strong {
+  font-size: inherit;
+  font-weight: inherit;
 }
 .hotel-kitchen-ticket {
   font-family: Arial, sans-serif;
@@ -1972,6 +2059,22 @@
   display: block;
   font-size: 1rem;
   overflow-wrap: anywhere;
+}
+.hotel-ticket-meta .hotel-ticket-order-number {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+}
+.hotel-ticket-order-number > span {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.hotel-ticket-order-number > strong {
+  font-size: 2.5rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.04em;
 }
 .hotel-ticket-meta > div {
   display: flex;
@@ -2431,6 +2534,10 @@
   }
 }
 @media print {
+  @page hotelReceipt {
+    margin: 0;
+  }
+
   body:has(.hotel-receipt-print) .hotel-pos-shell {
     height: auto;
     overflow: visible;
@@ -2454,7 +2561,7 @@
   body:has(.hotel-double-receipts) .hotel-double-receipts {
     position: static !important;
     inset: auto !important;
-    page: auto;
+    page: hotelReceipt;
     padding: 0;
     margin: 0;
   }
@@ -2494,22 +2601,48 @@
     break-inside: avoid;
   }
   body:has(.hotel-receipt-print) .hotel-customer-receipt {
-    font-size: 9px;
+    font-size: 12px;
+    font-weight: 700;
   }
   body:has(.hotel-receipt-print) .hotel-sale-meta,
   body:has(.hotel-receipt-print) .hotel-sale-payment {
-    font-size: 8px;
+    font-size: 11px;
+    font-weight: 700;
   }
   body:has(.hotel-receipt-print) .hotel-customer-receipt th,
   body:has(.hotel-receipt-print) .hotel-customer-receipt td {
-    font-size: 7px;
-    padding: 5px 1px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 6px 1px;
+  }
+  body:has(.hotel-receipt-print) .hotel-customer-receipt .hotel-receipt-item-name {
+    font-size: 9px;
+    white-space: nowrap;
+  }
+  body:has(.hotel-receipt-print) .hotel-receipt-totals .hotel-total {
+    font-size: 15px;
+    font-weight: 800;
+  }
+  body:has(.hotel-receipt-print) .hotel-receipt-details-footer {
+    font-size: 10px;
+    font-weight: 700;
+  }
+  body:has(.hotel-receipt-print) .hotel-receipt-details-footer strong {
+    font-size: 13px;
+    font-weight: 800;
   }
   body:has(.hotel-receipt-print) .hotel-kitchen-ticket {
     font-family: Arial, sans-serif;
   }
   body:has(.hotel-receipt-print) .hotel-ticket-meta > strong {
     font-size: 19px;
+  }
+  body:has(.hotel-receipt-print) .hotel-ticket-order-number > span {
+    font-size: 14px;
+  }
+  body:has(.hotel-receipt-print) .hotel-ticket-order-number > strong {
+    font-size: 34px;
+    font-weight: 900;
   }
   body:has(.hotel-receipt-print) .hotel-ticket-meta > div,
   body:has(.hotel-receipt-print) .hotel-ticket-items li {

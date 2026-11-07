@@ -18,8 +18,11 @@ export const hotelWaiters = [
 ];
 export const hotelReceiptSettings = {
   hotelName: 'Test Hotel',
-  tillNumber: '1234567',
   contactPhone: '+254700000111',
+  complaintsPhone: '+254711111222',
+  paymentType: 'PAYBILL' as const,
+  paymentNumber: '542542',
+  accountNumber: '795987',
 };
 export const hotelBooking: HotelBooking = {
   id: '10000000-0000-4000-8000-000000000001',
