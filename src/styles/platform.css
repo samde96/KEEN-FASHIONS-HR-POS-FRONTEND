@@ -980,6 +980,366 @@
 .platform-workspace-panel td {
   font-size: 10px;
 }
+.hr-workspace {
+  min-width: 0;
+}
+.my-availability-clock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.my-availability-clock h2 {
+  margin: 6px 0;
+}
+.my-availability-clock p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.my-availability-kicker {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.my-availability-presence {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+.my-availability-presence article {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  align-items: center;
+  column-gap: 9px;
+  row-gap: 3px;
+  padding: 12px;
+  border: 1px solid #d5deeb;
+  border-radius: 8px;
+}
+.my-availability-presence article > span:last-child {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 10px;
+}
+.my-availability-presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10a36a;
+}
+.my-availability-days {
+  align-self: center;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.hr-workspace > .platform-workspace-header > div h1 {
+  margin: 0 0 5px;
+  font-size: 26px;
+}
+.hr-workspace > .platform-workspace-header > div p,
+.hr-disclaimer {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.hr-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 14px;
+}
+.hr-form-grid label,
+.hr-panel-heading label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.hr-form-grid input,
+.hr-form-grid select,
+.hr-panel-heading input,
+.hr-panel-heading select,
+.hr-workspace td select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #d5deeb;
+  border-radius: 7px;
+  background: #fff;
+  color: #17233c;
+  font: inherit;
+}
+.hr-form-grid .primary-action {
+  min-height: 40px;
+}
+.hr-checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 9px !important;
+}
+.hr-checkbox-label input {
+  width: 18px !important;
+  min-height: 18px !important;
+  margin: 0;
+}
+.hr-leave-type-details {
+  margin: 0 0 18px;
+  padding: 12px;
+  border: 1px solid #e1e8f3;
+  border-radius: 8px;
+  background: #f8faff;
+}
+.hr-leave-type-details summary {
+  cursor: pointer;
+  color: #244b85;
+  font-size: 11px;
+  font-weight: 600;
+}
+.hr-leave-type-details .hr-form-grid {
+  margin-top: 14px;
+}
+.hr-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.hr-panel-heading h2 {
+  margin-bottom: 6px;
+}
+.hr-panel-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.hr-panel-heading label {
+  min-width: 180px;
+}
+.hr-count {
+  display: inline-grid;
+  min-width: 24px;
+  height: 24px;
+  margin-left: 7px;
+  place-items: center;
+  border-radius: 50%;
+  background: #eff4fc;
+  color: #244b85;
+  font-size: 10px;
+}
+.hr-workspace .table-subtext {
+  display: block;
+}
+.hr-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.hr-operating-hours {
+  display: grid;
+  gap: 8px;
+}
+.hr-operating-hours-header,
+.hr-operating-hours-row {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) repeat(3, minmax(110px, 1fr));
+  align-items: center;
+  gap: 12px;
+}
+.hr-operating-hours-header {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+.hr-operating-hours-row {
+  padding: 8px 0;
+  border-bottom: 1px solid #e1e8f3;
+}
+.hr-operating-hours-row input[type='time'] {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid #d5deeb;
+  border-radius: 7px;
+  font: inherit;
+}
+.hr-operating-hours-row .hr-checkbox-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.hr-operating-hours > button {
+  justify-self: start;
+  margin-top: 8px;
+}
+.hr-payroll-totals {
+  margin-bottom: 20px;
+}
+.hr-payroll-totals > div {
+  gap: 7px;
+  padding: 15px;
+}
+.hr-payroll-totals strong {
+  overflow-wrap: anywhere;
+  font-size: clamp(14px, 2vw, 22px);
+}
+.hr-workspace > .compact-action {
+  justify-self: start;
+}
+.hr-workspace .message-banner {
+  margin: 0;
+}
+.payroll-toolbar {
+  display: grid;
+  grid-template-columns: minmax(150px, 200px) minmax(220px, 1fr) minmax(180px, 240px) auto;
+  align-items: end;
+  gap: 14px;
+}
+.payroll-toolbar label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.payroll-toolbar input,
+.payroll-toolbar select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #d5deeb;
+  border-radius: 7px;
+  background: #fff;
+  color: #17233c;
+  font: inherit;
+}
+.payroll-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.payroll-panel-header h2 {
+  margin: 0;
+}
+.payroll-filter-note {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #d8e4f7;
+  border-radius: 7px;
+  background: #f5f8fe;
+  color: #435878;
+  font-size: 12px;
+}
+.payroll-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px 0;
+  border-bottom: 1px solid #e1e8f3;
+}
+.payroll-tabs button {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #64728a;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+.payroll-tabs button.active {
+  border-bottom-color: #315eb8;
+  color: #244b85;
+  font-weight: 700;
+}
+.payroll-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 12px;
+}
+.payroll-stat-grid article {
+  display: grid;
+  gap: 8px;
+  padding: 15px;
+  border: 1px solid #e1e8f3;
+  border-radius: 9px;
+  background: #fff;
+}
+.payroll-stat-grid article > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.payroll-stat-grid article strong {
+  overflow-wrap: anywhere;
+  font-size: 17px;
+}
+.payroll-workspace .platform-workspace-panels {
+  grid-template-columns: 1fr;
+}
+.payroll-workspace .hr-panel-heading {
+  align-items: center;
+}
+.payroll-workspace .hr-panel-heading > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.payroll-report-heading {
+  margin: 22px 0 12px;
+  font-size: 13px;
+}
+.payroll-workspace .hr-form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+.payroll-share-fieldset {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #d5deeb;
+  border-radius: 7px;
+}
+.payroll-share-fieldset legend {
+  padding: 0 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.payroll-share-fieldset label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 10px;
+}
+.payroll-share-fieldset label input[type='checkbox'] {
+  width: 16px;
+  min-height: 16px;
+  margin: 0;
+}
+.payroll-share-fieldset label input[type='number'] {
+  grid-column: 2;
+  min-height: 32px;
+}
+.payroll-recovery-summary {
+  align-self: center;
+  margin: 0;
+  color: #43516a;
+  font-size: 10px;
+}
+.payroll-workspace td {
+  white-space: nowrap;
+}
+.payroll-workspace .hr-workspace .table-subtext {
+  white-space: normal;
+}
 .platform-branch-balances table {
   width: 100%;
   min-width: 0;
@@ -1368,6 +1728,40 @@
   .platform-workspace {
     gap: 17px;
   }
+  .hr-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .payroll-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+  .payroll-toolbar .compact-action {
+    justify-self: start;
+  }
+  .hr-form-grid label,
+  .hr-panel-heading label {
+    font-size: 9px;
+  }
+  .hr-panel-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .hr-panel-heading label {
+    min-width: 0;
+  }
+  .hr-operating-hours-header,
+  .hr-operating-hours-row {
+    grid-template-columns: minmax(72px, 0.8fr) repeat(3, minmax(78px, 1fr));
+    gap: 6px;
+  }
+  .hr-operating-hours-row .hr-checkbox-label {
+    gap: 4px !important;
+  }
+  .hr-workspace .responsive-table {
+    overflow-x: auto;
+  }
+  .hr-workspace .responsive-table table {
+    min-width: 700px;
+  }
   .platform-pos-navigation {
     padding: 7px 12px;
     flex-wrap: wrap;
@@ -1385,6 +1779,14 @@
   }
   .platform-pos-navigation .platform-launcher-backdrop {
     padding-left: 12px;
+  }
+}
+@media (max-width: 420px) {
+  .hr-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .payroll-toolbar {
+    grid-template-columns: 1fr;
   }
 }
 @media (prefers-reduced-motion: reduce) {

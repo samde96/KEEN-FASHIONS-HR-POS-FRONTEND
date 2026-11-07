@@ -1,6 +1,6 @@
 {
   "name": "keen-fashion-pos-frontend",
-  "version": "1.5.3",
+  "version": "2.5.3",
   "private": true,
   "type": "module",
   "engines": {

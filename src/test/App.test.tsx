@@ -812,7 +812,16 @@ describe('App', () => {
       permissionIds: [testPermissions[2].id],
       permissionCodes: [testPermissions[2].code],
     };
-    let roles = [...testRoles, legacyAuditorRole];
+    const waiterRole = {
+      id: '00000000-0000-4000-8000-000000000406',
+      name: 'Waiter',
+      key: 'WAITER',
+      description: 'Hotel restaurant table service and orders',
+      assignedUsers: 0,
+      permissionIds: [testPermissions[3].id],
+      permissionCodes: ['hotel:sell'],
+    };
+    let roles = [...testRoles, waiterRole, legacyAuditorRole];
     let updatedRequest: unknown;
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -862,8 +871,12 @@ describe('App', () => {
     expect(screen.queryByLabelText(/^Role Name$/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^New Role$/i })).not.toBeInTheDocument();
     expect(await screen.findByText('Shop Manager')).toBeInTheDocument();
-    expect(screen.getByText('3 of 3 roles')).toBeInTheDocument();
+    expect(screen.getByText('4 of 4 roles')).toBeInTheDocument();
     expect(screen.getByText('Cashier')).toBeInTheDocument();
+    expect(screen.getByText('Waiter')).toBeInTheDocument();
+    expect(screen.getByText('WAITER')).toBeInTheDocument();
+    expect(screen.getByText('hotel:sell')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^Edit$/i })[3]).toBeDisabled();
     expect(screen.queryByText('Auditor')).not.toBeInTheDocument();
     await user.click(screen.getAllByRole('button', { name: /^Edit$/i })[0]);
     expect(await screen.findByRole('dialog', { name: /^Edit Role$/i })).toBeInTheDocument();

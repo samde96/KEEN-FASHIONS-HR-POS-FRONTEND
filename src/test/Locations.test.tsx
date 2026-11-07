@@ -30,7 +30,13 @@ function locationApi(initial: Branch[] = [], user: CurrentUser = testUser) {
       writes.push({ path, method, body });
       if (failure) return json({ detail: failure }, 400);
       if (method === 'POST' && body) {
-        const created = { id: `location-${locations.length + 1}`, ...body };
+        const baseCode = body.code ?? body.name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-');
+        let code = baseCode;
+        let suffix = 2;
+        while (locations.some((location) => location.code === code)) {
+          code = `${baseCode.slice(0, 24 - String(suffix).length - 1)}-${suffix++}`;
+        }
+        const created = { id: `location-${locations.length + 1}`, ...body, code };
         locations.push(created);
         return json(created, 201);
       }
@@ -94,13 +100,13 @@ describe('Shop and warehouse administration', () => {
     await ready();
     expect(screen.getByText('No shops or warehouses yet')).toBeInTheDocument();
     expect(screen.getByLabelText('Timezone')).toHaveValue('Africa/Nairobi');
+    await user.selectOptions(screen.getByLabelText('Location type'), 'WAREHOUSE');
     await user.type(screen.getByLabelText('Location name'), 'Main Warehouse');
-    await user.type(screen.getByLabelText('Location code'), 'wh-01');
     await user.click(screen.getByRole('button', { name: 'Save location' }));
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Main Warehouse added successfully.',
     );
-    expect(row('Main Warehouse')).toHaveTextContent('WH-01');
+    expect(row('Main Warehouse')).toHaveTextContent('MAIN-WAREHOUSE');
     expect(screen.getByLabelText('Business branch')).toHaveValue('location-1');
     expect(api.writes).toEqual([
       {
@@ -108,8 +114,8 @@ describe('Shop and warehouse administration', () => {
         method: 'POST',
         body: {
           name: 'Main Warehouse',
-          code: 'WH-01',
           timeZone: 'Africa/Nairobi',
+          branchType: 'WAREHOUSE',
           status: 'ACTIVE',
         },
       },
@@ -118,6 +124,22 @@ describe('Shop and warehouse administration', () => {
     open();
     await ready();
     expect(row('Main Warehouse')).toBeInTheDocument();
+  });
+
+  it('creates a hotel and restaurant location type', async () => {
+    const api = locationApi();
+    const user = userEvent.setup();
+    open();
+    await ready();
+    await user.selectOptions(screen.getByLabelText('Location type'), 'HOTEL');
+    await user.type(screen.getByLabelText('Location name'), 'Main Restaurant');
+    await user.click(screen.getByRole('button', { name: 'Save location' }));
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Main Restaurant added successfully.',
+    );
+    expect(row('Main Restaurant')).toHaveTextContent('Hotel / Restaurant');
+    expect(api.writes[0].body?.branchType).toBe('HOTEL');
+    expect(api.writes[0].body).not.toHaveProperty('code');
   });
 
   it('lists locations outside the selected branch, edits details, and filters inactive locations', async () => {
@@ -150,16 +172,25 @@ describe('Shop and warehouse administration', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Nairobi Shop updated successfully.',
     );
-    expect(row('Nairobi Shop')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('table', { name: 'Registered locations' })).getByText(
+        'Nairobi Shop',
+      ),
+    ).toBeInTheDocument();
     expect(
       within(screen.getByLabelText('Business branch')).getByRole('option', {
         name: 'Nairobi Shop',
       }),
     ).toBeInTheDocument();
     expect(api.writes[0].method).toBe('PUT');
+    expect(api.writes[0].body).not.toHaveProperty('code');
     await user.selectOptions(screen.getByLabelText('Filter by status'), 'INACTIVE');
     expect(row('Central Warehouse')).toBeInTheDocument();
-    expect(screen.queryByRole('row', { name: /Nairobi Shop/ })).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole('table', { name: 'Registered locations' })).queryByText(
+        'Nairobi Shop',
+      ),
+    ).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Search locations'), 'missing');
     expect(screen.getByText('No matching locations')).toBeInTheDocument();
   });
@@ -188,30 +219,23 @@ describe('Shop and warehouse administration', () => {
 
   it('keeps entered details when the API rejects a save', async () => {
     const api = locationApi();
-    api.fail('Branch code is already used');
+    api.fail('Location could not be saved');
     const user = userEvent.setup();
     open();
     await ready();
     await user.type(screen.getByLabelText('Location name'), 'New Shop');
-    await user.type(screen.getByLabelText('Location code'), 'NEW');
     await user.click(screen.getByRole('button', { name: 'Save location' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Branch code is already used');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Location could not be saved');
     expect(screen.getByLabelText('Location name')).toHaveValue('New Shop');
-    expect(screen.getByLabelText('Location code')).toHaveValue('NEW');
     expect(screen.getByRole('button', { name: 'Save location' })).toBeEnabled();
   });
 
-  it('checks existing codes and timezone validity before sending a request', async () => {
+  it('checks timezone validity before sending a request', async () => {
     const api = locationApi(testBranches);
     const user = userEvent.setup();
     open();
     await ready();
     await user.type(screen.getByLabelText('Location name'), 'New Shop');
-    await user.type(screen.getByLabelText('Location code'), 'flag');
-    await user.click(screen.getByRole('button', { name: 'Save location' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('A location with this code already exists');
-    await user.clear(screen.getByLabelText('Location code'));
-    await user.type(screen.getByLabelText('Location code'), 'NEW');
     await user.clear(screen.getByLabelText('Timezone'));
     await user.type(screen.getByLabelText('Timezone'), 'Invalid/Zone');
     await user.click(screen.getByRole('button', { name: 'Save location' }));

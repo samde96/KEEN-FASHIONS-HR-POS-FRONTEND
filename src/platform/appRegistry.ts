@@ -17,7 +17,15 @@ export type AppPermission =
   | 'reports:view'
   | 'sales:view'
   | 'expenses:create'
-  | 'shifts:manage';
+  | 'shifts:manage'
+  | 'hotel:view'
+  | 'hotel:manage'
+  | 'hotel:sell'
+  | 'hotel:reports'
+  | 'hr:employee:view'
+  | 'hr:attendance:view'
+  | 'hr:leave:view'
+  | 'hr:payroll:view';
 export type NavItem = {
   to: string;
   label: string;
@@ -30,10 +38,131 @@ export type NavItem = {
 // Existing route access remains the authority for every app and shortcut.
 export const navItems: NavItem[] = [
   {
+    to: '/hotel',
+    label: 'Hotel dashboard',
+    icon: 'bi-buildings',
+    anyPermissions: ['admin:manage', 'hotel:view', 'hotel:manage'],
+  },
+  {
+    to: '/hotel/rooms',
+    label: 'Rooms & rates',
+    icon: 'bi-door-open',
+    anyPermissions: ['admin:manage', 'hotel:view', 'hotel:manage'],
+  },
+  {
+    to: '/hotel/reservations',
+    label: 'Reservations & guests',
+    icon: 'bi-person-check',
+    anyPermissions: ['admin:manage', 'hotel:view', 'hotel:manage'],
+  },
+  {
+    to: '/hotel/calendar',
+    label: 'Booking calendar',
+    icon: 'bi-calendar3',
+    anyPermissions: ['admin:manage', 'hotel:view', 'hotel:manage'],
+  },
+  {
+    to: '/hotel/restaurant',
+    label: 'Hotel checkout',
+    icon: 'bi-egg-fried',
+    anyPermissions: ['admin:manage', 'hotel:view', 'hotel:manage', 'hotel:sell'],
+  },
+  {
+    to: '/hotel/service-settings',
+    label: 'Waiters & receipts',
+    icon: 'bi-receipt',
+    adminOnly: true,
+    anyPermissions: ['admin:manage'],
+  },
+  {
+    to: '/hotel/menu',
+    label: 'Food menu',
+    icon: 'bi-journal-richtext',
+    anyPermissions: ['admin:manage', 'hotel:view', 'hotel:manage'],
+  },
+  {
+    to: '/hotel/inventory',
+    label: 'Hotel inventory',
+    icon: 'bi-box-seam',
+    anyPermissions: ['admin:manage', 'hotel:view', 'hotel:manage'],
+  },
+  {
+    to: '/hotel/expenses',
+    label: 'Hotel expenses',
+    icon: 'bi-wallet2',
+    anyPermissions: ['admin:manage', 'hotel:manage'],
+  },
+  {
+    to: '/hotel/assets',
+    label: 'Hotel assets',
+    icon: 'bi-pc-display',
+    anyPermissions: ['admin:manage', 'hotel:manage'],
+  },
+  {
+    to: '/hotel/reports',
+    label: 'Hotel reports',
+    icon: 'bi-bar-chart',
+    anyPermissions: ['admin:manage', 'hotel:reports'],
+  },
+  {
     to: '/dashboard',
     label: 'Business Overview',
     icon: 'bi-speedometer2',
     anyPermissions: ['admin:manage', 'reports:view', 'sales:view'],
+  },
+  {
+    to: '/hr',
+    label: 'HR overview',
+    icon: 'bi-person-workspace',
+    adminOnly: true,
+    anyPermissions: ['admin:manage', 'hr:employee:view', 'hr:attendance:view', 'hr:leave:view'],
+  },
+  {
+    to: '/hr/employees',
+    label: 'Staff records',
+    icon: 'bi-people',
+    adminOnly: true,
+    anyPermissions: ['admin:manage', 'hr:employee:view'],
+  },
+  {
+    to: '/hr/attendance',
+    label: 'Attendance',
+    icon: 'bi-clock',
+    adminOnly: true,
+    anyPermissions: ['admin:manage', 'hr:attendance:view'],
+  },
+  {
+    to: '/hr/availability',
+    label: 'Leave & availability',
+    icon: 'bi-calendar2-check',
+    adminOnly: true,
+    anyPermissions: ['admin:manage', 'hr:leave:view'],
+  },
+  {
+    to: '/hr/workforce',
+    label: 'Staff schedule',
+    icon: 'bi-calendar3',
+    adminOnly: true,
+    anyPermissions: ['admin:manage', 'hr:attendance:view'],
+  },
+  {
+    to: '/hr/hours',
+    label: 'Location hours',
+    icon: 'bi-clock-history',
+    adminOnly: true,
+    anyPermissions: ['admin:manage', 'hr:attendance:view'],
+  },
+  {
+    to: '/my-availability',
+    label: 'My Availability',
+    icon: 'bi-calendar-week',
+  },
+  {
+    to: '/payroll',
+    label: 'Payroll',
+    icon: 'bi-cash-stack',
+    adminOnly: true,
+    anyPermissions: ['admin:manage', 'hr:payroll:view'],
   },
   {
     to: '/roles',
@@ -144,7 +273,12 @@ export const navItems: NavItem[] = [
     icon: 'bi-wallet2',
     anyPermissions: ['admin:manage', 'sales:view', 'reports:view', 'expenses:create'],
   },
-  { to: '/reports', label: 'Reports center', icon: 'bi-file-earmark-text', adminOnly: true },
+  {
+    to: '/reports',
+    label: 'Reports center',
+    icon: 'bi-file-earmark-text',
+    anyPermissions: ['admin:manage', 'hotel:reports'],
+  },
   {
     to: '/accounting',
     label: 'Accounting',
@@ -199,8 +333,18 @@ export const hasAllPermissions = (user: CurrentUser, permissions: AppPermission[
 export const isAdminUser = (user: CurrentUser) => user.roleKeys.includes('ADMIN');
 export const isCashierUser = (user: CurrentUser) =>
   user.roleKeys.includes('CASHIER') && !isAdminUser(user);
+export const isHotelSalesManagerUser = (user: CurrentUser) =>
+  user.roleKeys.includes('HOTEL_SALES_MANAGER') && !isAdminUser(user);
 export function canAccessNavItem(user: CurrentUser, item: NavItem) {
-  if (isCashierUser(user) && !['/pos', '/shifts', '/expenses', '/help'].includes(item.to))
+  if (
+    isHotelSalesManagerUser(user) &&
+    !['/hotel/restaurant', '/help', '/my-availability'].includes(item.to)
+  )
+    return false;
+  if (
+    isCashierUser(user) &&
+    !['/pos', '/shifts', '/expenses', '/help', '/my-availability'].includes(item.to)
+  )
     return false;
   if (item.adminOnly && !isAdminUser(user)) return false;
   if (hasPermission(user, 'admin:manage')) return true;
@@ -222,6 +366,37 @@ export type BusinessApp = {
   upcoming?: string[];
 };
 export const appRegistry: BusinessApp[] = [
+  {
+    id: 'hotel',
+    title: 'Hotel Management',
+    icon: 'bi-buildings',
+    tone: 'teal',
+    category: 'Operations',
+    description: 'Rooms, reservations, guest stays, restaurant sales and hotel inventory.',
+    routes: [
+      '/hotel/restaurant',
+      '/hotel',
+      '/hotel/rooms',
+      '/hotel/reservations',
+      '/hotel/calendar',
+      '/hotel/service-settings',
+      '/hotel/menu',
+      '/hotel/inventory',
+      '/hotel/reports',
+    ],
+    keywords: [
+      'hotel',
+      'accommodation',
+      'booking',
+      'check in',
+      'check out',
+      'food',
+      'restaurant',
+      'receipt',
+      'occupancy',
+      'hospitality',
+    ],
+  },
   {
     id: 'pos',
     title: 'Point of Sale',
@@ -309,9 +484,17 @@ export const appRegistry: BusinessApp[] = [
     icon: 'bi-person-workspace',
     tone: 'rose',
     category: 'People',
-    description: 'Employees, attendance, leave and staff records.',
-    routes: [],
-    planned: true,
+    description: 'Employees, attendance, leave, shifts and operating hours.',
+    routes: [
+      '/hr',
+      '/hr/employees',
+      '/hr/attendance',
+      '/hr/availability',
+      '/hr/workforce',
+      '/hr/hours',
+      '/my-availability',
+    ],
+    keywords: ['people', 'staff', 'workforce', 'leave', 'attendance', 'schedule', 'hours'],
   },
   {
     id: 'payroll',
@@ -319,9 +502,9 @@ export const appRegistry: BusinessApp[] = [
     icon: 'bi-cash-stack',
     tone: 'emerald',
     category: 'People',
-    description: 'Salary structures, payslips and payroll processing.',
-    routes: [],
-    planned: true,
+    description: 'Monthly salary previews and recorded bonuses and deductions.',
+    routes: ['/payroll', '/payroll/processing'],
+    keywords: ['salary', 'wages', 'payslip', 'pay'],
   },
   {
     id: 'reports',

@@ -6,7 +6,20 @@ import { createBranch, deactivateBranch, getBranches, updateBranch } from '../se
 import '../styles/locations.css';
 
 function emptyLocation(timeZone: string): BranchRequest {
-  return { name: '', code: '', timeZone, status: 'ACTIVE' };
+  return { name: '', timeZone, branchType: 'SHOP', status: 'ACTIVE' };
+}
+
+function locationTypeLabel(type: Branch['branchType']) {
+  switch (type) {
+    case 'STORE':
+      return 'Store';
+    case 'SHOP':
+      return 'Shop';
+    case 'WAREHOUSE':
+      return 'Warehouse';
+    case 'HOTEL':
+      return 'Hotel / Restaurant';
+  }
 }
 
 export default function LocationsPage({ timeZone }: { timeZone: string }) {
@@ -60,8 +73,8 @@ export default function LocationsPage({ timeZone }: { timeZone: string }) {
       }
       return updateBranch(location.id, {
         name: location.name,
-        code: location.code,
         timeZone: location.timeZone,
+        branchType: location.branchType,
         status: 'ACTIVE',
       });
     },
@@ -80,7 +93,9 @@ export default function LocationsPage({ timeZone }: { timeZone: string }) {
   const filtered = locations.filter(
     (location) =>
       (status === 'ALL' || location.status === status) &&
-      `${location.name} ${location.code} ${location.timeZone}`.toLowerCase().includes(searchTerm),
+      `${location.name} ${location.code} ${location.timeZone} ${locationTypeLabel(location.branchType)}`
+        .toLowerCase()
+        .includes(searchTerm),
   );
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -91,21 +106,10 @@ export default function LocationsPage({ timeZone }: { timeZone: string }) {
     const values: BranchRequest = {
       ...form,
       name: form.name.trim(),
-      code: form.code.trim().toUpperCase(),
       timeZone: form.timeZone.trim(),
     };
     if (!values.name) {
       setError('Enter a location name.');
-      return;
-    }
-    if (!/^[A-Z0-9][A-Z0-9_-]{0,23}$/.test(values.code)) {
-      setError('Use a unique code of up to 24 letters, numbers, hyphens, or underscores.');
-      return;
-    }
-    if (
-      locations.some((item) => item.id !== editingId && item.code.toUpperCase() === values.code)
-    ) {
-      setError('A location with this code already exists. Choose another code.');
       return;
     }
     try {
@@ -121,8 +125,8 @@ export default function LocationsPage({ timeZone }: { timeZone: string }) {
     setEditingId(location.id);
     setForm({
       name: location.name,
-      code: location.code,
       timeZone: location.timeZone,
+      branchType: location.branchType,
       status: location.status,
     });
     setError('');
@@ -204,23 +208,6 @@ export default function LocationsPage({ timeZone }: { timeZone: string }) {
               />
             </label>
             <label className="field-stack">
-              <span id="location-code-label">Location code</span>
-              <input
-                required
-                maxLength={24}
-                placeholder="e.g. MAIN or WH-01"
-                autoCapitalize="characters"
-                aria-labelledby="location-code-label"
-                aria-describedby="location-code-guidance"
-                value={form.code}
-                disabled={unavailable}
-                onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase() })}
-              />
-              <small id="location-code-guidance">
-                Use a unique code, including for inactive locations.
-              </small>
-            </label>
-            <label className="field-stack">
               <span>Timezone</span>
               <input
                 required
@@ -243,6 +230,24 @@ export default function LocationsPage({ timeZone }: { timeZone: string }) {
                   <option key={zone} value={zone} />
                 ))}
               </datalist>
+            </label>
+            <label className="field-stack">
+              <span>Location type</span>
+              <select
+                value={form.branchType}
+                disabled={unavailable}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    branchType: event.target.value as Branch['branchType'],
+                  })
+                }
+              >
+                <option value="SHOP">Shop</option>
+                <option value="STORE">Store</option>
+                <option value="WAREHOUSE">Warehouse</option>
+                <option value="HOTEL">Hotel / Restaurant</option>
+              </select>
             </label>
             <label className="field-stack">
               <span>Status</span>
@@ -344,6 +349,7 @@ export default function LocationsPage({ timeZone }: { timeZone: string }) {
                     <th>Location</th>
                     <th>Code</th>
                     <th>Timezone</th>
+                    <th>Type</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
@@ -359,6 +365,7 @@ export default function LocationsPage({ timeZone }: { timeZone: string }) {
                       </td>
                       <td data-label="Code">{location.code}</td>
                       <td data-label="Timezone">{location.timeZone}</td>
+                      <td data-label="Type">{locationTypeLabel(location.branchType)}</td>
                       <td data-label="Status">
                         <span
                           className={`locations-status ${location.status === 'ACTIVE' ? 'is-active' : ''}`}

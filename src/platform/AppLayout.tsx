@@ -267,7 +267,7 @@ export default function AppLayout({
               Overview
             </NavLink>
             {modules.map((module) => (
-              <NavLink to={module.to} key={module.to}>
+              <NavLink to={module.to} key={module.to} end={module.to === '/hotel'}>
                 <i className={`bi ${module.icon}`} aria-hidden="true" />
                 {module.label}
               </NavLink>

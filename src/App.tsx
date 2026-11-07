@@ -56,6 +56,14 @@ import CashierShiftsPage from './components/CashierShiftsPage';
 import JournalHelp from './components/JournalHelp';
 import MpesaPaymentPanel from './components/MpesaPaymentPanel';
 import LocationsPage from './components/LocationsPage';
+import HotelPage from './hotel/HotelPage';
+import HotelCheckoutPage from './hotel/HotelCheckoutPage';
+import HotelReports from './hotel/HotelReports';
+import HrPage from './hr/HrPage';
+import HrAdminDashboard from './hr/HrAdminDashboard';
+import MyAvailabilityPage from './hr/MyAvailabilityPage';
+import PayrollPage from './hr/PayrollPage';
+import { businessDate } from './hotel/utils';
 import ProductPhotoInput from './components/ProductPhotoInput';
 import OfflineStatus, {
   ConnectionBadge,
@@ -83,6 +91,7 @@ import {
   hasAnyPermission,
   isAdminUser,
   isCashierUser,
+  isHotelSalesManagerUser,
 } from './platform/appRegistry';
 import './styles/crm.css';
 import './styles/dashboard.css';
@@ -164,6 +173,7 @@ import {
   updateProduct,
   updateProductCategory,
   updateOrganizationVatSettings,
+  updateOrganizationHotelReportsSettings,
   updateRole,
   updateSupplier,
   updateUser,
@@ -481,13 +491,15 @@ function AppShell() {
   const dataQueriesEnabled = !isLoginRoute && userQuery.isSuccess;
   const organizationQuery = useQuery({
     queryKey: ['organization'],
-    queryFn: getOrganization,
+    queryFn: ({ signal }) => getOrganization({ signal, timeoutMs: 8_000 }),
     enabled: dataQueriesEnabled,
+    retry: false,
   });
   const branchesQuery = useQuery({
     queryKey: ['branches'],
-    queryFn: getBranches,
+    queryFn: ({ signal }) => getBranches({ signal, timeoutMs: 8_000 }),
     enabled: dataQueriesEnabled,
+    retry: false,
   });
 
   const currentUser = userQuery.data;
@@ -516,7 +528,14 @@ function AppShell() {
   }
 
   if (userQuery.isPending) {
-    return <AuthLoading />;
+    return (
+      <AuthLoading
+        onSignIn={() => {
+          void queryClient.cancelQueries({ queryKey: ['me'], exact: true });
+          navigate('/login', { replace: true });
+        }}
+      />
+    );
   }
 
   if (userQuery.isError) {
@@ -524,7 +543,7 @@ function AppShell() {
   }
 
   if (!currentUser || organizationQuery.isPending || branchesQuery.isPending) {
-    return <AuthLoading />;
+    return <AuthLoading label="Loading business data" />;
   }
 
   if (organizationQuery.isError || branchesQuery.isError || !organizationQuery.data) {
@@ -552,7 +571,7 @@ function AppShell() {
       user={currentUser}
       branches={branches}
     >
-      <DeviceCoordinator user={currentUser} />
+      {!isHotelSalesManagerUser(currentUser) && <DeviceCoordinator user={currentUser} />}
       <PlatformRoutes
         currentUser={currentUser}
         organization={organization}
@@ -605,6 +624,10 @@ function PlatformRoutes({
     );
   }
 
+  if (location.pathname.replace(/\/$/, '') === '/hotel/restaurant') {
+    return <HotelCheckoutPage user={currentUser} organization={organization} onLogout={onLogout} />;
+  }
+
   return (
     <AppLayout user={currentUser} onLogout={onLogout}>
       <Routes>
@@ -615,6 +638,55 @@ function PlatformRoutes({
         />
         <Route path="/home" element={<AppsHome user={currentUser} organization={organization} />} />
         <Route path="/stock-transfers" element={<StockTransfersPage />} />
+        <Route
+          path="/hr"
+          element={<HrAdminDashboard currencyCode={organization.currencyCode} />}
+        />
+        <Route
+          path="/hr/employees"
+          element={<HrPage workspace="employees" currencyCode={organization.currencyCode} />}
+        />
+        <Route
+          path="/hr/attendance"
+          element={<HrPage workspace="attendance" currencyCode={organization.currencyCode} />}
+        />
+        <Route
+          path="/hr/availability"
+          element={<HrPage workspace="availability" currencyCode={organization.currencyCode} />}
+        />
+        <Route
+          path="/hr/workforce"
+          element={<HrPage workspace="workforce" currencyCode={organization.currencyCode} />}
+        />
+        <Route
+          path="/hr/hours"
+          element={<HrPage workspace="hours" currencyCode={organization.currencyCode} />}
+        />
+        <Route path="/payroll" element={<PayrollPage currencyCode={organization.currencyCode} />} />
+        <Route
+          path="/payroll/processing"
+          element={<Navigate to="/payroll" replace />}
+        />
+        <Route path="/my-availability" element={<MyAvailabilityPage />} />
+        <Route
+          path="/apps/hotel"
+          element={
+            <Navigate
+              to={
+                hasAnyPermission(currentUser, ['admin:manage', 'hotel:view', 'hotel:manage'])
+                  ? '/hotel/restaurant'
+                  : hasPermission(currentUser, 'hotel:sell')
+                    ? '/hotel/restaurant'
+                    : '/hotel/reports'
+              }
+              replace
+            />
+          }
+        />
+        <Route
+          path="/hotel/*"
+          element={<HotelPage user={currentUser} organization={organization} />}
+        />
         <Route path="/apps" element={<AppsHome user={currentUser} organization={organization} />} />
         <Route
           path="/favorites"
@@ -708,7 +780,9 @@ function PlatformRoutes({
         <Route path="/commercial" element={<CommercialPage organization={organization} />} />
         <Route
           path="/reports"
-          element={<ReportsHub branches={branches} organization={organization} />}
+          element={
+            <ReportsHub branches={branches} organization={organization} currentUser={currentUser} />
+          }
         />
         <Route
           path="/accounting"
@@ -733,14 +807,31 @@ function PlatformRoutes({
 }
 
 function defaultPathForUser(user: CurrentUser) {
+  if (
+    !isAdminUser(user) &&
+    hasPermission(user, 'hotel:sell') &&
+    !hasPermission(user, 'hotel:manage')
+  )
+    return '/hotel/restaurant';
   return '/apps';
 }
 
-function AuthLoading() {
+function AuthLoading({
+  label = 'Checking session',
+  onSignIn,
+}: {
+  label?: string;
+  onSignIn?: () => void;
+}) {
   return (
-    <main className="auth-loading" aria-label="Checking session">
+    <main className="auth-loading" aria-label={label}>
       <span className="loading-spinner" aria-hidden="true" />
-      <span>Checking session...</span>
+      <span role="status">{label}...</span>
+      {onSignIn ? (
+        <button className="secondary-action compact-action" type="button" onClick={onSignIn}>
+          Go to sign in
+        </button>
+      ) : null}
     </main>
   );
 }
@@ -820,6 +911,7 @@ function LoginPage() {
     setIsSubmitting(true);
 
     try {
+      await queryClient.cancelQueries({ queryKey: ['me'], exact: true });
       const user = await login({
         username: email.trim(),
         password,
@@ -13617,7 +13709,13 @@ function uniquePermissionCodes(codes: string[]) {
   );
 }
 
-const MANAGED_ROLE_KEYS = new Set(['ADMIN', 'SHOP_MANAGER', 'CASHIER']);
+const MANAGED_ROLE_KEYS = new Set([
+  'ADMIN',
+  'SHOP_MANAGER',
+  'CASHIER',
+  'HOTEL_SALES_MANAGER',
+  'WAITER',
+]);
 
 function isManagedRole(role: Role) {
   return MANAGED_ROLE_KEYS.has(role.key);
@@ -13854,7 +13952,7 @@ function RolesPage() {
     <section className="branch-workspace">
       <PageHeader
         title="Roles"
-        subtitle="Manage Admin, Shop Manager, and Cashier access. Cashiers sell, register expenses, and manage their own shifts at assigned shops."
+        subtitle="Manage system roles for Admin, Shop Manager, Cashier, Hotel Sales Manager and Waiter accounts. Assign roles to existing accounts when registering or editing users."
         action={
           <div className="header-actions">
             <button
@@ -14072,7 +14170,9 @@ function RolesPage() {
                             <button
                               className="text-button"
                               type="button"
-                              disabled={role.key === 'CASHIER'}
+                              disabled={['CASHIER', 'HOTEL_SALES_MANAGER', 'WAITER'].includes(
+                                role.key,
+                              )}
                               onClick={() => editRole(role)}
                             >
                               <i className="bi bi-pencil" aria-hidden="true" />
@@ -14299,11 +14399,16 @@ function UsersPage() {
         ...current,
         roleIds: current.roleIds.includes(id)
           ? remaining
-          : roles.find((role) => role.id === id)?.key === 'CASHIER'
+          : ['CASHIER', 'HOTEL_SALES_MANAGER', 'WAITER'].includes(
+                roles.find((role) => role.id === id)?.key ?? '',
+              )
             ? [id]
             : [
                 ...remaining.filter(
-                  (value) => roles.find((role) => role.id === value)?.key !== 'CASHIER',
+                  (value) =>
+                    !['CASHIER', 'HOTEL_SALES_MANAGER', 'WAITER'].includes(
+                      roles.find((role) => role.id === value)?.key ?? '',
+                    ),
                 ),
                 id,
               ],
@@ -14321,6 +14426,16 @@ function UsersPage() {
         !form.branchIds.length
       ) {
         setError('Select at least one shop for the cashier.');
+        return;
+      }
+      const selectedHotelRole = roles.find(
+        (role) =>
+          ['HOTEL_SALES_MANAGER', 'WAITER'].includes(role.key) && form.roleIds.includes(role.id),
+      );
+      if (selectedHotelRole && !form.branchIds.length) {
+        setError(
+          `Select at least one hotel location for the ${selectedHotelRole.name.toLowerCase()}.`,
+        );
         return;
       }
       await saveUserMutation.mutateAsync({
@@ -14438,9 +14553,9 @@ function UsersPage() {
             />
             <CheckboxGroup
               items={branches}
-              label="Assigned shops"
+              label="Assigned locations"
               selectedIds={form.branchIds}
-              emptyLabel="Register an active shop before assigning cashiers."
+              emptyLabel="Register a location before assigning users."
               getLabel={(branch) => branch.name}
               onToggle={(id) =>
                 setForm((current) => ({
@@ -18006,9 +18121,82 @@ function updateExpensesCache(queryClient: QueryClient, expense: Expense) {
 function ReportsHub({
   branches,
   organization,
+  currentUser,
 }: {
   branches: Branch[];
   organization: Organization;
+  currentUser: CurrentUser;
+}) {
+  if (!hasPermission(currentUser, 'admin:manage')) {
+    return <HotelReportsHub organization={organization} />;
+  }
+  return (
+    <BusinessReportsHub branches={branches} organization={organization} currentUser={currentUser} />
+  );
+}
+
+function HotelReportsHub({ organization }: { organization: Organization }) {
+  const { branchId, branches: authorizedBranches, selectedBranch, changeBranch } = usePlatform();
+  const reportBranches = authorizedBranches.filter((branch) => branch.status === 'ACTIVE');
+  const reportDate = businessDate(selectedBranch?.timeZone ?? organization.timeZone);
+
+  return (
+    <section className="reports-workspace reports-center">
+      <PageHeader
+        eyebrow={`${organization.name.toUpperCase()} OPERATIONS`}
+        title="Hotel reports"
+        subtitle="Review accommodation, restaurant, stocked-product, and payment performance."
+      />
+      {organization.showHotelReports === false ? (
+        <section className="hotel-panel">
+          <h2>Hotel reports are hidden on the main Reports page</h2>
+          <p>
+            You can still open the dedicated hotel reports workspace from{' '}
+            <NavLink to="/hotel/reports">Hotel reports</NavLink>.
+          </p>
+        </section>
+      ) : !branchId ? (
+        <section className="hotel-panel hotel-location">
+          <i className="bi bi-buildings" aria-hidden="true" />
+          <h2>Choose a hotel location</h2>
+          <p>Select a location to view its hotel reports.</p>
+          {reportBranches.length ? (
+            <label className="hotel-field">
+              <span>Hotel location</span>
+              <select value="" onChange={(event) => void changeBranch(event.target.value)}>
+                <option value="">Choose a location</option>
+                {reportBranches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p>No active locations are available.</p>
+          )}
+        </section>
+      ) : (
+        <div className="hotel-app hotel-reports-embedded">
+          <HotelReports
+            branchId={branchId}
+            currency={organization.currencyCode}
+            date={reportDate}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BusinessReportsHub({
+  branches,
+  organization,
+  currentUser,
+}: {
+  branches: Branch[];
+  organization: Organization;
+  currentUser: CurrentUser;
 }) {
   const { branchId: platformBranchId } = usePlatform();
   const activeBranches = useMemo(
@@ -18017,6 +18205,8 @@ function ReportsHub({
   );
   const [selectedBranchId, setSelectedBranchId] = useState(platformBranchId);
   useEffect(() => setSelectedBranchId(platformBranchId), [platformBranchId]);
+  const [hotelReportBranchId, setHotelReportBranchId] = useState(platformBranchId);
+  useEffect(() => setHotelReportBranchId(platformBranchId), [platformBranchId]);
   const [selectedPeriod, setSelectedPeriod] = useState<ReportPeriod>('month');
   const [selectedQuarters, setSelectedQuarters] = useState<ReportQuarter[]>([]);
   const [selectedReportYear, setSelectedReportYear] = useState(() => new Date().getFullYear());
@@ -18239,6 +18429,12 @@ function ReportsHub({
         subtitle={reportSubtitle}
         action={
           <div className="header-actions reports-header-actions">
+            {organization.showHotelReports !== false ? (
+              <a className="secondary-action compact-action" href="#hotel-report-section">
+                <i className="bi bi-buildings" aria-hidden="true" />
+                Hotel reports
+              </a>
+            ) : null}
             <button
               className="primary-action compact-action report-excel-action"
               type="button"
@@ -18371,6 +18567,50 @@ function ReportsHub({
           </div>
         </div>
       </div>
+
+      {(hasPermission(currentUser, 'admin:manage') ||
+        hasPermission(currentUser, 'hotel:reports')) &&
+      organization.showHotelReports !== false ? (
+        <section id="hotel-report-section" className="report-hotel-section">
+          <div className="report-section-heading">
+            <div>
+              <h2>Hotel reports</h2>
+              <p>Accommodation, restaurant, stocked-product, and payment performance.</p>
+            </div>
+            <label className="report-date-field">
+              <span>Hotel location</span>
+              <select
+                aria-label="Hotel report location"
+                value={hotelReportBranchId}
+                onChange={(event) => setHotelReportBranchId(event.target.value)}
+              >
+                <option value="">Choose a location</option>
+                {activeBranches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {hotelReportBranchId ? (
+            <div className="hotel-app hotel-reports-embedded">
+              <HotelReports
+                branchId={hotelReportBranchId}
+                currency={organization.currencyCode}
+                date={businessDate(
+                  activeBranches.find((branch) => branch.id === hotelReportBranchId)?.timeZone ??
+                    organization.timeZone,
+                )}
+              />
+            </div>
+          ) : (
+            <div className="hotel-app hotel-reports-embedded">
+              <p className="hotel-hint">Choose a hotel location to load its reports.</p>
+            </div>
+          )}
+        </section>
+      ) : null}
 
       {isLoading ? <LoadingPanel label="Loading reports..." /> : null}
 
@@ -19121,10 +19361,16 @@ function SettingsPage({ organization }: { organization: Organization }) {
   );
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [showHotelReports, setShowHotelReports] = useState(organization.showHotelReports ?? true);
+  const [hotelReportsMessage, setHotelReportsMessage] = useState('');
+  const [hotelReportsError, setHotelReportsError] = useState('');
 
   useEffect(() => {
     setDefaultVatCategory(organization.defaultProductVatCategory ?? 'A');
   }, [organization.defaultProductVatCategory]);
+  useEffect(() => {
+    setShowHotelReports(organization.showHotelReports ?? true);
+  }, [organization.showHotelReports]);
 
   const updateVatSettingsMutation = useMutation({
     mutationFn: updateOrganizationVatSettings,
@@ -19132,6 +19378,14 @@ function SettingsPage({ organization }: { organization: Organization }) {
       queryClient.setQueryData(['organization'], updatedOrganization);
       await queryClient.invalidateQueries({ queryKey: ['organization'] });
       setMessage('VAT settings saved.');
+    },
+  });
+  const updateHotelReportsSettingsMutation = useMutation({
+    mutationFn: updateOrganizationHotelReportsSettings,
+    onSuccess: async (updatedOrganization) => {
+      queryClient.setQueryData(['organization'], updatedOrganization);
+      await queryClient.invalidateQueries({ queryKey: ['organization'] });
+      setHotelReportsMessage('Report visibility settings saved.');
     },
   });
 
@@ -19144,6 +19398,21 @@ function SettingsPage({ organization }: { organization: Organization }) {
       await updateVatSettingsMutation.mutateAsync(defaultVatCategory);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Unable to save VAT settings');
+    }
+  }
+
+  async function handleHotelReportsSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setHotelReportsError('');
+    setHotelReportsMessage('');
+    try {
+      await updateHotelReportsSettingsMutation.mutateAsync(showHotelReports);
+    } catch (caughtError) {
+      setHotelReportsError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Unable to save report visibility settings',
+      );
     }
   }
 
@@ -19235,6 +19504,41 @@ function SettingsPage({ organization }: { organization: Organization }) {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section className="panel-card branch-form-panel">
+          <PanelHeader icon="bi-buildings" title="Hotel Reports" tone="blue" />
+          <p className="form-section-description">
+            Show hotel-specific reports on the main Reports page. Turn this off for organizations
+            that operate shops without a hotel.
+          </p>
+          <FormMessages error={hotelReportsError} message={hotelReportsMessage} />
+          <form className="record-form" onSubmit={handleHotelReportsSubmit}>
+            <fieldset className="checkbox-group wide-field">
+              <legend>Hotel report visibility</legend>
+              <label>
+                <input
+                  type="checkbox"
+                  aria-label="Show hotel reports in Reports"
+                  checked={showHotelReports}
+                  onChange={(event) => setShowHotelReports(event.target.checked)}
+                />
+                <span>Show hotel reports in Reports</span>
+              </label>
+            </fieldset>
+            <div className="form-actions">
+              <button
+                className="primary-action compact-action"
+                type="submit"
+                disabled={updateHotelReportsSettingsMutation.isPending}
+              >
+                <i className="bi bi-check2" aria-hidden="true" />
+                {updateHotelReportsSettingsMutation.isPending
+                  ? 'Saving...'
+                  : 'Save Report Settings'}
+              </button>
+            </div>
+          </form>
         </section>
       </div>
     </section>

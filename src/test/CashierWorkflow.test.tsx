@@ -24,7 +24,7 @@ const cashier: CurrentUser = {
 };
 let shifts: CashierShift[];
 let savedUser: Record<string, unknown> | undefined;
-function api(user = cashier) {
+function api(user = cashier, roles = testRoles) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -33,7 +33,7 @@ function api(user = cashier) {
         '/api/v1/me': user,
         '/api/v1/organization/current': testOrganization,
         '/api/v1/branches': testBranches,
-        '/api/v1/roles': testRoles,
+        '/api/v1/roles': roles,
         '/api/v1/permissions': testPermissions,
         '/api/v1/users': [],
         '/api/v1/expenses': testExpenses,
@@ -125,6 +125,36 @@ it('assigns Cashier alone and requires a shop before saving a user', async () =>
   await user.click(screen.getByRole('button', { name: 'Register User' }));
   await screen.findByText('New Cashier saved.');
   expect(savedUser).toMatchObject({ roleIds: [testRoles[2].id], branchIds: [testBranches[0].id] });
+});
+it('assigns Waiter alone and requires a location before saving a user', async () => {
+  const waiterRole = {
+    id: '00000000-0000-4000-8000-000000000406',
+    name: 'Waiter',
+    key: 'WAITER',
+    description: 'Hotel restaurant table service and orders',
+    assignedUsers: 0,
+    permissionIds: [],
+    permissionCodes: ['hotel:sell'],
+  };
+  api(testUser, [...testRoles, waiterRole]);
+  const user = userEvent.setup();
+  open('/users');
+  await screen.findByLabelText('Waiter (WAITER)');
+  await user.type(screen.getByLabelText('Display Name'), 'New Waiter');
+  await user.type(screen.getByLabelText('Email'), 'waiter@example.test');
+  await user.type(screen.getByLabelText('Password'), 'waiter-password');
+  await user.click(screen.getByLabelText('Admin (ADMIN)'));
+  await user.click(screen.getByLabelText('Waiter (WAITER)'));
+  expect(screen.getByLabelText('Admin (ADMIN)')).not.toBeChecked();
+  await user.click(screen.getByRole('button', { name: 'Register User' }));
+  expect(
+    await screen.findByText('Select at least one hotel location for the waiter.'),
+  ).toBeInTheDocument();
+  expect(savedUser).toBeUndefined();
+  await user.click(screen.getByLabelText(testBranches[0].name));
+  await user.click(screen.getByRole('button', { name: 'Register User' }));
+  await screen.findByText('New Waiter saved.');
+  expect(savedUser).toMatchObject({ roleIds: [waiterRole.id], branchIds: [testBranches[0].id] });
 });
 it('allows expense registration without report access or expense management controls', async () => {
   open('/expenses');

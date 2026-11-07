@@ -1,0 +1,768 @@
+.hr-admin-dashboard {
+  --hr-admin-ink: #1f2937;
+  --hr-admin-muted: #64748b;
+  --hr-admin-line: #e2e8f0;
+  --hr-admin-brand: #167567;
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  color: var(--hr-admin-ink);
+}
+.hr-admin-dashboard *,
+.hr-admin-dashboard *::before,
+.hr-admin-dashboard *::after {
+  box-sizing: border-box;
+}
+.hr-admin-title {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.hr-admin-title > div > span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 1.5px;
+}
+.hr-admin-dashboard h1 {
+  margin: 7px 0 0;
+  color: #172033;
+  font-size: clamp(27px, 3vw, 36px);
+  font-weight: 700;
+  letter-spacing: -1px;
+}
+.hr-admin-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 10px 15px;
+  border: 1px solid #d5e0dc;
+  border-radius: 9px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hr-admin-action:hover:not(:disabled) {
+  border-color: #9dc6b5;
+  background: #f5faf7;
+  color: #176957;
+}
+.hr-admin-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.hr-admin-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(120px, 0.9fr);
+  align-items: end;
+  gap: 12px;
+  padding: 20px 22px 15px;
+  border: 1px solid var(--hr-admin-line);
+  border-radius: 16px;
+  background: #fff;
+}
+.hr-admin-filters > label,
+.hr-admin-request-filters > label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 650;
+}
+.hr-admin-filters :is(input, select),
+.hr-admin-request-filters select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid #d6dee7;
+  border-radius: 8px;
+  background-color: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+}
+.hr-admin-filters > button {
+  width: 100%;
+}
+.hr-admin-filters > p {
+  grid-column: 1 / -1;
+  margin: 1px 0 0;
+  color: #64748b;
+  font-size: 11px;
+}
+.hr-admin-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 15px;
+  border: 1px solid #edc8c0;
+  border-radius: 10px;
+  background: #fff4f0;
+  color: #a44c3d;
+  font-size: 12px;
+}
+.hr-admin-error button {
+  border: 0;
+  background: transparent;
+  color: #854033;
+  font: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.hr-admin-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.hr-admin-summary > article {
+  display: flex;
+  align-items: start;
+  gap: 13px;
+  min-width: 0;
+  min-height: 124px;
+  padding: 20px;
+  border: 1px solid #dce5e1;
+  border-radius: 15px;
+  background: #fff;
+}
+.hr-admin-summary > article > i {
+  display: grid;
+  place-items: center;
+  flex: 0 0 37px;
+  width: 37px;
+  height: 37px;
+  border-radius: 10px;
+  background: #edf6f1;
+  color: var(--hr-admin-brand);
+  font-size: 17px;
+}
+.hr-admin-summary > article > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.hr-admin-summary span {
+  color: #475569;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.hr-admin-summary strong {
+  color: #172033;
+  font-size: 25px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.hr-admin-summary small {
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.hr-admin-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  border-radius: 13px;
+  background: #3944b9;
+}
+.hr-admin-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.hr-admin-tabs button:hover {
+  background: #ffffff1a;
+}
+.hr-admin-tabs button.active {
+  background: #04dfa1;
+  color: #174e57;
+}
+.hr-admin-panel {
+  min-width: 0;
+  padding: 22px 23px 24px;
+  border: 1px solid #dce2e5;
+  border-radius: 17px;
+  background: #fff;
+}
+.hr-admin-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 19px;
+}
+.hr-admin-panel-heading h2 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 17px;
+  font-weight: 650;
+}
+.hr-admin-staff-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.hr-admin-staff-card {
+  display: grid;
+  gap: 17px;
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid #e0e7ed;
+  border-radius: 13px;
+  background: #fff;
+}
+.hr-admin-person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.hr-admin-person > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #dce6e4;
+  border-radius: 11px;
+  background: #f5f8f7;
+  color: #315d56;
+  font-size: 12px;
+  font-weight: 700;
+}
+.hr-admin-person > div {
+  min-width: 0;
+}
+.hr-admin-person h3 {
+  margin: 0;
+  color: #25364a;
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.hr-admin-person p,
+.hr-admin-person small {
+  display: block;
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.hr-admin-staff-card dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.hr-admin-staff-card dl > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.hr-admin-staff-card dt {
+  color: #6b7787;
+  font-size: 9px;
+  line-height: 1.45;
+}
+.hr-admin-staff-card dd {
+  margin: 0;
+  color: #1f2937;
+  font-size: 17px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.hr-admin-staff-card footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #e8edf0;
+}
+.hr-admin-staff-card footer > span {
+  color: #64748b;
+  font-size: 10px;
+}
+.hr-admin-staff-card footer > a {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid #d6e0dd;
+  border-radius: 8px;
+  color: #34584c;
+  font-size: 10px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.hr-admin-staff-card footer > a:hover {
+  background: #f3f8f5;
+}
+.hr-admin-empty {
+  display: grid;
+  place-items: center;
+  min-height: 140px;
+  margin: 0;
+  padding: 22px;
+  border: 1px dashed #dce5e1;
+  border-radius: 11px;
+  background: #fafcfb;
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
+}
+.hr-admin-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e4e9ed;
+  border-radius: 10px;
+}
+.hr-admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: #435166;
+  font-size: 11px;
+  text-align: left;
+}
+.hr-admin-table th,
+.hr-admin-table td {
+  min-width: 90px;
+  padding: 12px 13px;
+  border-bottom: 1px solid #e9edf0;
+  white-space: nowrap;
+}
+.hr-admin-table th {
+  background: #f7f9fa;
+  color: #667487;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.hr-admin-table tr:last-child > * {
+  border-bottom: 0;
+}
+.hr-admin-table td small {
+  display: block;
+  margin-top: 4px;
+  color: #718096;
+  font-size: 9px;
+}
+.hr-admin-status {
+  display: inline-flex;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #eff3f2;
+  color: #53665e;
+  font-size: 9px;
+  font-weight: 650;
+}
+.hr-admin-status-pending_approval {
+  background: #fff3d8;
+  color: #936c20;
+}
+.hr-admin-status-approved {
+  background: #e8f5ee;
+  color: #28775e;
+}
+.hr-admin-status-rejected {
+  background: #fff0ec;
+  color: #ae4b3d;
+}
+.hr-admin-request-filters {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.hr-admin-request-filters > label {
+  min-width: 180px;
+}
+.hr-admin-request-filters > span {
+  padding-bottom: 10px;
+  color: #64748b;
+  font-size: 10px;
+}
+.hr-admin-requests {
+  display: grid;
+  gap: 10px;
+}
+.hr-admin-request {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.1fr) minmax(140px, 1fr) auto auto;
+  align-items: center;
+  gap: 13px;
+  padding: 15px;
+  border: 1px solid #e3e9ec;
+  border-radius: 11px;
+}
+.hr-admin-request > .hr-admin-person {
+  align-self: start;
+}
+.hr-admin-reason,
+.hr-admin-review-note {
+  margin: 0;
+  color: #526174;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.hr-admin-review-note {
+  grid-column: 2 / -1;
+  color: #63766a;
+}
+.hr-admin-request-actions {
+  display: flex;
+  gap: 7px;
+}
+.hr-admin-request-actions button {
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid #d7e3dc;
+  border-radius: 7px;
+  background: #f5faf7;
+  color: #236a50;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.hr-admin-request-actions button:last-child {
+  border-color: #ead4cf;
+  background: #fff7f4;
+  color: #a24f3f;
+}
+.hr-admin-productivity-chart {
+  min-width: 0;
+  margin: 0 0 20px;
+  padding: 21px;
+  border: 1px solid #e2e6ee;
+  border-radius: 14px;
+  background: #fff;
+}
+.hr-admin-productivity-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.hr-admin-productivity-heading > div {
+  flex: 1;
+  min-width: 0;
+}
+.hr-admin-productivity-kicker {
+  color: #52617a;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+.hr-admin-productivity-heading h3 {
+  margin: 6px 0;
+  color: #1f2937;
+  font-size: 18px;
+  font-weight: 700;
+}
+.hr-admin-productivity-heading p {
+  margin: 0;
+  color: #52617a;
+  font-size: 11px;
+}
+.hr-admin-productivity-heading > label {
+  display: grid;
+  flex: 0 1 210px;
+  gap: 7px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 650;
+}
+.hr-admin-productivity-heading select {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid #d6dee7;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+}
+.hr-admin-productivity-description {
+  margin: 17px 0 15px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.hr-admin-chart-caption {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: #334155;
+  font-size: 11px;
+}
+.hr-admin-chart-caption > span {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.hr-admin-chart-caption i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: #1677ff;
+}
+.hr-admin-chart-caption small {
+  color: #52617a;
+  font-size: 10px;
+}
+.hr-admin-chart-caption > strong {
+  flex-shrink: 0;
+  color: #52617a;
+  font-size: 10px;
+}
+.hr-admin-chart-viewport {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+.hr-admin-chart-viewport:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 3px;
+}
+.hr-admin-chart-plot {
+  width: 100%;
+  height: 320px;
+}
+.hr-admin-chart-help,
+.hr-admin-chart-note,
+.hr-admin-chart-footnote {
+  margin: 8px 0 0;
+  color: #52617a;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.hr-admin-chart-note {
+  padding: 9px 11px;
+  border: 1px solid #e2e6ee;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.hr-admin-chart-footnote {
+  margin-top: 13px;
+  padding-top: 11px;
+  border-top: 1px solid #e2e6ee;
+}
+.hr-admin-dialog-backdrop {
+  position: fixed;
+  z-index: 1100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #17203370;
+}
+.hr-admin-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 460px);
+  padding: 23px;
+  border: 1px solid #dce5e1;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 18px 55px #17203330;
+}
+.hr-admin-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.hr-admin-dialog p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.hr-admin-dialog label {
+  display: grid;
+  gap: 7px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 650;
+}
+.hr-admin-dialog textarea {
+  min-height: 90px;
+  padding: 10px;
+  border: 1px solid #d6dee7;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  resize: vertical;
+}
+.hr-admin-dialog footer {
+  display: flex;
+  justify-content: end;
+  gap: 8px;
+}
+.hr-admin-dialog footer button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #d6dee7;
+  border-radius: 8px;
+  background: #fff;
+  color: #425166;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.hr-admin-dialog footer button:last-child {
+  border-color: var(--hr-admin-brand);
+  background: var(--hr-admin-brand);
+  color: #fff;
+}
+.hr-admin-dialog footer button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+@media (max-width: 1100px) {
+  .hr-admin-filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .hr-admin-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hr-admin-staff-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 700px) {
+  .hr-admin-dashboard {
+    gap: 15px;
+  }
+  .hr-admin-title {
+    align-items: start;
+    flex-wrap: wrap;
+  }
+  .hr-admin-title > .hr-admin-action {
+    width: 100%;
+  }
+  .hr-admin-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 11px 9px;
+    padding: 15px;
+  }
+  .hr-admin-summary {
+    gap: 9px;
+  }
+  .hr-admin-summary > article {
+    min-height: 120px;
+    gap: 9px;
+    padding: 13px 11px;
+  }
+  .hr-admin-summary > article > i {
+    flex-basis: 30px;
+    width: 30px;
+    height: 31px;
+    font-size: 14px;
+  }
+  .hr-admin-summary strong {
+    font-size: 21px;
+  }
+  .hr-admin-summary span {
+    font-size: 10px;
+  }
+  .hr-admin-summary small {
+    font-size: 9px;
+  }
+  .hr-admin-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hr-admin-tabs button {
+    min-height: 44px;
+    padding: 8px 5px;
+    font-size: 10px;
+  }
+  .hr-admin-panel {
+    padding: 17px 14px;
+  }
+  .hr-admin-staff-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hr-admin-request {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+  .hr-admin-review-note {
+    grid-column: 1;
+  }
+  .hr-admin-request-actions {
+    justify-content: stretch;
+  }
+  .hr-admin-request-actions button {
+    flex: 1;
+    min-height: 40px;
+  }
+  .hr-admin-request-filters {
+    align-items: start;
+    flex-direction: column;
+  }
+  .hr-admin-request-filters > label {
+    width: 100%;
+  }
+  .hr-admin-request-filters > span {
+    padding: 0;
+  }
+  .hr-admin-productivity-chart {
+    padding: 16px 12px;
+  }
+  .hr-admin-productivity-heading {
+    gap: 15px;
+  }
+  .hr-admin-productivity-heading > div,
+  .hr-admin-productivity-heading > label {
+    flex: 1 1 100%;
+  }
+  .hr-admin-productivity-heading h3 {
+    font-size: 17px;
+  }
+  .hr-admin-chart-caption {
+    flex-direction: column;
+    gap: 5px;
+  }
+  .hr-admin-chart-plot {
+    height: 290px;
+  }
+}

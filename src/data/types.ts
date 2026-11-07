@@ -7,6 +7,7 @@ export type Organization = {
   timeZone: string;
   taxRegistrationNumber?: string;
   defaultProductVatCategory: ProductVatCategory;
+  showHotelReports: boolean;
   status: 'ACTIVE' | 'SUSPENDED';
 };
 
@@ -15,13 +16,15 @@ export type Branch = {
   name: string;
   code: string;
   timeZone: string;
+  branchType: 'STORE' | 'SHOP' | 'WAREHOUSE' | 'HOTEL';
   status: 'ACTIVE' | 'INACTIVE';
 };
 
 export type BranchRequest = {
   name: string;
-  code: string;
+  code?: string;
   timeZone: string;
+  branchType: Branch['branchType'];
   status: Branch['status'];
 };
 

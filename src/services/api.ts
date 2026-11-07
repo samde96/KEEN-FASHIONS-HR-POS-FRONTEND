@@ -125,10 +125,15 @@ let csrfToken: string | null = null;
 let csrfHeaderName = fallbackCsrfHeaderName;
 let csrfTokenRequest: Promise<string> | null = null;
 
+type ReadRequestOptions = {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+};
+
 export async function requestJson<T>(
   path: string,
   init?: RequestInit,
-  options?: { onlineOnly?: boolean },
+  options?: { onlineOnly?: boolean; timeoutMs?: number },
 ): Promise<T> {
   const isRead = (init?.method ?? 'GET').toUpperCase() === 'GET';
   const isIdentity = path === '/api/v1/me';
@@ -149,7 +154,7 @@ export async function requestJson<T>(
   let securedInit: RequestInit | undefined;
   try {
     securedInit = await withCsrf(path, init);
-    const timeout = AbortSignal.timeout(20_000);
+    const timeout = AbortSignal.timeout(options?.timeoutMs ?? 20_000);
     response = await fetchApi(path, {
       ...securedInit,
       signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
@@ -299,15 +304,6 @@ function clearCsrfToken() {
   csrfHeaderName = fallbackCsrfHeaderName;
 }
 
-async function refreshCsrfToken() {
-  clearCsrfToken();
-  try {
-    await getCsrfToken();
-  } catch {
-    clearCsrfToken();
-  }
-}
-
 function getCookie(name: string) {
   if (typeof document === 'undefined') {
     return null;
@@ -373,12 +369,24 @@ async function shouldRetryAgainstLocalBackend(response: Response, path: string) 
   }
 }
 
-export function getCurrentUser() {
-  return requestJson<CurrentUser>('/api/v1/me');
+export function getCurrentUser(options: ReadRequestOptions = {}) {
+  return requestJson<CurrentUser>(
+    '/api/v1/me',
+    { signal: options.signal },
+    {
+      timeoutMs: options.timeoutMs ?? 5_000,
+    },
+  );
 }
 
-export function getOrganization() {
-  return requestJson<Organization>('/api/v1/organization/current');
+export function getOrganization(options: ReadRequestOptions = {}) {
+  return requestJson<Organization>(
+    '/api/v1/organization/current',
+    { signal: options.signal },
+    {
+      timeoutMs: options.timeoutMs,
+    },
+  );
 }
 
 export function updateOrganizationVatSettings(defaultProductVatCategory: ProductVatCategory) {
@@ -391,8 +399,24 @@ export function updateOrganizationVatSettings(defaultProductVatCategory: Product
   });
 }
 
-export async function getBranches() {
-  const branches = await requestJson<Branch[]>('/api/v1/branches');
+export function updateOrganizationHotelReportsSettings(showHotelReports: boolean) {
+  return requestJson<Organization>('/api/v1/organization/current/hotel-reports-settings', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ showHotelReports }),
+  });
+}
+
+export async function getBranches(options: ReadRequestOptions = {}) {
+  const branches = await requestJson<Branch[]>(
+    '/api/v1/branches',
+    { signal: options.signal },
+    {
+      timeoutMs: options.timeoutMs,
+    },
+  );
   const user = getOfflineIdentity();
   if (user)
     await updateDevice(
@@ -1001,6 +1025,9 @@ export async function login(credentials: LoginCredentials) {
       return offlineLogin(credentials.username, credentials.password);
     throw error;
   }
+  // Login rotates the session's CSRF token. Acquire it lazily on the next write,
+  // so an additional network request cannot delay a successful sign-in.
+  clearCsrfToken();
   await unlockOfflineAccess(currentUser);
   await enrollOfflineLogin(
     credentials.username,
@@ -1008,7 +1035,6 @@ export async function login(credentials: LoginCredentials) {
     currentUser,
     credentials.rememberDevice,
   ).catch(() => undefined);
-  await refreshCsrfToken();
   return currentUser;
 }
 

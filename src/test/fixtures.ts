@@ -17,6 +17,7 @@ export const testOrganization: Organization = {
   currencyCode: 'KES',
   timeZone: 'Africa/Nairobi',
   defaultProductVatCategory: 'A',
+  showHotelReports: true,
   status: 'ACTIVE',
 };
 
@@ -44,6 +45,7 @@ export const testBranches: Branch[] = [
     name: 'Flagship Branch',
     code: 'FLAG',
     timeZone: 'Africa/Nairobi',
+    branchType: 'SHOP',
     status: 'ACTIVE',
   },
 ];

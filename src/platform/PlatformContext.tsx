@@ -3,7 +3,13 @@ import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import type { Branch, CurrentUser } from '../data/types';
 import { useStockNavigationGuard } from '../hooks/StockNavigationGuard';
-import { appForPath, canAccessPath, visibleApps, isCashierUser } from './appRegistry';
+import {
+  appForPath,
+  canAccessPath,
+  visibleApps,
+  isCashierUser,
+  isHotelSalesManagerUser,
+} from './appRegistry';
 
 export type RecentApp = { appId: string; path: string; visitedAt: string };
 type Preferences = { branchId: string; favorites: string[]; recent: RecentApp[] };
@@ -70,7 +76,8 @@ export function PlatformProvider({
       branches.filter(
         (b) =>
           b.status === 'ACTIVE' &&
-          ((!isCashierUser(user) && !user.branchIds.length) || user.branchIds.includes(b.id)),
+          ((!isCashierUser(user) && !isHotelSalesManagerUser(user) && !user.branchIds.length) ||
+            user.branchIds.includes(b.id)),
       ),
     [branches, user],
   );
