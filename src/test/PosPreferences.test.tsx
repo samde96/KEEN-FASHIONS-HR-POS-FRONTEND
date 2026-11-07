@@ -6,7 +6,6 @@ import PosPreferencesPanel from '../components/PosPreferencesPanel';
 import { getUsers } from '../services/api';
 import {
   getPosPreferences,
-  getNotificationEmailStatus,
   savePosPreferences,
   type PosPreferences,
 } from '../services/posOperations';
@@ -14,7 +13,6 @@ import {
 vi.mock('../services/api', () => ({ getUsers: vi.fn() }));
 vi.mock('../services/posOperations', () => ({
   getPosPreferences: vi.fn(),
-  getNotificationEmailStatus: vi.fn(),
   savePosPreferences: vi.fn(),
 }));
 let stored: PosPreferences;
@@ -39,21 +37,17 @@ beforeEach(() => {
     notificationEmail: '',
   };
   vi.mocked(getUsers).mockResolvedValue([]);
-  vi.mocked(getNotificationEmailStatus).mockResolvedValue({
-    provider: 'Resend',
-    configured: false,
-    fromEmail: '',
-    missingSettings: ['RESEND_API_KEY', 'RESEND_FROM_EMAIL'],
-  });
   vi.mocked(getPosPreferences).mockImplementation(async () => stored);
   vi.mocked(savePosPreferences).mockImplementation(async (value) => (stored = value));
 });
 
-it('shows pending Resend setup and saves email copies with system summaries', async () => {
+it('saves email copies with system summaries without showing provider setup details', async () => {
   stored.inAppEnabled = false;
   const user = userEvent.setup();
   mount();
-  expect(await screen.findByText(/Email is awaiting server configuration/)).toBeInTheDocument();
+  await screen.findByLabelText('Email a copy of system notifications');
+  expect(screen.queryByText(/Resend/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/server configuration/i)).not.toBeInTheDocument();
   await user.click(screen.getByLabelText('Email a copy of system notifications'));
   expect(screen.getByLabelText('In-system daily summary')).toBeChecked();
   expect(screen.getByLabelText('In-system daily summary')).toBeDisabled();
@@ -61,18 +55,6 @@ it('shows pending Resend setup and saves email copies with system summaries', as
   await screen.findByText('Reminder settings saved.');
   expect(stored.emailEnabled).toBe(true);
   expect(stored.inAppEnabled).toBe(true);
-});
-
-it('shows the configured sender without exposing an API key', async () => {
-  vi.mocked(getNotificationEmailStatus).mockResolvedValue({
-    provider: 'Resend',
-    configured: true,
-    fromEmail: 'KEEN Fashions <alerts@example.com>',
-    missingSettings: [],
-  });
-  mount();
-  expect(await screen.findByText('KEEN Fashions <alerts@example.com>')).toBeInTheDocument();
-  expect(screen.getByText(/Resend is configured/)).toBeInTheDocument();
 });
 
 it('saves the notification recipient email and restores it after reloading settings', async () => {

@@ -19,20 +19,8 @@ for (const width of [320, 390, 768, 1440]) {
       if (route.request().method() === 'PUT') preferences = route.request().postDataJSON();
       await route.fulfill({ json: preferences });
     });
-    await page.route('**/api/v1/document-delivery/email/status', (route) =>
-      route.fulfill({
-        json: {
-          provider: 'Resend',
-          configured: true,
-          fromEmail: 'KEEN Fashions <notifications@example.com>',
-          missingSettings: [],
-        },
-      }),
-    );
     await page.goto('/settings');
-    await expect(
-      page.getByText('KEEN Fashions <notifications@example.com>', { exact: true }),
-    ).toBeVisible();
+    await expect(page.getByText(/Resend/i)).toHaveCount(0);
     await page.getByLabel('Email a copy of system notifications').check();
     await page.getByLabel('Notification recipient email').fill('reports@example.com');
     await page.getByRole('button', { name: 'Save reminder settings' }).click();
