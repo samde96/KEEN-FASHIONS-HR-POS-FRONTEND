@@ -6,6 +6,7 @@ import type { HotelItem, HotelItemRequest, HotelMenuItemRequest } from './types'
 type MenuRow = Omit<HotelMenuItemRequest, 'branchId'> & { rowNumber: number };
 type InventoryRow = Omit<HotelItemRequest, 'branchId'> & {
   openingStock: number;
+  openingUnitCost: number;
   rowNumber: number;
 };
 type WorksheetRow = Record<string, unknown>;
@@ -16,6 +17,7 @@ const inventoryHeaders = [
   'Category',
   'Stock Unit',
   'Selling Price',
+  'Purchase Cost per Stock Unit',
   'Opening Stock',
   'Low Stock Level',
   'Sellable',
@@ -79,7 +81,12 @@ export default function HotelExcelImport({
             const { rowNumber: _rowNumber, ...menu } = row as MenuRow;
             await saveHotelMenuItem({ ...menu, branchId });
           } else {
-            const { rowNumber: _rowNumber, openingStock, ...itemRequest } = row as InventoryRow;
+            const {
+              rowNumber: _rowNumber,
+              openingStock,
+              openingUnitCost,
+              ...itemRequest
+            } = row as InventoryRow;
             const item = await saveHotelItem({ ...itemRequest, branchId });
             if (openingStock > 0) {
               createdWithoutStock = item.name;
@@ -88,6 +95,7 @@ export default function HotelExcelImport({
                 quantity: openingStock,
                 kind: 'RECEIPT',
                 note: 'Opening stock imported from Excel',
+                ...(item.category === 'INGREDIENT' ? { unitCost: openingUnitCost } : {}),
               });
               createdWithoutStock = undefined;
             }
@@ -143,7 +151,7 @@ export default function HotelExcelImport({
       <p className="hotel-import-hint">
         {kind === 'menu'
           ? 'Columns: Dish Name, Category, Description, Selling Price, Available.'
-          : 'Columns: Item Name, Category (PRODUCT, INGREDIENT or SUPPLY), Stock Unit, Selling Price, Opening Stock, Low Stock Level, Sellable and Active.'}
+          : 'Columns: Item Name, Category (PRODUCT, INGREDIENT or SUPPLY), Stock Unit, Selling Price, Purchase Cost per Stock Unit, Opening Stock, Low Stock Level, Sellable and Active. Purchase cost is required for ingredient opening stock.'}
       </p>
     </div>
   );
@@ -227,6 +235,11 @@ function parseInventoryRows(rows: WorksheetRow[], existingNames: string[]): Inve
       999999999999.99,
       2,
     );
+    const openingStock = numberValue(row, 'Opening Stock', rowNumber, 0, 99999999999.999, 3, 0);
+    const openingUnitCost =
+      category === 'INGREDIENT' && openingStock > 0
+        ? numberValue(row, 'Purchase Cost per Stock Unit', rowNumber, 0.0001, 999999999999.9999, 4)
+        : 0;
     return {
       rowNumber,
       name,
@@ -234,7 +247,8 @@ function parseInventoryRows(rows: WorksheetRow[], existingNames: string[]): Inve
       unit,
       sellable,
       price,
-      openingStock: numberValue(row, 'Opening Stock', rowNumber, 0, 99999999999.999, 3, 0),
+      openingStock,
+      openingUnitCost,
       reorderLevel: numberValue(row, 'Low Stock Level', rowNumber, 0, 99999999999.999, 3, 0),
       active: booleanValue(row, 'Active', rowNumber, true),
     };

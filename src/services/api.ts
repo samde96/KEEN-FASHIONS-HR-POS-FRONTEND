@@ -19,6 +19,7 @@ import type {
   CustomerPeriodReport,
   CustomerRequest,
   Expense,
+  HotelSalesSummary,
   ExpenseRequest,
   InventoryItem,
   InventoryReorderLevelRequest,
@@ -955,6 +956,11 @@ export async function getSales(params?: URLSearchParams) {
       (!params?.get('to') || day <= params.get('to')!)
     );
   });
+}
+
+export function getHotelSalesSummary(branchId?: string) {
+  const query = branchId ? `?${new URLSearchParams({ branchId })}` : '';
+  return requestJson<HotelSalesSummary>(`/api/v1/sales/hotel-summary${query}`);
 }
 
 export function createSale(sale: SaleRequest, idempotencyKey: string, manualMpesa = false) {

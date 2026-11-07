@@ -51,13 +51,11 @@ export default function HotelRegister({
   const signedInWaiter =
     (waiterUserId ? waiters.find((waiter) => waiter.userId === waiterUserId) : undefined) ??
     waiters.find(
-      (waiter) =>
-        waiter.name.trim().toLocaleLowerCase() === waiterName?.trim().toLocaleLowerCase(),
+      (waiter) => waiter.name.trim().toLocaleLowerCase() === waiterName?.trim().toLocaleLowerCase(),
     );
   const [waiterId, setWaiterId] = useState(signedInWaiter?.id ?? '');
   const receiptSettingsReady = !!(
-    data.receiptSettings.tillNumber &&
-    data.receiptSettings.contactPhone
+    data.receiptSettings.tillNumber && data.receiptSettings.contactPhone
   );
   const [tableNumber, setTableNumber] = useState(''),
     [tablePicker, setTablePicker] = useState(false),
@@ -521,11 +519,7 @@ export default function HotelRegister({
                   <button
                     type="submit"
                     className="hotel-primary"
-                    disabled={
-                      !cart.length ||
-                      total <= 0 ||
-                      !waiters.some((w) => w.id === waiterId)
-                    }
+                    disabled={!cart.length || total <= 0 || !waiters.some((w) => w.id === waiterId)}
                   >
                     {busy ? 'Saving…' : 'Create Order'}
                     <i className="bi bi-arrow-right" aria-hidden="true" />
@@ -637,6 +631,7 @@ function HotelOrders({
                     : statusLabel(order.serviceType)}
                 </h2>
                 <Status value={order.status} />
+                <Status value={order.kitchenStatus} />
               </div>
               <small className="hotel-reference">{order.reference}</small>
               <p>

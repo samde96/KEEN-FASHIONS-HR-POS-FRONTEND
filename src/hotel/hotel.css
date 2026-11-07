@@ -2001,6 +2001,38 @@
   border-left: 0;
   font-weight: 700;
 }
+.hotel-kitchen-lines {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+}
+.hotel-kitchen-lines li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid #edf0f4;
+}
+.hotel-kitchen-lines li > div:first-child {
+  display: grid;
+  gap: 5px;
+}
+.hotel-kitchen-lines small {
+  color: #64748b;
+}
+.hotel-kitchen-prepare {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hotel-kitchen-prepare input {
+  width: 100px;
+  min-height: 42px;
+}
+.hotel-kitchen-prepare button {
+  min-height: 42px;
+}
 .hotel-receipt-till {
   border: 2px solid #263e53;
   padding: 10px;
@@ -2017,6 +2049,16 @@
   color: #20394d;
   line-height: 1.7;
   overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .hotel-kitchen-lines li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .hotel-kitchen-prepare input {
+    flex: 1;
+    width: auto;
+  }
 }
 .hotel-receipt-contact strong {
   font-size: 1rem;
@@ -2389,13 +2431,6 @@
   }
 }
 @media print {
-  @page hotel-receipt {
-    size: auto;
-    margin: 0;
-  }
-  .hotel-receipt-print {
-    page: hotel-receipt;
-  }
   body:has(.hotel-receipt-print) .hotel-pos-shell {
     height: auto;
     overflow: visible;
@@ -2412,11 +2447,14 @@
     display: none !important;
   }
   body:has(.hotel-double-receipts) .hotel-modal-backdrop {
-    position: static;
+    position: static !important;
+    inset: auto !important;
     display: block;
   }
   body:has(.hotel-double-receipts) .hotel-double-receipts {
-    position: static;
+    position: static !important;
+    inset: auto !important;
+    page: auto;
     padding: 0;
     margin: 0;
   }
@@ -2425,9 +2463,12 @@
     padding: 4mm;
     border: 0;
     break-inside: avoid;
+  }
+  body:has(.hotel-double-receipts) .hotel-receipt-copy:first-child {
     break-after: page;
   }
-  body:has(.hotel-double-receipts) .hotel-receipt-copy:last-child {
+  body:has(.hotel-double-receipts) .hotel-receipt-copy + .hotel-receipt-copy {
+    break-before: auto;
     break-after: auto;
   }
   body:has(.hotel-double-receipts) .hotel-receipt-till {

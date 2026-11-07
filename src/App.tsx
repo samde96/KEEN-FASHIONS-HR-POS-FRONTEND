@@ -58,7 +58,10 @@ import MpesaPaymentPanel from './components/MpesaPaymentPanel';
 import LocationsPage from './components/LocationsPage';
 import HotelPage from './hotel/HotelPage';
 import HotelCheckoutPage from './hotel/HotelCheckoutPage';
+import HotelKitchenPage from './hotel/HotelKitchenPage';
 import HotelReports from './hotel/HotelReports';
+import { getHotelSalesHistory } from './hotel/api';
+import type { HotelSalesHistoryOrder } from './hotel/types';
 import HrPage from './hr/HrPage';
 import HrAdminDashboard from './hr/HrAdminDashboard';
 import MyAvailabilityPage from './hr/MyAvailabilityPage';
@@ -627,6 +630,13 @@ function PlatformRoutes({
   if (location.pathname.replace(/\/$/, '') === '/hotel/restaurant') {
     return <HotelCheckoutPage user={currentUser} organization={organization} onLogout={onLogout} />;
   }
+  if (location.pathname.replace(/\/$/, '') === '/hotel/kitchen') {
+    return (
+      <AppLayout user={currentUser} onLogout={onLogout}>
+        <HotelKitchenPage />
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout user={currentUser} onLogout={onLogout}>
@@ -638,10 +648,7 @@ function PlatformRoutes({
         />
         <Route path="/home" element={<AppsHome user={currentUser} organization={organization} />} />
         <Route path="/stock-transfers" element={<StockTransfersPage />} />
-        <Route
-          path="/hr"
-          element={<HrAdminDashboard currencyCode={organization.currencyCode} />}
-        />
+        <Route path="/hr" element={<HrAdminDashboard currencyCode={organization.currencyCode} />} />
         <Route
           path="/hr/employees"
           element={<HrPage workspace="employees" currencyCode={organization.currencyCode} />}
@@ -663,10 +670,7 @@ function PlatformRoutes({
           element={<HrPage workspace="hours" currencyCode={organization.currencyCode} />}
         />
         <Route path="/payroll" element={<PayrollPage currencyCode={organization.currencyCode} />} />
-        <Route
-          path="/payroll/processing"
-          element={<Navigate to="/payroll" replace />}
-        />
+        <Route path="/payroll/processing" element={<Navigate to="/payroll" replace />} />
         <Route path="/my-availability" element={<MyAvailabilityPage />} />
         <Route
           path="/apps/hotel"
@@ -675,9 +679,11 @@ function PlatformRoutes({
               to={
                 hasAnyPermission(currentUser, ['admin:manage', 'hotel:view', 'hotel:manage'])
                   ? '/hotel/restaurant'
-                  : hasPermission(currentUser, 'hotel:sell')
+                  : hasAnyPermission(currentUser, ['hotel:sell'])
                     ? '/hotel/restaurant'
-                    : '/hotel/reports'
+                    : hasPermission(currentUser, 'hotel:kitchen')
+                      ? '/hotel/kitchen'
+                      : '/hotel/reports'
               }
               replace
             />
@@ -807,6 +813,13 @@ function PlatformRoutes({
 }
 
 function defaultPathForUser(user: CurrentUser) {
+  if (
+    !isAdminUser(user) &&
+    hasPermission(user, 'hotel:kitchen') &&
+    !hasPermission(user, 'hotel:manage') &&
+    !hasPermission(user, 'hotel:sell')
+  )
+    return '/hotel/kitchen';
   if (
     !isAdminUser(user) &&
     hasPermission(user, 'hotel:sell') &&
@@ -2457,28 +2470,53 @@ function SalesPage({ organization }: { organization: Organization }) {
   const reversalsQuery = useQuery({ queryKey: ['sale-reversals'], queryFn: getSaleReversals });
   const [dateRange, setDateRange] = useState<ReportDateRange>(() => reportPeriodRange('today'));
   const normalizedDateRange = normalizeReportDateRange(dateRange);
+  const salesParams = new URLSearchParams({
+    fromDate: normalizedDateRange.from,
+    toDate: normalizedDateRange.to,
+  });
   const salesQuery = useQuery({
     queryKey: ['sales', 'page', normalizedDateRange.from, normalizedDateRange.to],
+    queryFn: () => getSales(salesParams),
+  });
+  const hotelSalesQuery = useQuery({
+    queryKey: [
+      'hotel',
+      'sales-history',
+      platformBranchId,
+      normalizedDateRange.from,
+      normalizedDateRange.to,
+    ],
     queryFn: () =>
-      getSales(
-        new URLSearchParams({
-          fromDate: normalizedDateRange.from,
-          toDate: normalizedDateRange.to,
-        }),
+      getHotelSalesHistory(
+        normalizedDateRange.from,
+        normalizedDateRange.to,
+        platformBranchId || undefined,
       ),
   });
   const [selectedReceipt, setSelectedReceipt] = useState<Sale | null>(null);
   const [expandedSaleId, setExpandedSaleId] = useState<string | null>(null);
   const sales = inBranch(salesQuery.data ?? [], platformBranchId);
-  const totalSales = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
-  const totalItems = sales.reduce(
-    (sum, sale) => sum + sale.lines.reduce((lineSum, line) => lineSum + line.quantity, 0),
-    0,
-  );
+  const hotelSales = inBranch(hotelSalesQuery.data ?? [], platformBranchId);
+  const totalSales =
+    sales.reduce((sum, sale) => sum + sale.totalAmount, 0) +
+    hotelSales.reduce((sum, order) => sum + order.total, 0);
+  const totalItems =
+    sales.reduce(
+      (sum, sale) => sum + sale.lines.reduce((lineSum, line) => lineSum + line.quantity, 0),
+      0,
+    ) +
+    hotelSales.reduce(
+      (sum, order) => sum + order.lines.reduce((lineSum, line) => lineSum + line.quantity, 0),
+      0,
+    );
+  const totalTransactions = sales.length + hotelSales.length;
 
   return (
     <section className="table-workspace">
-      <PageHeader title="Sales" subtitle="Completed POS sales for the selected dates." />
+      <PageHeader
+        title="Sales"
+        subtitle="Completed POS sales and Hotel restaurant orders for the selected dates."
+      />
 
       <div className="catalog-filter-bar">
         <label className="inventory-filter-field">
@@ -2507,7 +2545,7 @@ function SalesPage({ organization }: { organization: Organization }) {
         <SummaryMetric
           icon="bi-receipt"
           label="Transactions"
-          value={String(sales.length)}
+          value={String(totalTransactions)}
           tone="green"
         />
         <SummaryMetric
@@ -2524,119 +2562,189 @@ function SalesPage({ organization }: { organization: Organization }) {
         />
       </div>
 
-      {salesQuery.isPending ? (
+      {salesQuery.isPending || hotelSalesQuery.isPending ? (
         <LoadingPanel label="Loading sales..." />
-      ) : salesQuery.isError ? (
+      ) : salesQuery.isError || hotelSalesQuery.isError ? (
         <EmptyState
           icon="bi-exclamation-circle"
           title="Sales could not be loaded"
-          detail="Refresh the page or try again after the API is available."
+          detail={
+            salesQuery.error?.message ??
+            hotelSalesQuery.error?.message ??
+            'Refresh the page or try again after the API is available.'
+          }
         />
-      ) : sales.length === 0 ? (
+      ) : totalTransactions === 0 ? (
         <EmptyState
           icon="bi-receipt"
           title="No sales recorded"
-          detail="Completed POS payments for the selected dates will appear here."
+          detail="Completed POS sales and paid Hotel restaurant orders for the selected dates will appear here."
         />
       ) : (
-        <div className="responsive-table mobile-compact-table sales-history-table">
-          <table aria-label="Sales history">
-            <thead>
-              <tr>
-                <th>Receipt</th>
-                <th>Customer</th>
-                <th>Items</th>
-                <th>Payment</th>
-                <th>Total</th>
-                <th>Status</th>
-                <th>Sold At</th>
-                <th>Actions</th>
-                <th className="mobile-row-more">Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sales.map((sale) => (
-                <tr
-                  className={expandedSaleId === sale.id ? 'details-expanded' : undefined}
-                  key={sale.id}
-                >
-                  <td data-label="Receipt">
-                    <span className="table-label">
-                      <i className="bi bi-receipt" aria-hidden="true" />
-                      {sale.saleNumber}
-                    </span>
-                  </td>
-                  <td data-label="Customer">{sale.customerName || 'Walk-in Customer'}</td>
-                  <td data-label="Items">
-                    {sale.lines.reduce((sum, line) => sum + line.quantity, 0)} item
-                    {sale.lines.reduce((sum, line) => sum + line.quantity, 0) === 1 ? '' : 's'}
-                  </td>
-                  <td className="mobile-row-meta" data-label="Payment">
-                    {formatSalePayments(sale)}
-                  </td>
-                  <td className="mobile-row-value" data-label="Total">
-                    {formatMoney(sale.totalAmount, organization.currencyCode)}
-                  </td>
-                  <td data-label="Status">
-                    <StatusPill
-                      status={
-                        sale.syncStatus === 'pending' ||
-                        reversalsQuery.data?.some((r) => r.sale_id === sale.id)
-                          ? 'pending'
-                          : 'posted'
-                      }
-                      label={
-                        sale.syncStatus === 'pending'
-                          ? 'Saved · pending sync'
-                          : reversalsQuery.data?.find((r) => r.sale_id === sale.id)?.kind ===
-                              'REFUND'
-                            ? 'Refunded'
-                            : reversalsQuery.data?.find((r) => r.sale_id === sale.id)?.kind ===
-                                'CANCELLATION'
-                              ? 'Cancelled'
-                              : reversalsQuery.isError
-                                ? 'Status unavailable'
-                                : 'Completed'
-                      }
-                    />
-                  </td>
-                  <td className="mobile-row-name" data-label="Sold At">
-                    <time dateTime={sale.soldAt}>
-                      <span className="sales-date-full">{formatDateTime(sale.soldAt)}</span>
-                      <span className="sales-date-compact">{formatDateOnly(sale.soldAt)}</span>
-                    </time>
-                  </td>
-                  <td data-label="Actions">
-                    <span className="table-actions">
-                      <button
-                        className="text-button"
-                        type="button"
-                        onClick={() => setSelectedReceipt(sale)}
+        <>
+          {sales.length > 0 && (
+            <section className="sales-history-section">
+              <h2>POS sales</h2>
+              <div className="responsive-table mobile-compact-table sales-history-table">
+                <table aria-label="POS sales history">
+                  <thead>
+                    <tr>
+                      <th>Receipt</th>
+                      <th>Customer</th>
+                      <th>Items sold</th>
+                      <th>Payment</th>
+                      <th>Total</th>
+                      <th>Status</th>
+                      <th>Sold At</th>
+                      <th>Actions</th>
+                      <th className="mobile-row-more">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sales.map((sale) => (
+                      <tr
+                        className={expandedSaleId === sale.id ? 'details-expanded' : undefined}
+                        key={sale.id}
                       >
-                        <i className="bi bi-printer" aria-hidden="true" />
-                        Receipt
-                      </button>
-                      <SaleReversalActions sale={sale} />
-                    </span>
-                  </td>
-                  <td className="mobile-row-more">
-                    <button
-                      aria-label={`Details and actions for ${sale.saleNumber}`}
-                      aria-expanded={expandedSaleId === sale.id}
-                      className="mobile-row-more-button"
-                      type="button"
-                      onClick={() =>
-                        setExpandedSaleId((current) => (current === sale.id ? null : sale.id))
-                      }
-                    >
-                      <i className="bi bi-three-dots-vertical" aria-hidden="true" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                        <td data-label="Receipt">
+                          <span className="table-label">
+                            <i className="bi bi-receipt" aria-hidden="true" />
+                            {sale.saleNumber}
+                          </span>
+                        </td>
+                        <td data-label="Customer">{sale.customerName || 'Walk-in Customer'}</td>
+                        <td data-label="Items">
+                          <span>
+                            {sale.lines.reduce((sum, line) => sum + line.quantity, 0)} item
+                            {sale.lines.reduce((sum, line) => sum + line.quantity, 0) === 1
+                              ? ''
+                              : 's'}
+                          </span>
+                          <ul className="sales-history-items">
+                            {sale.lines.map((line) => (
+                              <li key={`${sale.id}-${line.productId}`}>
+                                {line.productName} × {line.quantity}
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                        <td className="mobile-row-meta" data-label="Payment">
+                          {formatSalePayments(sale)}
+                        </td>
+                        <td className="mobile-row-value" data-label="Total">
+                          {formatMoney(sale.totalAmount, organization.currencyCode)}
+                        </td>
+                        <td data-label="Status">
+                          <StatusPill
+                            status={
+                              sale.syncStatus === 'pending' ||
+                              reversalsQuery.data?.some((r) => r.sale_id === sale.id)
+                                ? 'pending'
+                                : 'posted'
+                            }
+                            label={
+                              sale.syncStatus === 'pending'
+                                ? 'Saved · pending sync'
+                                : reversalsQuery.data?.find((r) => r.sale_id === sale.id)?.kind ===
+                                    'REFUND'
+                                  ? 'Refunded'
+                                  : reversalsQuery.data?.find((r) => r.sale_id === sale.id)
+                                        ?.kind === 'CANCELLATION'
+                                    ? 'Cancelled'
+                                    : reversalsQuery.isError
+                                      ? 'Status unavailable'
+                                      : 'Completed'
+                            }
+                          />
+                        </td>
+                        <td className="mobile-row-name" data-label="Sold At">
+                          <time dateTime={sale.soldAt}>
+                            <span className="sales-date-full">{formatDateTime(sale.soldAt)}</span>
+                            <span className="sales-date-compact">
+                              {formatDateOnly(sale.soldAt)}
+                            </span>
+                          </time>
+                        </td>
+                        <td data-label="Actions">
+                          <span className="table-actions">
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => setSelectedReceipt(sale)}
+                            >
+                              <i className="bi bi-printer" aria-hidden="true" />
+                              Receipt
+                            </button>
+                            <SaleReversalActions sale={sale} />
+                          </span>
+                        </td>
+                        <td className="mobile-row-more">
+                          <button
+                            aria-label={`Details and actions for ${sale.saleNumber}`}
+                            aria-expanded={expandedSaleId === sale.id}
+                            className="mobile-row-more-button"
+                            type="button"
+                            onClick={() =>
+                              setExpandedSaleId((current) => (current === sale.id ? null : sale.id))
+                            }
+                          >
+                            <i className="bi bi-three-dots-vertical" aria-hidden="true" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+          {hotelSales.length > 0 && (
+            <section className="sales-history-section">
+              <h2>Hotel restaurant orders</h2>
+              <div className="responsive-table mobile-compact-table sales-history-table">
+                <table aria-label="Hotel restaurant sales history">
+                  <thead>
+                    <tr>
+                      <th>Order</th>
+                      <th>Location</th>
+                      <th>Customer</th>
+                      <th>Food and products sold</th>
+                      <th>Payment</th>
+                      <th>Total</th>
+                      <th>Sold At</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hotelSales.map((order) => (
+                      <tr key={`hotel-${order.id}`}>
+                        <td data-label="Order">{order.reference}</td>
+                        <td data-label="Location">{order.branchName}</td>
+                        <td data-label="Customer">{order.customerName || 'Walk-in Customer'}</td>
+                        <td data-label="Food and products sold">
+                          <ul className="sales-history-items">
+                            {order.lines.map((line, index) => (
+                              <li key={`${order.id}-${line.itemId}-${index}`}>
+                                <span className="sales-history-item-type">
+                                  {line.itemType === 'FOOD' ? 'Food' : 'Product'}
+                                </span>{' '}
+                                {line.itemName} × {line.quantity}
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                        <td data-label="Payment">{order.method}</td>
+                        <td data-label="Total">
+                          {formatMoney(order.total, organization.currencyCode)}
+                        </td>
+                        <td data-label="Sold At">{formatDateTime(order.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+        </>
       )}
       {selectedReceipt ? (
         <ReceiptDialog
@@ -11277,10 +11385,27 @@ function Dashboard({ branches, currentUser, organization }: DashboardProps) {
     'inventory:adjust',
     'reports:view',
   ]);
+  const todayRange = reportPeriodRange('today');
+  const canViewHotelSales =
+    hasAnyPermission(currentUser, ['admin:manage', 'reports:view', 'sales:view']) ||
+    isHotelSalesManagerUser(currentUser);
   const inventoryQuery = useQuery({ queryKey: ['inventory'], queryFn: getInventory });
   const salesQuery = useQuery({
     queryKey: ['sales'],
     queryFn: () => getSales(),
+    refetchOnMount: 'always',
+  });
+  const hotelSalesQuery = useQuery({
+    queryKey: [
+      'hotel-sales-history',
+      'dashboard',
+      todayRange.from,
+      todayRange.to,
+      platformBranchId,
+    ],
+    queryFn: () =>
+      getHotelSalesHistory(todayRange.from ?? '', todayRange.to ?? '', platformBranchId),
+    enabled: canViewHotelSales,
     refetchOnMount: 'always',
   });
   const expensesQuery = useQuery({
@@ -11301,19 +11426,20 @@ function Dashboard({ branches, currentUser, organization }: DashboardProps) {
   });
   const inventory = inBranch(inventoryQuery.data ?? [], platformBranchId);
   const sales = inBranch(salesQuery.data ?? [], platformBranchId);
+  const hotelSales = hotelSalesQuery.data ?? [];
   const expenses = inBranch(expensesQuery.data ?? [], platformBranchId);
   const stockAdjustmentSummary = platformBranchId
     ? stockAdjustmentSummaryFromAdjustments(
         inBranch(scopedAdjustmentsQuery.data ?? [], platformBranchId),
       )
     : (stockAdjustmentSummaryQuery.data ?? emptyStockAdjustmentSummary());
-  const todayRange = reportPeriodRange('today');
   const dashboardSales = sales.filter((sale) => isWithinReportRange(sale.soldAt, todayRange));
+  const dashboardHotelSales = hotelSales;
   const dashboardExpenses = expenses.filter((expense) =>
     isWithinReportRange(expense.incurredAt, todayRange),
   );
   const dashboardInventory = inventory;
-  const totalSales = salesTotal(dashboardSales);
+  const totalSales = salesTotal(dashboardSales) + hotelSalesTotal(dashboardHotelSales);
   const grossProfit = grossProfitFromSales(dashboardSales);
   const totalExpenses = expensesTotal(
     dashboardExpenses.filter((expense) => expense.status !== 'VOID'),
@@ -11324,8 +11450,8 @@ function Dashboard({ branches, currentUser, organization }: DashboardProps) {
     totalExpenses,
     grossProfit - totalExpenses,
   ).filter((metric) => showProfit || !metric.profitOnly);
-  const dashboardSalesTrend = dashboardSalesTrendFromSales(dashboardSales);
-  const paymentMethodTotals = paymentMethodTotalsFromSales(dashboardSales);
+  const dashboardSalesTrend = dashboardSalesTrendFromSales(dashboardSales, dashboardHotelSales);
+  const paymentMethodTotals = dashboardPaymentMethodTotals(dashboardSales, dashboardHotelSales);
   const paymentColors: Record<string, string> = {
     'M-Pesa': '#16a76a',
     Cash: '#2563eb',
@@ -11374,6 +11500,7 @@ function Dashboard({ branches, currentUser, organization }: DashboardProps) {
     !showProfit ||
     inventoryQuery.isPending ||
     salesQuery.isPending ||
+    hotelSalesQuery.isPending ||
     expensesQuery.isPending ||
     (canViewStockAdjustments && stockAdjustmentSummaryQuery.isPending);
 
@@ -11415,7 +11542,7 @@ function Dashboard({ branches, currentUser, organization }: DashboardProps) {
                       stockAdjustmentSummary,
                       totalExpenses,
                       totalSales,
-                      transactions: dashboardSales.length,
+                      transactions: dashboardSales.length + dashboardHotelSales.length,
                     })
                   }
                 >
@@ -11506,6 +11633,22 @@ function Dashboard({ branches, currentUser, organization }: DashboardProps) {
         ))}
       </div>
 
+      {dashboardHotelSales.length > 0 ? (
+        <div className="info-strip">
+          <i className="bi bi-info-circle-fill" aria-hidden="true" />
+          <span>
+            Hotel revenue is included in Net Sales; profit estimates remain based on retail sales
+            because Hotel order costs are not available.
+          </span>
+        </div>
+      ) : null}
+
+      {hotelSalesQuery.isError ? (
+        <p className="form-error" role="alert">
+          Hotel restaurant sales could not be loaded. Dashboard sales totals may be incomplete.
+        </p>
+      ) : null}
+
       <div className="dashboard-chart-grid">
         <section className="chart-panel sales-trend-panel">
           <p className="dashboard-section-kicker">EVERY SALE TELLS A STORY</p>
@@ -11595,7 +11738,7 @@ function Dashboard({ branches, currentUser, organization }: DashboardProps) {
             title="Sales by Payment Method"
             tone="green"
           />
-          {salesQuery.isPending ? (
+          {salesQuery.isPending || hotelSalesQuery.isPending ? (
             <LoadingPanel label="Loading payment totals..." />
           ) : (
             <DonutChart
@@ -11667,6 +11810,7 @@ function Dashboard({ branches, currentUser, organization }: DashboardProps) {
           <ProductRankingTable
             organization={organization}
             sales={dashboardSales}
+            hotelOrders={dashboardHotelSales}
             showProfit={showProfit}
           />
         </section>
@@ -11767,6 +11911,10 @@ function salesTotal(sales: Sale[]) {
   return sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
 }
 
+function hotelSalesTotal(orders: HotelSalesHistoryOrder[]) {
+  return orders.reduce((sum, order) => sum + order.total, 0);
+}
+
 function grossProfitFromSales(sales: Sale[]) {
   return sales.reduce(
     (saleSum, sale) =>
@@ -11779,32 +11927,36 @@ function saleLineGrossProfit(line: Sale['lines'][number]) {
   return (line.unitPrice - (line.costPrice ?? line.unitPrice)) * line.quantity;
 }
 
-function dashboardSalesTrendFromSales(sales: Sale[]) {
-  if (sales.length === 0) {
+function dashboardSalesTrendFromSales(sales: Sale[], hotelOrders: HotelSalesHistoryOrder[] = []) {
+  if (sales.length === 0 && hotelOrders.length === 0) {
     return [{ day: 'Current', netSales: 0, cumulativeSales: 0 }];
   }
 
   const rowsByHour = new Map<string, { sortKey: number; day: string; netSales: number }>();
-  for (const sale of sales) {
-    const soldAt = new Date(sale.soldAt);
-    if (Number.isNaN(soldAt.getTime())) {
-      continue;
-    }
+  const addSaleToHour = (soldAtValue: string, total: number) => {
+    const soldAt = new Date(soldAtValue);
+    if (Number.isNaN(soldAt.getTime())) return;
 
     const hourStart = new Date(soldAt);
     hourStart.setMinutes(0, 0, 0);
     const hourKey = `${dateInputValue(hourStart)}-${hourStart.getHours()}`;
     const existing = rowsByHour.get(hourKey);
     if (existing) {
-      existing.netSales += sale.totalAmount;
-      continue;
+      existing.netSales += total;
+      return;
     }
 
     rowsByHour.set(hourKey, {
       sortKey: hourStart.getTime(),
       day: new Intl.DateTimeFormat('en-KE', { hour: 'numeric' }).format(hourStart),
-      netSales: sale.totalAmount,
+      netSales: total,
     });
+  };
+  for (const sale of sales) {
+    addSaleToHour(sale.soldAt, sale.totalAmount);
+  }
+  for (const order of hotelOrders) {
+    addSaleToHour(order.createdAt, order.total);
   }
 
   if (rowsByHour.size === 0) {
@@ -11818,6 +11970,45 @@ function dashboardSalesTrendFromSales(sales: Sale[]) {
       cumulativeSales += netSales;
       return { day, netSales, cumulativeSales };
     });
+}
+
+function dashboardPaymentMethodTotals(sales: Sale[], hotelOrders: HotelSalesHistoryOrder[]) {
+  const totals = new Map<string, number>();
+  const colors = new Map<string, string>();
+  for (const payment of paymentMethodTotalsFromSales(sales)) {
+    totals.set(payment.name, payment.value);
+    colors.set(payment.name, payment.color);
+  }
+
+  const hotelPaymentLabels: Record<HotelSalesHistoryOrder['method'], string> = {
+    CASH: 'Cash',
+    MPESA: 'M-Pesa',
+    CARD: 'Card',
+    BANK: 'Bank transfer',
+    ROOM: 'Room charge',
+    UNPAID: 'Unpaid',
+  };
+  const hotelPaymentColors: Record<HotelSalesHistoryOrder['method'], string> = {
+    CASH: '#2563eb',
+    MPESA: '#16a76a',
+    CARD: '#f5b916',
+    BANK: '#7357e8',
+    ROOM: '#0ea5a4',
+    UNPAID: '#94a3b8',
+  };
+  for (const order of hotelOrders) {
+    const label = hotelPaymentLabels[order.method];
+    totals.set(label, (totals.get(label) ?? 0) + order.total);
+    colors.set(label, hotelPaymentColors[order.method]);
+  }
+
+  const totalPayments = [...totals.values()].reduce((sum, value) => sum + value, 0);
+  return [...totals].map(([name, value]) => ({
+    name,
+    value,
+    percent: totalPayments > 0 ? Math.round((value / totalPayments) * 100) : 0,
+    color: colors.get(name) ?? '#64748b',
+  }));
 }
 
 function salesTrendFromSales(sales: Sale[], interval: SalesTrendInterval = 'daily') {
@@ -20488,13 +20679,19 @@ function DonutChart({
 function ProductRankingTable({
   organization,
   sales,
+  hotelOrders = [],
   showProfit = true,
 }: {
   organization: Organization;
   sales: Sale[];
+  hotelOrders?: HotelSalesHistoryOrder[];
   showProfit?: boolean;
 }) {
-  const productRows = productSalesRows(sales).slice(0, 5);
+  const productRows = [...productSalesRows(sales), ...hotelProductSalesRows(hotelOrders)]
+    .sort(
+      (first, second) => second.salesValue - first.salesValue || second.quantity - first.quantity,
+    )
+    .slice(0, 5);
 
   if (productRows.length === 0) {
     return (
@@ -20528,13 +20725,15 @@ function ProductRankingTable({
               </td>
               <td data-label="Units">{row.quantity}</td>
               <td data-label="Sales">{formatMoney(row.salesValue, organization.currencyCode)}</td>
-              {showProfit ? (
+              {showProfit && row.grossProfit !== null ? (
                 <td
                   data-label="Profit"
                   className={row.grossProfit >= 0 ? 'positive-text' : 'negative-text'}
                 >
                   {formatMoney(row.grossProfit, organization.currencyCode)}
                 </td>
+              ) : showProfit ? (
+                <td data-label="Profit">N/A</td>
               ) : null}
             </tr>
           ))}
@@ -20542,6 +20741,40 @@ function ProductRankingTable({
       </table>
     </div>
   );
+}
+
+function hotelProductSalesRows(orders: HotelSalesHistoryOrder[]) {
+  const rows = new Map<
+    string,
+    {
+      productId: string;
+      productName: string;
+      quantity: number;
+      salesValue: number;
+      grossProfit: null;
+    }
+  >();
+
+  for (const order of orders) {
+    for (const line of order.lines) {
+      const productId = `hotel-${line.itemId}`;
+      const existing = rows.get(productId);
+      if (existing) {
+        existing.quantity += line.quantity;
+        existing.salesValue += line.total;
+      } else {
+        rows.set(productId, {
+          productId,
+          productName: line.itemName,
+          quantity: line.quantity,
+          salesValue: line.total,
+          grossProfit: null,
+        });
+      }
+    }
+  }
+
+  return [...rows.values()];
 }
 
 function productSalesRows(sales: Sale[]) {

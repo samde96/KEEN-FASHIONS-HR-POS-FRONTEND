@@ -50,6 +50,8 @@ export type HotelItem = {
   unit: string;
   sellable: boolean;
   price: number;
+  unitCost: number | null;
+  unitCostEstimated: boolean;
   stock: number;
   reorderLevel: number;
   active: boolean;
@@ -64,6 +66,36 @@ export type HotelMenuItem = {
   available: boolean;
 };
 export type HotelMenuItemRequest = Omit<HotelMenuItem, 'id'>;
+export type HotelRecipeIngredient = {
+  itemId: string;
+  itemName: string;
+  quantity: number;
+  unit: string;
+  stockUnit: string;
+  unitCost: number | null;
+  estimatedCost: number | null;
+  estimated: boolean;
+  optional: boolean;
+};
+export type HotelRecipe = {
+  id: string;
+  menuItemId: string;
+  menuItemName: string;
+  sellingPrice: number;
+  version: number;
+  current: boolean;
+  servingLabel: string;
+  estimatedCost: number | null;
+  contribution: number | null;
+  ingredientCostPercent: number | null;
+  ingredients: HotelRecipeIngredient[];
+  createdAt: string;
+};
+export type HotelRecipeRequest = {
+  requestId: string;
+  servingLabel: string;
+  ingredients: { itemId: string; quantity: number; unit: string; optional: boolean }[];
+};
 export type HotelOrderStatus = 'OPEN' | 'CLOSED' | 'CANCELLED';
 export type HotelWaiter = {
   id: string;
@@ -81,10 +113,13 @@ export type HotelWaiterRequest = {
 export type HotelReceiptSettings = { hotelName: string; tillNumber: string; contactPhone: string };
 export type HotelServiceType = 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY';
 export type HotelOrderLine = {
+  lineId: string;
   itemId: string;
   itemType: 'FOOD' | 'PRODUCT';
   itemName: string;
   quantity: number;
+  preparedQuantity: number;
+  recipeConfigured: boolean;
   unitPrice: number;
   total: number;
 };
@@ -105,10 +140,45 @@ export type HotelOrder = {
   serviceType: HotelServiceType;
   notes: string;
   status: HotelOrderStatus;
+  kitchenStatus: 'PENDING' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
   hotelName: string;
   tillNumber: string;
   contactPhone: string;
   paidAt?: string;
+  createdAt: string;
+  lines: HotelOrderLine[];
+};
+export type HotelKitchenOrderLine = {
+  lineId: string;
+  itemName: string;
+  quantity: number;
+  preparedQuantity: number;
+  recipeConfigured: boolean;
+};
+export type HotelKitchenTicket = {
+  id: string;
+  branchId: string;
+  reference: string;
+  tableNumber: string;
+  serviceType: HotelServiceType;
+  notes: string;
+  status: 'PENDING' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
+  createdAt: string;
+  lines: HotelKitchenOrderLine[];
+};
+export type HotelKitchenPreparationRequest = {
+  requestId: string;
+  lines: { lineId: string; quantity: number }[];
+};
+export type HotelSalesHistoryOrder = {
+  id: string;
+  branchId: string;
+  branchName: string;
+  reference: string;
+  customerName: string;
+  total: number;
+  method: HotelPaymentMethod | 'ROOM' | 'UNPAID';
+  status: 'CLOSED';
   createdAt: string;
   lines: HotelOrderLine[];
 };
@@ -118,8 +188,10 @@ export type HotelMovement = {
   itemName: string;
   quantity: number;
   balance: number;
-  kind: 'RECEIPT' | 'USAGE' | 'SALE' | 'RETURN';
+  kind: 'RECEIPT' | 'USAGE' | 'SALE' | 'RETURN' | 'KITCHEN';
   note: string;
+  unitCost: number | null;
+  costValue: number | null;
   createdAt: string;
 };
 export type HotelWorkspace = {
@@ -218,7 +290,7 @@ export type HotelBookingRequest = Pick<
   | 'nightlyRate'
   | 'notes'
 > & { requestId: string };
-export type HotelItemRequest = Omit<HotelItem, 'id' | 'stock'>;
+export type HotelItemRequest = Omit<HotelItem, 'id' | 'stock' | 'unitCost' | 'unitCostEstimated'>;
 export type HotelOrderRequest = {
   requestId: string;
   branchId: string;
@@ -231,4 +303,11 @@ export type HotelOrderRequest = {
   tableNumber: string;
   notes: string;
   lines: { itemId: string; itemType: 'FOOD' | 'PRODUCT'; quantity: number }[];
+};
+export type HotelStockRequest = {
+  requestId: string;
+  quantity: number;
+  kind: 'RECEIPT' | 'USAGE';
+  note: string;
+  unitCost?: number;
 };

@@ -51,6 +51,7 @@ function api(
   branches = testBranches,
   organization = testOrganization,
   omitAvailabilityCollections = false,
+  additionalRecords: Record<string, unknown> = {},
 ) {
   const records: Record<string, unknown> = {
     '/api/v1/me': user,
@@ -62,6 +63,8 @@ function api(
     '/api/v1/stock-intakes': [],
     '/api/v1/stock-adjustments': [],
     '/api/v1/sales': [],
+    '/api/v1/sales/hotel-summary': { totalAmount: 1250, transactions: 2, itemsSold: 4 },
+    '/api/v1/hotel/sales-history': [],
     '/api/v1/expenses': [],
     '/api/v1/suppliers': testSuppliers,
     '/api/v1/customers': [],
@@ -219,6 +222,7 @@ function api(
       timeZone: 'Africa/Nairobi',
     },
   };
+  Object.assign(records, additionalRecords);
   if (omitAvailabilityCollections) {
     const availability = records['/api/v1/hr/me/availability'] as Record<string, unknown>;
     delete availability.leaveRequests;
@@ -475,6 +479,68 @@ describe('KEEN application platform', () => {
     await user.click(screen.getByRole('button', { name: 'Operations' }));
     expect(screen.getByRole('link', { name: 'Open Inventory' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open Sales' })).not.toBeInTheDocument();
+  });
+  it('includes completed Hotel restaurant orders in the Sales app overview', async () => {
+    const fetch = api();
+    open('/apps/sales');
+    expect(await screen.findByRole('heading', { name: 'Sales Overview' })).toBeInTheDocument();
+    const revenue = screen.getByText('Recorded sales').parentElement;
+    await waitFor(() => expect(revenue).toHaveTextContent('1,250'));
+    const transactions = screen.getByText('Transactions').parentElement;
+    expect(transactions).toHaveTextContent('2');
+    const items = screen.getByText('Items sold').parentElement;
+    expect(items).toHaveTextContent('4');
+    expect(
+      fetch.mock.calls.some(([input]) => {
+        const url = new URL(String(input), 'http://localhost');
+        return (
+          url.pathname === '/api/v1/sales/hotel-summary' &&
+          url.searchParams.get('branchId') === testBranches[0].id
+        );
+      }),
+    ).toBe(true);
+  });
+  it('shows Hotel food and products sold in Sales history', async () => {
+    api(testUser, testBranches, testOrganization, false, {
+      '/api/v1/hotel/sales-history': [
+        {
+          id: 'hotel-order-1',
+          branchId: testBranches[0].id,
+          branchName: testBranches[0].name,
+          reference: 'HOTEL-20261107-001',
+          customerName: 'Walk-in Customer',
+          total: 1850,
+          method: 'CASH',
+          status: 'CLOSED',
+          createdAt: new Date().toISOString(),
+          lines: [
+            {
+              itemId: 'food-1',
+              itemType: 'FOOD',
+              itemName: 'Grilled Tilapia',
+              quantity: 1,
+              unitPrice: 1500,
+              total: 1500,
+            },
+            {
+              itemId: 'product-1',
+              itemType: 'PRODUCT',
+              itemName: 'Bottled Water',
+              quantity: 2,
+              unitPrice: 175,
+              total: 350,
+            },
+          ],
+        },
+      ],
+    });
+    open('/sales');
+    expect(await screen.findByRole('heading', { name: 'Hotel restaurant orders' })).toBeVisible();
+    expect(await screen.findByText('Grilled Tilapia × 1')).toBeVisible();
+    expect(await screen.findByText('Bottled Water × 2')).toBeVisible();
+    expect(screen.getByText('HOTEL-20261107-001')).toBeVisible();
+    const hotelTable = screen.getByRole('table', { name: 'Hotel restaurant sales history' });
+    expect(within(hotelTable).getByText(/1,850/)).toBeVisible();
   });
   it('shows cashier apps only when their existing permissions allow them', async () => {
     const cashier = {

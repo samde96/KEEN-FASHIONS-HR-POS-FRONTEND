@@ -226,6 +226,9 @@ function HotelBranch({
               {view === 'menu' && (
                 <HotelMenu
                   items={data.menuItems}
+                  ingredients={data.items.filter(
+                    (item) => item.category === 'INGREDIENT' && item.active,
+                  )}
                   branchId={branchId}
                   currency={currency}
                   canManage={manage}
@@ -679,6 +682,7 @@ function HotelInventory({
       (filter === 'ALL' ||
         (filter === 'LOW' ? i.active && i.stock <= i.reorderLevel : i.category === filter)),
   );
+  const hasIngredients = items.some((item) => item.category === 'INGREDIENT');
   return (
     <>
       <section className="hotel-panel">
@@ -731,6 +735,9 @@ function HotelInventory({
                   <th>Category</th>
                   <th>On hand</th>
                   <th>Low stock level</th>
+                  {canManage && hasIngredients && (
+                    <th className="hotel-numeric">Avg. ingredient cost</th>
+                  )}
                   <th className="hotel-numeric">Selling price</th>
                   <th>For sale</th>
                   {canManage && <th>Actions</th>}
@@ -756,6 +763,15 @@ function HotelInventory({
                     <td>
                       {item.reorderLevel} {item.unit}
                     </td>
+                    {canManage && hasIngredients ? (
+                      <td className="hotel-numeric">
+                        {item.category !== 'INGREDIENT'
+                          ? '—'
+                          : item.unitCost === null
+                            ? 'Not valued'
+                            : `${money(item.unitCost, currency)} / ${item.unit}${item.unitCostEstimated ? ' (estimated)' : ''}`}
+                      </td>
+                    ) : null}
                     <td className="hotel-numeric">{money(item.price, currency)}</td>
                     <td>{item.sellable && item.active ? 'Yes' : 'No'}</td>
                     {canManage && (
@@ -805,6 +821,8 @@ function HotelInventory({
                   <th>Type</th>
                   <th>Change</th>
                   <th>Balance</th>
+                  {canManage && <th className="hotel-numeric">Unit cost</th>}
+                  {canManage && <th className="hotel-numeric">Movement cost</th>}
                   <th>Reference / reason</th>
                 </tr>
               </thead>
@@ -819,6 +837,16 @@ function HotelInventory({
                       {m.quantity}
                     </td>
                     <td>{m.balance}</td>
+                    {canManage ? (
+                      <td className="hotel-numeric">
+                        {m.unitCost === null ? 'N/A' : money(m.unitCost, currency)}
+                      </td>
+                    ) : null}
+                    {canManage ? (
+                      <td className="hotel-numeric">
+                        {m.costValue === null ? 'N/A' : money(m.costValue, currency)}
+                      </td>
+                    ) : null}
                     <td className="hotel-reference">{m.note}</td>
                   </tr>
                 ))}

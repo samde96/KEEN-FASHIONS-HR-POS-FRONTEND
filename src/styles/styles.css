@@ -849,6 +849,32 @@ kbd {
   display: none;
 }
 
+.sales-history-section {
+  margin-top: 24px;
+}
+
+.sales-history-section > h2 {
+  margin: 0 0 12px;
+  color: var(--ink, #17233c);
+  font-size: 18px;
+}
+
+.sales-history-items {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--muted, #64728a);
+  font-size: 12px;
+}
+
+.sales-history-items li + li {
+  margin-top: 3px;
+}
+
+.sales-history-item-type {
+  color: var(--ink, #17233c);
+  font-weight: 600;
+}
+
 .global-search,
 .search-field,
 .barcode-search {

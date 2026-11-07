@@ -76,6 +76,8 @@ export const hotelWorkspace: HotelWorkspace = {
       unit: 'bottle',
       sellable: true,
       price: 250,
+      unitCost: null,
+      unitCostEstimated: false,
       stock: 10,
       reorderLevel: 3,
       active: true,

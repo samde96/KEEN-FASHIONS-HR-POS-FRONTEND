@@ -27,6 +27,9 @@ export default function HotelOrderReceipt({
     return () => window.clearTimeout(timer);
   }, [autoPrint, order.id]);
   const hasFood = order.lines.some((line) => line.itemType === 'FOOD');
+  const receiptTitle = branchName.trim() || order.hotelName.trim() || organization.name;
+  const customerName = order.customerName.trim();
+  const showCustomerName = customerName !== '' && !/^walk[- ]in customer$/i.test(customerName);
   const copies = hasFood
     ? [
         { name: 'Kitchen copy', kitchen: true },
@@ -65,7 +68,7 @@ export default function HotelOrderReceipt({
               {copy.kitchen ? (
                 <>
                   <header className="hotel-ticket-brand">
-                    <h2>{order.hotelName || organization.name}</h2>
+                    <h2>{receiptTitle}</h2>
                     <p>KITCHEN ORDER</p>
                   </header>
                   <div className="hotel-ticket-meta">
@@ -91,7 +94,7 @@ export default function HotelOrderReceipt({
               ) : (
                 <>
                   <header className="hotel-receipt-brand">
-                    <h2>{order.hotelName || organization.name}</h2>
+                    <h2>{receiptTitle}</h2>
                     <p>{branchName}</p>
                     {order.contactPhone && <p>Tel: {order.contactPhone}</p>}
                     <h3>FOOD SALE RECEIPT</h3>
@@ -101,7 +104,7 @@ export default function HotelOrderReceipt({
                       Receipt No: <strong>{order.reference}</strong>
                     </span>
                     <span>Date: {dateLabel}</span>
-                    <span>Customer: {order.customerName || 'Walk-in Customer'}</span>
+                    {showCustomerName && <span>Customer: {customerName}</span>}
                     <span>Cashier: {order.servedByName}</span>
                     {order.roomNumber && <span>Room: {order.roomNumber}</span>}
                     <span>Time: {timeLabel}</span>

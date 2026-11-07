@@ -76,6 +76,10 @@ describe('App', () => {
           return jsonResponse([]);
         }
 
+        if (url.includes('/api/v1/hotel/sales-history')) {
+          return jsonResponse([]);
+        }
+
         if (url.endsWith('/api/v1/expenses')) {
           return jsonResponse([]);
         }
@@ -531,6 +535,27 @@ describe('App', () => {
         },
       ],
     };
+    const hotelOrder = {
+      id: 'hotel-order-001',
+      branchId: testBranches[0].id,
+      branchName: testBranches[0].name,
+      reference: 'HOTEL-001',
+      customerName: 'Guest',
+      total: 675,
+      method: 'CASH',
+      status: 'CLOSED',
+      createdAt: new Date().toISOString(),
+      lines: [
+        {
+          itemId: 'hotel-food-001',
+          itemType: 'FOOD',
+          itemName: 'Chicken Pilau',
+          quantity: 1,
+          unitPrice: 675,
+          total: 675,
+        },
+      ],
+    };
 
     vi.stubGlobal(
       'fetch',
@@ -556,6 +581,10 @@ describe('App', () => {
           return jsonResponse([sale]);
         }
 
+        if (url.includes('/api/v1/hotel/sales-history')) {
+          return jsonResponse([hotelOrder]);
+        }
+
         if (url.endsWith('/api/v1/expenses')) {
           return jsonResponse([]);
         }
@@ -569,9 +598,20 @@ describe('App', () => {
     expect(await screen.findByText('Sales by Payment Method')).toBeInTheDocument();
     expect((await screen.findAllByText('KSh 3,248')).length).toBeGreaterThan(0);
     expect((await screen.findAllByText('KSh 1,600')).length).toBeGreaterThan(0);
-    expect(screen.getByText('100%')).toBeInTheDocument();
+    expect(screen.getByText('83%')).toBeInTheDocument();
+    expect(screen.getByText('17%')).toBeInTheDocument();
     expect(screen.getByText('Oxford Shirt')).toBeInTheDocument();
+    expect(screen.getByText('Chicken Pilau')).toBeInTheDocument();
+    expect((await screen.findAllByText('KSh 3,923')).length).toBeGreaterThan(0);
     expect(screen.queryByText('KSh 1,248,500')).not.toBeInTheDocument();
+    const hotelHistoryRequest = vi
+      .mocked(fetch)
+      .mock.calls.map(([input]) => String(input))
+      .find((url) => url.includes('/api/v1/hotel/sales-history'));
+    expect(hotelHistoryRequest).toBeDefined();
+    const requestDates = new URL(hotelHistoryRequest ?? '', window.location.origin).searchParams;
+    expect(requestDates.get('from')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(requestDates.get('to')).toBe(requestDates.get('from'));
   });
 
   it('retries dashboard API calls against the local backend when the dev proxy returns HTML', async () => {
@@ -607,6 +647,10 @@ describe('App', () => {
       }
 
       if (url.endsWith('/api/v1/sales')) {
+        return jsonResponse([]);
+      }
+
+      if (url.includes('/api/v1/hotel/sales-history')) {
         return jsonResponse([]);
       }
 

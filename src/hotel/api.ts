@@ -8,6 +8,7 @@ import type {
   HotelItem,
   HotelItemRequest,
   HotelOrder,
+  HotelSalesHistoryOrder,
   HotelOrderRequest,
   HotelPaymentMethod,
   HotelReport,
@@ -21,6 +22,11 @@ import type {
   HotelExpenseRequest,
   HotelAsset,
   HotelAssetRequest,
+  HotelRecipe,
+  HotelRecipeRequest,
+  HotelStockRequest,
+  HotelKitchenTicket,
+  HotelKitchenPreparationRequest,
 } from './types';
 
 const base = '/api/v1/hotel';
@@ -45,6 +51,12 @@ export const saveHotelReceiptSettings = (body: HotelReceiptSettings & { branchId
   send<HotelReceiptSettings>('/receipt-settings', body, 'PUT');
 export const saveHotelMenuItem = (body: HotelMenuItemRequest, id?: string) =>
   send<HotelMenuItem>(id ? `/menu-items/${id}` : '/menu-items', body, id ? 'PUT' : 'POST');
+export const getHotelRecipes = (branchId: string) =>
+  requestJson<HotelRecipe[]>(`${base}/recipes?${new URLSearchParams({ branchId })}`, undefined, {
+    onlineOnly: true,
+  });
+export const saveHotelRecipe = (menuItemId: string, body: HotelRecipeRequest) =>
+  send<HotelRecipe>(`/menu-items/${menuItemId}/recipes`, body);
 export const getHotelExpenses = (branchId: string) =>
   requestJson<HotelExpense[]>(`${base}/expenses?${new URLSearchParams({ branchId })}`, undefined, {
     onlineOnly: true,
@@ -67,6 +79,14 @@ export const settleHotelOrder = (
     reference: string;
   },
 ) => send<HotelOrder>(`/orders/${id}/payment`, body);
+export const getHotelKitchenOrders = (branchId: string) =>
+  requestJson<HotelKitchenTicket[]>(
+    `${base}/kitchen?${new URLSearchParams({ branchId })}`,
+    undefined,
+    { onlineOnly: true },
+  );
+export const prepareHotelOrder = (id: string, body: HotelKitchenPreparationRequest) =>
+  send<HotelKitchenTicket>(`/orders/${id}/preparations`, body);
 // Availability, payments and stock must be confirmed online; hotel writes are never queued offline.
 function send<T>(path: string, body?: unknown, method = 'POST') {
   return requestJson<T>(
@@ -101,16 +121,19 @@ export const payHotelBooking = (
 ) => send<HotelBooking>(`/bookings/${id}/payments`, body);
 export const saveHotelItem = (body: HotelItemRequest, id?: string) =>
   send<HotelItem>(id ? `/items/${id}` : '/items', body, id ? 'PUT' : 'POST');
-export const changeHotelStock = (
-  id: string,
-  body: {
-    requestId: string;
-    quantity: number;
-    kind: 'RECEIPT' | 'USAGE';
-    note: string;
-  },
-) => send<HotelItem>(`/items/${id}/stock`, body);
+export const changeHotelStock = (id: string, body: HotelStockRequest) =>
+  send<HotelItem>(`/items/${id}/stock`, body);
 export const sellHotelFood = (body: HotelOrderRequest) => send<HotelOrder>('/orders', body);
+export const getHotelSalesHistory = (from: string, to: string, branchId?: string) =>
+  requestJson<HotelSalesHistoryOrder[]>(
+    `${base}/sales-history?${new URLSearchParams({
+      from,
+      to,
+      ...(branchId ? { branchId } : {}),
+    })}`,
+    undefined,
+    { onlineOnly: true },
+  );
 export const getHotelBookingOrders = (id: string) =>
   requestJson<HotelOrder[]>(`${base}/bookings/${id}/orders`, undefined, { onlineOnly: true });
 export const getHotelReport = (branchId: string, from: string, to: string) =>

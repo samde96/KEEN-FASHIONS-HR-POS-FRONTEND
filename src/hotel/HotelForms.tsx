@@ -356,7 +356,8 @@ export function StockEditor({
   close,
 }: Omit<EditorProps, 'branchId'> & { item: HotelItem; kind: 'RECEIPT' | 'USAGE' }) {
   const [quantity, setQuantity] = useState(''),
-    [note, setNote] = useState('');
+    [note, setNote] = useState(''),
+    [unitCost, setUnitCost] = useState('');
   const requestId = useCommandId();
   return (
     <Modal
@@ -372,7 +373,14 @@ export function StockEditor({
       <HotelForm
         label={kind === 'RECEIPT' ? 'Receive stock' : 'Record usage'}
         save={async () => {
-          const body = { quantity: Number(quantity), kind, note };
+          const body = {
+            quantity: Number(quantity),
+            kind,
+            note,
+            ...(kind === 'RECEIPT' && item.category === 'INGREDIENT'
+              ? { unitCost: Number(unitCost) }
+              : {}),
+          };
           await changeHotelStock(item.id, { ...body, requestId: requestId(body) });
           await saved();
         }}
@@ -389,6 +397,19 @@ export function StockEditor({
             onChange={(e) => setQuantity(e.target.value)}
           />
         </Field>
+        {kind === 'RECEIPT' && item.category === 'INGREDIENT' ? (
+          <Field label={`Purchase cost per ${item.unit}`}>
+            <input
+              required
+              type="number"
+              min="0.0001"
+              max="999999999999.9999"
+              step="0.0001"
+              value={unitCost}
+              onChange={(e) => setUnitCost(e.target.value)}
+            />
+          </Field>
+        ) : null}
         <Field
           label={kind === 'RECEIPT' ? 'Supplier / delivery reference' : 'Reason for use or wastage'}
         >

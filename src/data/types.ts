@@ -432,6 +432,12 @@ export type Sale = {
   payments: SalePayment[];
 };
 
+export type HotelSalesSummary = {
+  totalAmount: number;
+  transactions: number;
+  itemsSold: number;
+};
+
 export type AccountingAccountType =
   'ASSET' | 'LIABILITY' | 'EQUITY' | 'REVENUE' | 'COGS' | 'EXPENSE';
 

@@ -21,6 +21,7 @@ export type AppPermission =
   | 'hotel:view'
   | 'hotel:manage'
   | 'hotel:sell'
+  | 'hotel:kitchen'
   | 'hotel:reports'
   | 'hr:employee:view'
   | 'hr:attendance:view'
@@ -66,6 +67,12 @@ export const navItems: NavItem[] = [
     label: 'Hotel checkout',
     icon: 'bi-egg-fried',
     anyPermissions: ['admin:manage', 'hotel:view', 'hotel:manage', 'hotel:sell'],
+  },
+  {
+    to: '/hotel/kitchen',
+    label: 'Kitchen',
+    icon: 'bi-egg-fried',
+    anyPermissions: ['admin:manage', 'hotel:manage', 'hotel:kitchen'],
   },
   {
     to: '/hotel/service-settings',
@@ -375,6 +382,7 @@ export const appRegistry: BusinessApp[] = [
     description: 'Rooms, reservations, guest stays, restaurant sales and hotel inventory.',
     routes: [
       '/hotel/restaurant',
+      '/hotel/kitchen',
       '/hotel',
       '/hotel/rooms',
       '/hotel/reservations',

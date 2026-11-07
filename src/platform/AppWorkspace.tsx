@@ -5,6 +5,7 @@ import type { CurrentUser, Organization } from '../data/types';
 import {
   getCustomers,
   getExpenses,
+  getHotelSalesSummary,
   getInventory,
   getProducts,
   getSales,
@@ -43,8 +44,14 @@ export function AppWorkspace({
     'reports:view',
   ]);
   const salesQuery = useQuery({
-    queryKey: ['sales'],
-    queryFn: () => getSales(),
+    queryKey: ['sales', 'app-summary', branchId],
+    queryFn: async () => {
+      const [sales, hotel] = await Promise.all([
+        getSales(),
+        getHotelSalesSummary(branchId || undefined),
+      ]);
+      return { sales, hotel };
+    },
     enabled: appId === 'sales' && canReadSales,
   });
   const customersQuery = useQuery({
@@ -67,7 +74,8 @@ export function AppWorkspace({
     return <p>This application is not available for your account.</p>;
   const inventory = inBranch(inventoryQuery.data ?? [], branchId);
   const receipts = inBranch(receiptsQuery.data ?? [], branchId);
-  const sales = inBranch(salesQuery.data ?? [], branchId);
+  const sales = inBranch(salesQuery.data?.sales ?? [], branchId);
+  const hotelSales = salesQuery.data?.hotel;
   const expenses = inBranch(expensesQuery.data ?? [], branchId);
   const customers = inBranch(customersQuery.data ?? [], branchId);
   const formatNumber = (value: number) => value.toLocaleString('en-KE');
@@ -121,19 +129,25 @@ export function AppWorkspace({
     metrics = [
       [
         'Recorded sales',
-        money(sales.reduce((sum, sale) => sum + sale.totalAmount, 0)),
-        'Original sale values, including tax',
+        money(
+          sales.reduce((sum, sale) => sum + sale.totalAmount, 0) + (hotelSales?.totalAmount ?? 0),
+        ),
+        'POS and closed Hotel restaurant orders',
       ],
-      ['Transactions', formatNumber(sales.length), scope],
+      [
+        'Transactions',
+        formatNumber(sales.length + (hotelSales?.transactions ?? 0)),
+        `${scope} · includes completed Hotel orders`,
+      ],
       [
         'Items sold',
         formatNumber(
           sales.reduce(
             (sum, sale) => sum + sale.lines.reduce((n, line) => n + line.quantity, 0),
             0,
-          ),
+          ) + (hotelSales?.itemsSold ?? 0),
         ),
-        'Original quantities, before returns',
+        'POS and Hotel restaurant quantities',
       ],
       ['Available workspaces', String(modules.length), 'History, quotations and invoices'],
     ];

@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import HotelCheckoutPage from '../hotel/HotelCheckoutPage';
 import HotelPage from '../hotel/HotelPage';
+import HotelKitchenPage from '../hotel/HotelKitchenPage';
 import HotelRegister from '../hotel/HotelRegister';
 import HotelOrderReceipt from '../hotel/HotelOrderReceipt';
 import * as api from '../hotel/api';
@@ -41,12 +43,16 @@ vi.mock('../hotel/api', () => ({
   getHotelReceiptSettings: vi.fn(),
   saveHotelReceiptSettings: vi.fn(),
   saveHotelMenuItem: vi.fn(),
+  getHotelRecipes: vi.fn(),
+  saveHotelRecipe: vi.fn(),
   getHotelExpenses: vi.fn(),
   saveHotelExpense: vi.fn(),
   getHotelAssets: vi.fn(),
   saveHotelAsset: vi.fn(),
   cancelHotelOrder: vi.fn(),
   settleHotelOrder: vi.fn(),
+  getHotelKitchenOrders: vi.fn(),
+  prepareHotelOrder: vi.fn(),
 }));
 vi.mock('../platform/PlatformContext', () => ({
   usePlatform: () => ({
@@ -68,6 +74,18 @@ function renderPage(path: string, user: CurrentUser = testUser) {
     </QueryClientProvider>,
   );
 }
+function renderKitchenPage() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={['/hotel/kitchen']}>
+        <HotelKitchenPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
 function excelFile(name: string, rows: (string | number)[][]) {
   const worksheet = XLSX.utils.aoa_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
@@ -85,6 +103,8 @@ beforeEach(() => {
   vi.mocked(api.getHotelReceiptSettings).mockResolvedValue(hotelReceiptSettings);
   vi.mocked(api.getHotelExpenses).mockResolvedValue([]);
   vi.mocked(api.getHotelAssets).mockResolvedValue([]);
+  vi.mocked(api.getHotelRecipes).mockResolvedValue([]);
+  vi.mocked(api.getHotelKitchenOrders).mockResolvedValue([]);
 });
 afterEach(() => {
   cleanup();
@@ -94,6 +114,66 @@ afterEach(() => {
 });
 
 describe('Hotel Management', () => {
+  it('uses the KEEN ERP brand in the restaurant checkout bar', async () => {
+    vi.mocked(api.getHotelCheckout).mockResolvedValue(structuredClone(hotelCheckout));
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/hotel/restaurant']}>
+          <HotelCheckoutPage user={testUser} organization={testOrganization} onLogout={vi.fn()} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText('KEEN ERP')).toBeInTheDocument();
+    expect(screen.queryByText(testOrganization.name)).not.toBeInTheDocument();
+  });
+
+  it('records kitchen-prepared quantities and warns when no recipe is attached', async () => {
+    const user = userEvent.setup();
+    const ticket = {
+      id: 'kitchen-order',
+      branchId: hotelBranchId,
+      reference: 'FOOD-KITCHEN-001',
+      tableNumber: '4',
+      serviceType: 'DINE_IN' as const,
+      notes: '',
+      status: 'PENDING' as const,
+      createdAt: '2026-11-07T10:00:00Z',
+      lines: [
+        {
+          lineId: 'stew-line',
+          itemName: 'Beef stew',
+          quantity: 2,
+          preparedQuantity: 0,
+          recipeConfigured: false,
+        },
+      ],
+    };
+    vi.mocked(api.getHotelKitchenOrders).mockResolvedValue([ticket]);
+    vi.mocked(api.prepareHotelOrder).mockResolvedValue({ ...ticket, status: 'PREPARING' });
+    renderKitchenPage();
+
+    expect(await screen.findByText('FOOD-KITCHEN-001')).toBeInTheDocument();
+    expect(screen.getByText(/No recipe is attached/)).toBeInTheDocument();
+    const quantity = screen.getByRole('spinbutton', {
+      name: /quantity to prepare for beef stew/i,
+    });
+    await user.clear(quantity);
+    await user.type(quantity, '1.25');
+    await user.click(screen.getByRole('button', { name: 'Record prepared' }));
+
+    expect(api.prepareHotelOrder).toHaveBeenCalledWith(
+      'kitchen-order',
+      expect.objectContaining({
+        requestId: expect.any(String),
+        lines: [{ lineId: 'stew-line', quantity: 1.25 }],
+      }),
+    );
+  });
+
   it('records hotel operating expenses with date, category and payment details', async () => {
     const user = userEvent.setup();
     renderPage('/hotel/expenses');
@@ -185,6 +265,56 @@ describe('Hotel Management', () => {
     expect(api.saveHotelMenuItem).not.toHaveBeenCalled();
   });
 
+  it('creates versioned menu recipes using current branch ingredient inventory', async () => {
+    const user = userEvent.setup();
+    const ingredient = {
+      ...hotelWorkspace.items[0],
+      id: '10000000-0000-4000-8000-000000000008',
+      name: 'Beef',
+      category: 'INGREDIENT' as const,
+      unit: 'kg',
+      sellable: false,
+      price: 0,
+      unitCost: 500,
+      unitCostEstimated: false,
+      stock: 10,
+    };
+    vi.mocked(api.getHotelWorkspace).mockResolvedValue({
+      ...structuredClone(hotelWorkspace),
+      items: [...structuredClone(hotelWorkspace.items), ingredient],
+    });
+    vi.mocked(api.saveHotelRecipe).mockResolvedValue({
+      id: 'recipe-001',
+      menuItemId: hotelWorkspace.menuItems[0].id,
+      menuItemName: 'Lunch',
+      sellingPrice: 250,
+      version: 1,
+      current: true,
+      servingLabel: '1 serving',
+      estimatedCost: 100,
+      contribution: 150,
+      ingredientCostPercent: 40,
+      ingredients: [],
+      createdAt: '2026-11-07T10:00:00Z',
+    });
+    renderPage('/hotel/menu');
+
+    await user.click(await screen.findByRole('button', { name: 'Add recipe' }));
+    await user.selectOptions(screen.getByLabelText('Ingredient'), ingredient.id);
+    await user.type(screen.getByLabelText('Quantity per serving'), '200');
+    await user.clear(screen.getByLabelText('Recipe unit'));
+    await user.type(screen.getByLabelText('Recipe unit'), 'g');
+    await user.click(screen.getByRole('button', { name: 'Save recipe' }));
+
+    expect(api.saveHotelRecipe).toHaveBeenCalledWith(
+      hotelWorkspace.menuItems[0].id,
+      expect.objectContaining({
+        servingLabel: '1 serving',
+        ingredients: [{ itemId: ingredient.id, quantity: 200, unit: 'g', optional: false }],
+      }),
+    );
+  });
+
   it('imports inventory and records positive opening stock as a stock receipt', async () => {
     const user = userEvent.setup();
     vi.mocked(api.saveHotelItem).mockResolvedValue({
@@ -226,6 +356,46 @@ describe('Hotel Management', () => {
       kind: 'RECEIPT',
       note: 'Opening stock imported from Excel',
     });
+  });
+
+  it('records purchase unit cost when receiving kitchen ingredients', async () => {
+    const user = userEvent.setup();
+    const ingredient = {
+      ...hotelWorkspace.items[0],
+      id: '10000000-0000-4000-8000-000000000008',
+      name: 'Beef',
+      category: 'INGREDIENT' as const,
+      unit: 'kg',
+      sellable: false,
+      price: 0,
+      unitCost: null,
+      unitCostEstimated: false,
+      stock: 10,
+    };
+    vi.mocked(api.getHotelWorkspace).mockResolvedValue({
+      ...structuredClone(hotelWorkspace),
+      items: [...structuredClone(hotelWorkspace.items), ingredient],
+    });
+    renderPage('/hotel/inventory');
+
+    await screen.findByText('Beef');
+    await user.click(
+      within(screen.getByRole('row', { name: /Beef/ })).getByRole('button', { name: 'Receive' }),
+    );
+    await user.type(screen.getByLabelText('Quantity (kg)'), '5');
+    await user.type(screen.getByLabelText('Purchase cost per kg'), '500');
+    await user.type(screen.getByLabelText('Supplier / delivery reference'), 'Delivery 01');
+    await user.click(screen.getByRole('button', { name: 'Receive stock' }));
+
+    expect(api.changeHotelStock).toHaveBeenCalledWith(
+      ingredient.id,
+      expect.objectContaining({
+        quantity: 5,
+        kind: 'RECEIPT',
+        note: 'Delivery 01',
+        unitCost: 500,
+      }),
+    );
   });
 
   it('requires a selected waiter for every new order', async () => {
@@ -410,16 +580,20 @@ describe('Hotel Management', () => {
       serviceType: 'DINE_IN' as const,
       notes: 'No chilli',
       status: 'OPEN' as const,
+      kitchenStatus: 'PENDING' as const,
       method: 'UNPAID' as const,
       paymentReference: '',
       total: 250,
       createdAt: '2026-11-06T12:00:00Z',
       lines: [
         {
+          lineId: 'line-meal',
           itemId: 'meal',
           itemType: 'FOOD' as const,
           itemName: 'Rice and stew',
           quantity: 1,
+          preparedQuantity: 0,
+          recipeConfigured: false,
           unitPrice: 250,
           total: 250,
         },
@@ -438,6 +612,7 @@ describe('Hotel Management', () => {
       />,
     );
     const kitchen = screen.getByRole('article', { name: 'Kitchen copy' });
+    expect(kitchen.querySelector('h2')).toHaveTextContent('Hotel');
     expect(kitchen).toHaveTextContent('KITCHEN ORDER');
     expect(kitchen).toHaveTextContent('ORDER #: FOOD-001');
     expect(kitchen).toHaveTextContent('TABLE: 2');
@@ -445,6 +620,8 @@ describe('Hotel Management', () => {
     expect(kitchen).not.toHaveTextContent('250.00');
 
     const customer = screen.getByRole('article', { name: 'Customer copy' });
+    expect(customer.querySelector('h2')).toHaveTextContent('Hotel');
+    expect(customer.querySelector('h2')).not.toHaveTextContent(testOrganization.name);
     expect(customer).toHaveTextContent('FOOD SALE RECEIPT');
     expect(customer).toHaveTextContent('Receipt No: FOOD-001');
     expect(customer).toHaveTextContent('Unit Price');
@@ -473,16 +650,20 @@ describe('Hotel Management', () => {
       serviceType: 'TAKEAWAY' as const,
       notes: '',
       status: 'CLOSED' as const,
+      kitchenStatus: 'READY' as const,
       method: 'CASH' as const,
       paymentReference: '',
       total: 250,
       createdAt: '2026-11-06T12:00:00Z',
       lines: [
         {
+          lineId: 'line-water',
           itemId: 'water',
           itemType: 'PRODUCT' as const,
           itemName: 'Bottled water',
           quantity: 1,
+          preparedQuantity: 0,
+          recipeConfigured: false,
           unitPrice: 250,
           total: 250,
         },
@@ -509,10 +690,13 @@ describe('Hotel Management', () => {
       lines: [
         ...order.lines,
         {
+          lineId: 'line-meal',
           itemId: 'meal',
           itemType: 'FOOD' as const,
           itemName: 'Pilau',
           quantity: 1,
+          preparedQuantity: 0,
+          recipeConfigured: false,
           unitPrice: 250,
           total: 250,
         },
@@ -531,6 +715,53 @@ describe('Hotel Management', () => {
     expect(kitchenCopy).not.toHaveTextContent('Bottled water');
     expect(screen.getByRole('article', { name: 'Customer copy' })).toHaveTextContent(
       'Bottled water',
+    );
+  });
+  it('omits the walk-in customer placeholder from food receipts', () => {
+    const order = {
+      id: 'walk-in-sale',
+      branchId: hotelBranchId,
+      reference: 'FOOD-WALKIN-001',
+      operatorId: testUser.userId,
+      waiterId: hotelWaiters[0].id,
+      servedByName: hotelWaiters[0].name,
+      customerName: 'Walk-in customer',
+      tableNumber: '',
+      serviceType: 'TAKEAWAY' as const,
+      notes: '',
+      status: 'CLOSED' as const,
+      kitchenStatus: 'PENDING' as const,
+      method: 'CASH' as const,
+      paymentReference: '',
+      total: 250,
+      createdAt: '2026-11-06T12:00:00Z',
+      lines: [
+        {
+          lineId: 'walk-in-food-line',
+          itemId: 'meal',
+          itemType: 'FOOD' as const,
+          itemName: 'Rice and stew',
+          quantity: 1,
+          preparedQuantity: 0,
+          recipeConfigured: false,
+          unitPrice: 250,
+          total: 250,
+        },
+      ],
+      ...hotelReceiptSettings,
+    };
+    render(
+      <HotelOrderReceipt
+        order={order}
+        organization={testOrganization}
+        branchName="Hotel"
+        close={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+    expect(screen.getByRole('article', { name: 'Customer copy' })).not.toHaveTextContent(
+      /Walk[- ]in customer|Customer:/i,
     );
   });
   it('lets an admin assign any active user as a waiter and edit receipt details', async () => {
@@ -606,6 +837,19 @@ describe('Hotel Management', () => {
         waiter,
       ).map((item) => item.to),
     ).toEqual(['/hotel/restaurant']);
+    const kitchen = {
+      ...viewer,
+      roleKeys: ['KITCHEN'],
+      permissionCodes: ['hotel:kitchen'],
+    };
+    expect(canAccessPath(kitchen, '/hotel/kitchen')).toBe(true);
+    expect(canAccessPath(kitchen, '/hotel/restaurant')).toBe(false);
+    expect(
+      appModules(
+        appRegistry.find((app) => app.id === 'hotel')!,
+        kitchen,
+      ).map((item) => item.to),
+    ).toEqual(['/hotel/kitchen']);
     expect(canAccessPath(waiter, '/hotel/service-settings')).toBe(false);
     expect(canAccessPath(waiter, '/inventory')).toBe(false);
     expect(canAccessPath({ ...viewer, permissionCodes: [] }, '/hotel')).toBe(false);
@@ -685,6 +929,7 @@ describe('Hotel Management', () => {
         waiterId: hotelWaiters[0].id,
         servedByName: hotelWaiters[0].name,
         tableNumber: '3',
+        kitchenStatus: 'READY',
         serviceType: 'DINE_IN',
         notes: '',
         status: 'CLOSED',

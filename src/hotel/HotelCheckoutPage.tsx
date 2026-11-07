@@ -104,7 +104,7 @@ export default function HotelCheckoutPage({
             <i className="bi bi-grid-3x3-gap-fill" aria-hidden="true" />
           </button>
           <div>
-            <strong>{organization.name}</strong>
+            <strong>KEEN ERP</strong>
             <small>Hotel point of sale</small>
           </div>
         </div>
